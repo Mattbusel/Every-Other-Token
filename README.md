@@ -26,7 +26,7 @@ This tool opens up novel research possibilities:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/every-other-token.git
+git clone https://github.com/Mattbusel/Every-Other-Token.git
 cd every-other-token
 
 # Install dependencies
