@@ -1,4 +1,12 @@
 
+[package]
+name = "every-other-token"
+version = "1.0.0"
+edition = "2021"
+authors = ["AI Research Tools"]
+description = "A real-time LLM stream interceptor for token-level interaction research"
+license = "MIT"
+
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
@@ -11,10 +19,6 @@ rand = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"
-
-[[bin]]
-name = "every-other-token"
-path = "src/main.rs"
 
 [profile.release]
 lto = true
