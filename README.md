@@ -115,7 +115,7 @@ cargo run -- "Hello world" mock gpt-4
 
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/every-other-token-rust.git
+git clone https://github.com/Mattbusel/Every-Other-Token.git
 cd every-other-token-rust
 cargo build --release
 
