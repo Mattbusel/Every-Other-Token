@@ -147,8 +147,8 @@ impl TokenInterceptor {
 
             // Process complete lines
             while let Some(line_end) = buffer.find('\n') {
-                let line = buffer[..line_end].trim();
-                buffer = buffer[line_end + 1..].to_string();
+                let line = buffer[..line_end].trim().to_string();
+                buffer.drain(..=line_end);
 
                 if line.starts_with("data: ") && line != "data: [DONE]" {
                     let json_str = &line[6..]; // Remove "data: " prefix
@@ -237,6 +237,8 @@ impl TokenInterceptor {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("API Key from env: {:?}", std::env::var("OPENAI_API_KEY"));
+    
     let matches = Command::new("every-other-token")
         .version("1.0.0")
         .author("AI Research Tools")
