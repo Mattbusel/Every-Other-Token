@@ -6,7 +6,7 @@ authors = ["AI Research Tools"]
 description = "A real-time LLM stream interceptor for token-level interaction research"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/yourusername/every-other-token-rust"
+repository = "https://github.com/Mattbusel/Every-Other-Token"
 keywords = ["llm", "ai", "research", "token", "openai"]
 categories = ["command-line-utilities", "science"]
 
