@@ -17,7 +17,7 @@ Every Other Token intercepts OpenAI's streaming API responses and applies transf
 
 ## Example Output
 
-![Every Other Token Output](screenshot.png)
+![Every Other Token Output](https://github.com/Mattbusel/Every-Other-Token/blob/main/Screenshot%202025-07-08%20185410.png)
 
 *Screenshot showing the tool in action with the reverse transform*
 
