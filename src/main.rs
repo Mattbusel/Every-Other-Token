@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::Parser;
 use colored::*;
 use rand::Rng;
 use reqwest::Client;
@@ -92,10 +92,11 @@ pub struct TokenInterceptor {
     token_count: usize,
     transformed_count: usize,
     visual_mode: bool,
+    heatmap_mode: bool,
 }
 
 impl TokenInterceptor {
-    pub fn new(transform: Transform, model: String, visual_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(transform: Transform, model: String, visual_mode: bool, heatmap_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
         let api_key = env::var("OPENAI_API_KEY")
             .map_err(|_| "OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")?;
 
@@ -109,6 +110,7 @@ impl TokenInterceptor {
             token_count: 0,
             transformed_count: 0,
             visual_mode,
+            heatmap_mode,
         })
     }
 
@@ -178,7 +180,10 @@ impl TokenInterceptor {
             if !token.trim().is_empty() {
                 if self.token_count % 2 == 0 {
                     // Even tokens - pass through unchanged
-                    if self.visual_mode {
+                    if self.heatmap_mode {
+                        let importance = self.calculate_token_importance(&token, self.token_count);
+                        print!("{}", self.apply_heatmap_color(&token, importance));
+                    } else if self.visual_mode {
                         print!("{}", token.normal());
                     } else {
                         print!("{}", token);
@@ -187,7 +192,10 @@ impl TokenInterceptor {
                     // Odd tokens - apply transformation
                     self.transformed_count += 1;
                     let transformed = self.transform.apply(&token);
-                    if self.visual_mode {
+                    if self.heatmap_mode {
+                        let importance = self.calculate_token_importance(&transformed, self.token_count);
+                        print!("{}", self.apply_heatmap_color(&transformed, importance));
+                    } else if self.visual_mode {
                         print!("{}", transformed.bright_cyan().bold());
                     } else {
                         print!("{}", transformed);
@@ -228,6 +236,63 @@ impl TokenInterceptor {
         tokens
     }
 
+    // Calculate simulated token importance (0.0 to 1.0)
+    fn calculate_token_importance(&self, token: &str, position: usize) -> f64 {
+        // Simulated importance based on multiple factors
+        let mut importance = 0.0;
+
+        // 1. Token length importance (longer tokens often more important)
+        importance += (token.len() as f64 / 20.0).min(0.3);
+
+        // 2. Position-based importance (beginning and end tokens more important)
+        let position_factor = if position < 5 || position > 50 {
+            0.3 // High importance for beginning/end
+        } else {
+            0.1 // Lower importance for middle
+        };
+        importance += position_factor;
+
+        // 3. Content-based importance (nouns, verbs, technical terms)
+        if token.chars().any(|c| c.is_uppercase()) {
+            importance += 0.2; // Proper nouns/acronyms
+        }
+        
+        // Check for "important" word patterns
+        let important_patterns = [
+            "the", "and", "or", "but", "if", "when", "where", "how", "why", "what",
+            "robot", "AI", "technology", "system", "data", "algorithm", "model",
+            "create", "build", "develop", "analyze", "process", "generate"
+        ];
+        
+        let lower_token = token.to_lowercase();
+        if important_patterns.iter().any(|&pattern| lower_token.contains(pattern)) {
+            importance += 0.3;
+        }
+
+        // 4. Punctuation reduces importance
+        if token.chars().all(|c| c.is_ascii_punctuation()) {
+            importance *= 0.1;
+        }
+
+        // 5. Add some randomness to simulate real attention patterns
+        let mut rng = rand::thread_rng();
+        importance += rng.gen_range(-0.1..0.1);
+
+        // Clamp between 0.0 and 1.0
+        importance.max(0.0).min(1.0)
+    }
+
+    // Apply color based on importance score
+    fn apply_heatmap_color(&self, token: &str, importance: f64) -> String {
+        match importance {
+            i if i >= 0.8 => token.on_bright_red().bright_white().to_string(), // Critical
+            i if i >= 0.6 => token.on_red().bright_white().to_string(),        // High
+            i if i >= 0.4 => token.on_yellow().black().to_string(),            // Medium
+            i if i >= 0.2 => token.on_blue().bright_white().to_string(),       // Low
+            _ => token.normal().to_string(),                                    // Minimal
+        }
+    }
+
     fn print_header(&self, prompt: &str) {
         println!("{}", "🔮 EVERY OTHER TOKEN INTERCEPTOR".bright_cyan().bold());
         println!("{}: {:?}", "Transform".bright_yellow(), self.transform);
@@ -235,6 +300,15 @@ impl TokenInterceptor {
         println!("{}: {}", "Prompt".bright_yellow(), prompt);
         if self.visual_mode {
             println!("{}: {}", "Visual Mode".bright_green(), "ON (even=normal, odd=cyan+bold)".bright_green());
+        }
+        if self.heatmap_mode {
+            println!("{}: {}", "Heatmap Mode".bright_magenta(), "ON (color intensity = token importance)".bright_magenta());
+            println!("{}: {} {} {} {}", 
+                "Legend".bright_white(),
+                "Low".on_blue(),
+                "Medium".on_yellow(), 
+                "High".on_red(),
+                "Critical".on_bright_red().bright_white());
         }
         println!("{}", "=".repeat(50).bright_blue());
         println!("{}", "Response (with transformations):".bright_green());
@@ -248,49 +322,40 @@ impl TokenInterceptor {
     }
 }
 
+#[derive(Parser)]
+#[command(name = "every-other-token")]
+#[command(version = "1.0.0")]
+#[command(about = "A real-time LLM stream interceptor for token-level interaction research")]
+struct Args {
+    /// Your input prompt
+    prompt: String,
+    
+    /// Transformation type (reverse, uppercase, mock, noise)
+    #[arg(default_value = "reverse")]
+    transform: String,
+    
+    /// OpenAI model to use
+    #[arg(default_value = "gpt-3.5-turbo")]
+    model: String,
+    
+    /// Enable visual mode with color-coded tokens
+    #[arg(long, short)]
+    visual: bool,
+    
+    /// Enable token importance heatmap (color intensity = importance)
+    #[arg(long)]
+    heatmap: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = Command::new("every-other-token")
-        .version("1.0.0")
-        .author("AI Research Tools")
-        .about("A real-time LLM stream interceptor for token-level interaction research")
-        .arg(
-            Arg::new("prompt")
-                .help("Your input prompt")
-                .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::new("transform")
-                .help("Transformation type (reverse, uppercase, mock, noise)")
-                .default_value("reverse")
-                .index(2),
-        )
-        .arg(
-            Arg::new("model")
-                .help("OpenAI model to use")
-                .default_value("gpt-3.5-turbo")
-                .index(3),
-        )
-        .arg(
-            Arg::new("visual")
-                .long("visual")
-                .short('v')
-                .help("Enable visual mode with color-coded tokens")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let prompt = matches.get_one::<String>("prompt").unwrap();
-    let transform_str = matches.get_one::<String>("transform").unwrap();
-    let model = matches.get_one::<String>("model").unwrap();
-    let visual_mode = matches.get_flag("visual");
-
-    let transform = Transform::from_str(transform_str)
+    let transform = Transform::from_str(&args.transform)
         .map_err(|e| format!("Invalid transform: {}", e))?;
 
-    let mut interceptor = TokenInterceptor::new(transform, model.clone(), visual_mode)?;
-    interceptor.intercept_stream(prompt).await?;
+    let mut interceptor = TokenInterceptor::new(transform, args.model, args.visual, args.heatmap)?;
+    interceptor.intercept_stream(&args.prompt).await?;
 
     Ok(())
 }
