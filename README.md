@@ -188,7 +188,7 @@ cargo run -- "Complex algorithms" uppercase --visual --heatmap
 
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/every-other-token-rust.git
+git clone https://github.com/Mattbusel/Every-Other-Token
 cd every-other-token-rust
 cargo build --release
 
