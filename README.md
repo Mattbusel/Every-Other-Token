@@ -17,8 +17,7 @@ Every Other Token intercepts OpenAI's streaming API responses and applies transf
 
 ## Example Output
 
-
-![Every Other Token Output](https://github.com/Mattbusel/Every-Other-Token/blob/main/Screenshot%202025-07-08%20185410.png)
+![Every Other Token Output](screenshot.png)
 
 *Screenshot showing the tool in action with the reverse transform*
 
@@ -56,23 +55,55 @@ cargo run -- "Write a haiku" mock gpt-4
 
 # Enable visual mode with color-coded tokens
 cargo run -- "Tell me a story about a robot" reverse --visual
+
+# Enable token importance heatmap
+cargo run -- "Tell me a story about a robot" --heatmap
+
+# Combine both modes for maximum insight
+cargo run -- "Analyze AI systems" --visual --heatmap
 ```
 
-## Visual Mode
+## Visual Modes
 
-Add the `--visual` or `-v` flag to see live token visualization with color-coding:
+### 🎨 Visual Mode (`--visual` or `-v`)
+Color-codes tokens by transformation status:
 
 - **Even tokens** (unchanged): Normal text
 - **Odd tokens** (transformed): **Bright cyan + bold**
+
+### 🔥 Heatmap Mode (`--heatmap`)
+Color-codes tokens by simulated importance/attention scores:
+
+- 🔴 **Critical** (0.8-1.0): Bright red background - highest importance
+- 🟠 **High** (0.6-0.8): Red background - important content words
+- 🟡 **Medium** (0.4-0.6): Yellow background - moderate importance  
+- 🔵 **Low** (0.2-0.4): Blue background - common words
+- ⚪ **Minimal** (0.0-0.2): Normal text - minimal importance
+
+**Importance factors:**
+- Token length (longer tokens often more important)
+- Position (beginning/end tokens prioritized)
+- Content type (nouns, verbs, technical terms)
+- Word patterns (proper nouns, acronyms, key concepts)
 
 ```bash
 # Visual mode examples
 cargo run -- "Tell me a story" reverse --visual
 cargo run -- "Explain AI" uppercase -v
-cargo run -- "Write a poem" mock --visual
+
+# Heatmap mode examples  
+cargo run -- "The robot analyzed complex algorithms" --heatmap
+cargo run -- "Machine learning processes data" --heatmap
+
+# Combined modes for research
+cargo run -- "Advanced AI technology systems" --visual --heatmap
 ```
 
-This makes it easy to see exactly which tokens are being transformed in real-time!
+**Perfect for research into:**
+- Token-level attention patterns
+- Semantic vs syntactic importance
+- Content type analysis (technical vs narrative)
+- Real-time importance visualization
 
 ## Available Transformations
 
@@ -107,10 +138,25 @@ cargo run -- "Solve this math problem: 2+2=" reverse
 cargo run -- "Continue this story logically..." noise
 ```
 
+### Token Importance Analysis
+```bash
+# Visualize which tokens are considered most important
+cargo run -- "The robot analyzed complex algorithms" --heatmap
+cargo run -- "Machine learning processes data" --heatmap
+```
+
 ### Creative Collaboration
 ```bash
 # Use transformations to create unexpected creative outputs
 cargo run -- "Write a poem about nature" mock
+```
+
+### Real-time Attention Research
+```bash
+# Study attention patterns across different content types
+cargo run -- "Explain quantum physics" --heatmap
+cargo run -- "Tell a children's story" --heatmap  
+cargo run -- "Define technical terms" --visual --heatmap
 ```
 
 ## Command Line Usage
@@ -126,6 +172,7 @@ every-other-token [PROMPT] [TRANSFORM] [MODEL] [OPTIONS]
 
 **Options:**
 - `--visual`, `-v`: Enable visual mode with color-coded tokens
+- `--heatmap`: Enable token importance heatmap (color intensity = importance)
 
 **Examples:**
 ```bash
@@ -133,6 +180,8 @@ cargo run -- "Hello world"
 cargo run -- "Hello world" uppercase
 cargo run -- "Hello world" mock gpt-4
 cargo run -- "Hello world" reverse --visual
+cargo run -- "Analyze AI systems" --heatmap  
+cargo run -- "Complex algorithms" uppercase --visual --heatmap
 ```
 
 ## Building from Source
