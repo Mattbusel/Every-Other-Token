@@ -17,6 +17,7 @@ Every Other Token intercepts OpenAI's streaming API responses and applies transf
 
 ## Example Output
 
+
 ![Every Other Token Output](https://github.com/Mattbusel/Every-Other-Token/blob/main/Screenshot%202025-07-08%20185410.png)
 
 *Screenshot showing the tool in action with the reverse transform*
@@ -52,7 +53,26 @@ cargo run -- "Explain quantum physics" uppercase
 
 # With different model
 cargo run -- "Write a haiku" mock gpt-4
+
+# Enable visual mode with color-coded tokens
+cargo run -- "Tell me a story about a robot" reverse --visual
 ```
+
+## Visual Mode
+
+Add the `--visual` or `-v` flag to see live token visualization with color-coding:
+
+- **Even tokens** (unchanged): Normal text
+- **Odd tokens** (transformed): **Bright cyan + bold**
+
+```bash
+# Visual mode examples
+cargo run -- "Tell me a story" reverse --visual
+cargo run -- "Explain AI" uppercase -v
+cargo run -- "Write a poem" mock --visual
+```
+
+This makes it easy to see exactly which tokens are being transformed in real-time!
 
 ## Available Transformations
 
@@ -96,7 +116,7 @@ cargo run -- "Write a poem about nature" mock
 ## Command Line Usage
 
 ```bash
-every-other-token [PROMPT] [TRANSFORM] [MODEL]
+every-other-token [PROMPT] [TRANSFORM] [MODEL] [OPTIONS]
 ```
 
 **Arguments:**
@@ -104,18 +124,22 @@ every-other-token [PROMPT] [TRANSFORM] [MODEL]
 - `TRANSFORM`: Transformation type - reverse, uppercase, mock, noise (default: reverse)
 - `MODEL`: OpenAI model to use (default: gpt-3.5-turbo)
 
+**Options:**
+- `--visual`, `-v`: Enable visual mode with color-coded tokens
+
 **Examples:**
 ```bash
 cargo run -- "Hello world"
 cargo run -- "Hello world" uppercase
 cargo run -- "Hello world" mock gpt-4
+cargo run -- "Hello world" reverse --visual
 ```
 
 ## Building from Source
 
 ```bash
 # Clone and build
-git clone https://github.com/Mattbusel/Every-Other-Token.git
+git clone https://github.com/yourusername/every-other-token-rust.git
 cd every-other-token-rust
 cargo build --release
 
@@ -156,3 +180,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 *"Every token tells a story. Every other token tells a different one."*
+
+
+
+
+
+
+
