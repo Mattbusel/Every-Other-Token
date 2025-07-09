@@ -91,10 +91,11 @@ pub struct TokenInterceptor {
     model: String,
     token_count: usize,
     transformed_count: usize,
+    visual_mode: bool,
 }
 
 impl TokenInterceptor {
-    pub fn new(transform: Transform, model: String) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(transform: Transform, model: String, visual_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
         let api_key = env::var("OPENAI_API_KEY")
             .map_err(|_| "OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")?;
 
@@ -107,6 +108,7 @@ impl TokenInterceptor {
             model,
             token_count: 0,
             transformed_count: 0,
+            visual_mode,
         })
     }
 
@@ -174,16 +176,24 @@ impl TokenInterceptor {
         
         for token in tokens {
             if !token.trim().is_empty() {
-                let processed_token = if self.token_count % 2 == 0 {
+                if self.token_count % 2 == 0 {
                     // Even tokens - pass through unchanged
-                    token.clone()
+                    if self.visual_mode {
+                        print!("{}", token.normal());
+                    } else {
+                        print!("{}", token);
+                    }
                 } else {
                     // Odd tokens - apply transformation
                     self.transformed_count += 1;
-                    self.transform.apply(&token)
+                    let transformed = self.transform.apply(&token);
+                    if self.visual_mode {
+                        print!("{}", transformed.bright_cyan().bold());
+                    } else {
+                        print!("{}", transformed);
+                    }
                 };
 
-                print!("{}", processed_token);
                 io::stdout().flush().unwrap();
                 self.token_count += 1;
             }
@@ -223,6 +233,9 @@ impl TokenInterceptor {
         println!("{}: {:?}", "Transform".bright_yellow(), self.transform);
         println!("{}: {}", "Model".bright_yellow(), self.model);
         println!("{}: {}", "Prompt".bright_yellow(), prompt);
+        if self.visual_mode {
+            println!("{}: {}", "Visual Mode".bright_green(), "ON (even=normal, odd=cyan+bold)".bright_green());
+        }
         println!("{}", "=".repeat(50).bright_blue());
         println!("{}", "Response (with transformations):".bright_green());
         println!();
@@ -237,8 +250,6 @@ impl TokenInterceptor {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("API Key from env: {:?}", std::env::var("OPENAI_API_KEY"));
-    
     let matches = Command::new("every-other-token")
         .version("1.0.0")
         .author("AI Research Tools")
@@ -261,16 +272,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("gpt-3.5-turbo")
                 .index(3),
         )
+        .arg(
+            Arg::new("visual")
+                .long("visual")
+                .short('v')
+                .help("Enable visual mode with color-coded tokens")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     let prompt = matches.get_one::<String>("prompt").unwrap();
     let transform_str = matches.get_one::<String>("transform").unwrap();
     let model = matches.get_one::<String>("model").unwrap();
+    let visual_mode = matches.get_flag("visual");
 
     let transform = Transform::from_str(transform_str)
         .map_err(|e| format!("Invalid transform: {}", e))?;
 
-    let mut interceptor = TokenInterceptor::new(transform, model.clone())?;
+    let mut interceptor = TokenInterceptor::new(transform, model.clone(), visual_mode)?;
     interceptor.intercept_stream(prompt).await?;
 
     Ok(())
