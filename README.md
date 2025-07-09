@@ -31,7 +31,7 @@ Every Other Token intercepts OpenAI's streaming API responses and applies transf
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/every-other-token-rust.git
+git clone https://github.com/Mattbusel/Every-Other-Token
 cd every-other-token-rust
 
 # Build the project
