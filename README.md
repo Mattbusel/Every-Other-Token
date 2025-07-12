@@ -8,6 +8,9 @@ A real-time LLM stream mutator and token-visualization engine built in Rust.
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenAI API](https://img.shields.io/badge/OpenAI-API-green.svg)](https://openai.com/api/)
 
+![Every Other Token Output](https://github.com/Mattbusel/Every-Other-Token/blob/main/Screenshot%202025-07-12%20161852.png)
+
+
 > “Every token tells a story. Every other token tells a different one.”
 
 ---
