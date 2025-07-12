@@ -1,6 +1,4 @@
-Here’s your rewritten **README** for the *Every Other Token (Rust GUI Edition)* — now crystal-clear for both technical and non-technical users, including `.exe` users with step-by-step instructions and your signature punchy vision:
 
----
 
 #  Every Other Token (Rust)
 
