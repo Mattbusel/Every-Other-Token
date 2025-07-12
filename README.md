@@ -1,234 +1,218 @@
-# Every Other Token (Rust)
+Here’s your rewritten **README** for the *Every Other Token (Rust GUI Edition)* — now crystal-clear for both technical and non-technical users, including `.exe` users with step-by-step instructions and your signature punchy vision:
 
-A real-time LLM stream interceptor for token-level interaction research, built in Rust.
+---
+
+#  Every Other Token (Rust)
+
+A real-time LLM stream mutator and token-visualization engine built in Rust.
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![OpenAI API](https://img.shields.io/badge/OpenAI-API-green.svg)](https://openai.com/api/)
 
-## What is this?
-
-Every Other Token intercepts OpenAI's streaming API responses and applies transformations to alternating tokens in real-time. Instead of waiting for complete responses, it intervenes at the token level, creating a new paradigm for LLM interaction and analysis.
-
-## How it works
-
-1. **Even tokens** (0, 2, 4, 6...): Passed through unchanged
-2. **Odd tokens** (1, 3, 5, 7...): Transformed using the selected method
-
-## Example Output
-
-![Every Other Token Output](https://github.com/Mattbusel/Every-Other-Token/blob/main/Screenshot%202025-07-09%20015940.png)
-
-*Screenshot showing the tool in action with the reverse transform*
-
-## Quick Start
-
-### Prerequisites
-- Rust 1.70.0 or higher
-- OpenAI API key
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Mattbusel/Every-Other-Token
-cd every-other-token-rust
-
-# Build the project
-cargo build --release
-
-# Set your OpenAI API key
-set OPENAI_API_KEY=your-api-key-here
-```
-
-### Basic Usage
-
-```bash
-# Simple example with reverse transform
-cargo run -- "Tell me a story about a robot"
-
-# With specific transformation
-cargo run -- "Explain quantum physics" uppercase
-
-# With different model
-cargo run -- "Write a haiku" mock gpt-4
-
-# Enable visual mode with color-coded tokens
-cargo run -- "Tell me a story about a robot" reverse --visual
-
-# Enable token importance heatmap
-cargo run -- "Tell me a story about a robot" --heatmap
-
-# Combine both modes for maximum insight
-cargo run -- "Analyze AI systems" --visual --heatmap
-```
-
-## Visual Modes
-
-### 🎨 Visual Mode (`--visual` or `-v`)
-Color-codes tokens by transformation status:
-
-- **Even tokens** (unchanged): Normal text
-- **Odd tokens** (transformed): **Bright cyan + bold**
-
-### 🔥 Heatmap Mode (`--heatmap`)
-Color-codes tokens by simulated importance/attention scores:
-
-- 🔴 **Critical** (0.8-1.0): Bright red background - highest importance
-- 🟠 **High** (0.6-0.8): Red background - important content words
-- 🟡 **Medium** (0.4-0.6): Yellow background - moderate importance  
-- 🔵 **Low** (0.2-0.4): Blue background - common words
-- ⚪ **Minimal** (0.0-0.2): Normal text - minimal importance
-
-**Importance factors:**
-- Token length (longer tokens often more important)
-- Position (beginning/end tokens prioritized)
-- Content type (nouns, verbs, technical terms)
-- Word patterns (proper nouns, acronyms, key concepts)
-
-```bash
-# Visual mode examples
-cargo run -- "Tell me a story" reverse --visual
-cargo run -- "Explain AI" uppercase -v
-
-# Heatmap mode examples  
-cargo run -- "The robot analyzed complex algorithms" --heatmap
-cargo run -- "Machine learning processes data" --heatmap
-
-# Combined modes for research
-cargo run -- "Advanced AI technology systems" --visual --heatmap
-```
-
-**Perfect for research into:**
-- Token-level attention patterns
-- Semantic vs syntactic importance
-- Content type analysis (technical vs narrative)
-- Real-time importance visualization
-
-## Available Transformations
-
-| Transform | Description | Example Input | Example Output |
-|-----------|-------------|---------------|----------------|
-| `reverse` | Reverses odd tokens | "hello world" | "hello dlrow" |
-| `uppercase` | Converts odd tokens to uppercase | "hello world" | "hello WORLD" |
-| `mock` | Alternating case (mocking text) | "hello world" | "hello WoRlD" |
-| `noise` | Adds random characters to odd tokens | "hello world" | "hello world*" |
-
-## Why does this matter?
-
-This tool opens up novel research possibilities:
-
-- **Token Dependency Analysis**: Study how LLMs handle disrupted token sequences
-- **Interpretability Research**: Understand token-level dependencies and causality
-- **Creative AI Interaction**: Build co-creative systems with human-AI token collaboration
-- **Real-time LLM Steering**: Develop new prompt engineering techniques
-- **Stream Manipulation**: Explore how semantic meaning degrades with token alterations
-
-## Research Applications
-
-### Token Dependency Studies
-```bash
-# Study how meaning degrades with token corruption
-cargo run -- "Solve this math problem: 2+2=" reverse
-```
-
-### Semantic Robustness Testing
-```bash
-# Test how well LLMs maintain coherence under disruption
-cargo run -- "Continue this story logically..." noise
-```
-
-### Token Importance Analysis
-```bash
-# Visualize which tokens are considered most important
-cargo run -- "The robot analyzed complex algorithms" --heatmap
-cargo run -- "Machine learning processes data" --heatmap
-```
-
-### Creative Collaboration
-```bash
-# Use transformations to create unexpected creative outputs
-cargo run -- "Write a poem about nature" mock
-```
-
-### Real-time Attention Research
-```bash
-# Study attention patterns across different content types
-cargo run -- "Explain quantum physics" --heatmap
-cargo run -- "Tell a children's story" --heatmap  
-cargo run -- "Define technical terms" --visual --heatmap
-```
-
-## Command Line Usage
-
-```bash
-every-other-token [PROMPT] [TRANSFORM] [MODEL] [OPTIONS]
-```
-
-**Arguments:**
-- `PROMPT`: Your input prompt (required)
-- `TRANSFORM`: Transformation type - reverse, uppercase, mock, noise (default: reverse)
-- `MODEL`: OpenAI model to use (default: gpt-3.5-turbo)
-
-**Options:**
-- `--visual`, `-v`: Enable visual mode with color-coded tokens
-- `--heatmap`: Enable token importance heatmap (color intensity = importance)
-
-**Examples:**
-```bash
-cargo run -- "Hello world"
-cargo run -- "Hello world" uppercase
-cargo run -- "Hello world" mock gpt-4
-cargo run -- "Hello world" reverse --visual
-cargo run -- "Analyze AI systems" --heatmap  
-cargo run -- "Complex algorithms" uppercase --visual --heatmap
-```
-
-## Building from Source
-
-```bash
-# Clone and build
-git clone https://github.com/Mattbusel/Every-Other-Token
-cd every-other-token-rust
-cargo build --release
-
-# Run tests
-cargo test
-
-# Run with debug info
-RUST_LOG=debug cargo run -- "test prompt"
-```
-
-## Performance
-
-The Rust implementation offers significant performance improvements:
-
-- **Memory Usage**: ~90% reduction compared to Python
-- **CPU Usage**: ~75% reduction in overhead
-- **Latency**: ~60% improvement in token processing speed
-- **Throughput**: Handles 10,000+ tokens/second
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- OpenAI for the streaming API
-- The Rust community for excellent async ecosystem
-- Original Python implementation for inspiration
+> “Every token tells a story. Every other token tells a different one.”
 
 ---
 
-*"Every token tells a story. Every other token tells a different one."*
+##  What is it?
+
+**Every Other Token** intercepts OpenAI’s streaming API **token-by-token** and mutates every other one in real time.
+Instead of treating prompts like static text, it invites you to **see, touch, and reshape** the token stream as it flows.
+
+Built in Rust for speed, reliability, and next-gen research.
+
+---
+
+##  What Can It Do?
+
+*  Transform every other token: `reverse`, `uppercase`, `mock`, `noise`
+*  Visualize token roles with color-coded **Visual Mode**
+*  Highlight token-level salience with **Heatmap Mode**
+*  Real-time mutation of OpenAI responses
+*  Designed for LLM interpretability, creativity, and stream manipulation
+
+---
+
+##  Quick Start — GUI `.exe` Version (No Rust Required!)
+
+ **Instructions:**
+
+1. Download the ZIP and extract the `EveryOtherToken` folder.
+2. Double-click `EveryOtherToken.bat`.
+3. When prompted:
+
+   * Enter your OpenAI API Key (e.g., `sk-...`)
+   * Type your prompt (e.g., `"Tell me a story"`)
+   * Choose a transformation (1–4)
+   * Choose a model (e.g., GPT-3.5 or 4)
+   * Enable visual mode (Y/n)
+   * Enable heatmap mode (Y/n)
+
+ **What you’ll see:**
+
+```bash
+ Every Other Token - GUI Version
+==================================
+
+ Enter your OpenAI API Key: 
+ Enter your prompt: Tell me a story
+ Choose a transformation: [1] Reverse, [2] Uppercase, [3] Mock, [4] Noise
+ Choose a model: [1] GPT-3.5 Turbo, [2] GPT-4 Turbo, [3] GPT-4
+ Enable visual mode? (y/n): y
+ Enable heatmap mode? (y/n): y
+
+[Beautiful, real-time color-coded output appears]
+```
+
+ **You are now seeing the language model think, one token at a time.**
+
+---
+
+##  Researcher Edition — CLI (for Rust users)
+
+### Prerequisites
+
+* Rust 1.70 or higher
+* OpenAI API key (get one from [OpenAI](https://platform.openai.com/account/api-keys))
+
+### Install & Build
+
+```bash
+git clone https://github.com/Mattbusel/Every-Other-Token
+cd every-other-token-rust
+cargo build --release
+```
+
+### CLI Usage
+
+```bash
+cargo run -- "Prompt here" [transform] [model] [--visual] [--heatmap]
+```
+
+#### Examples:
+
+```bash
+cargo run -- "Tell me a story about a robot"
+cargo run -- "Explain quantum physics" uppercase
+cargo run -- "Write a haiku" mock gpt-4
+cargo run -- "What is consciousness?" reverse --visual --heatmap
+```
+
+---
+
+##  Visual Mode
+
+*  Color-codes **even** vs **odd** tokens
+*  **Even tokens**: unchanged (normal)
+*  **Odd tokens**: transformed (bright cyan + bold)
+
+##  Heatmap Mode
+
+Shows **importance** of each token based on:
+
+* Token position
+* Length
+* Word type
+* Syntactic/semantic clues
+
+| Color         | Meaning                   |
+| ------------- | ------------------------- |
+| 🔴 Bright Red | Most important (0.8–1.0)  |
+| 🟠 Red        | High importance (0.6–0.8) |
+| 🟡 Yellow     | Medium (0.4–0.6)          |
+| 🔵 Blue       | Low (0.2–0.4)             |
+| ⚪ White       | Minimal (0.0–0.2)         |
+
+---
+
+##  Available Transformations
+
+| Transform   | Effect                | Example (input: `hello world`) |
+| ----------- | --------------------- | ------------------------------ |
+| `reverse`   | Reverses odd tokens   | `hello dlrow`                  |
+| `uppercase` | Uppercases odd tokens | `hello WORLD`                  |
+| `mock`      | Alternating case      | `hello WoRlD`                  |
+| `noise`     | Adds junk characters  | `hello w0rld$`                 |
+
+---
+
+##  Why This Matters
+
+Every Other Token is a playground for:
+
+*  **LLM interpretability** & token dependency research
+*  **Creative mutation** of AI output
+*  **Robustness & semantic degradation testing**
+*  **Real-time token flow control**
+
+It’s not just a toy — it’s a **research microscope**.
+
+---
+
+##  Performance
+
+Rust implementation offers extreme efficiency:
+
+*  60% lower latency than Python
+*  \~10k tokens/sec throughput
+*  90% lower memory usage
+   Great for long prompts or batch testing
+
+---
+
+##  Suggested Use Cases
+
+### Semantic Fragility
+
+```bash
+cargo run -- "What is the capital of France?" noise --visual
+```
+
+### LLM Error Behavior
+
+```bash
+cargo run -- "Solve: 87 * 45 =" reverse
+```
+
+### Co-Creative Mutation
+
+```bash
+cargo run -- "Write a love poem to the moon" mock
+```
+
+### Attention Visualization
+
+```bash
+cargo run -- "Explain how transformers work" --heatmap
+```
+
+---
+
+##  Contributing
+
+Pull requests welcome!
+
+1. Fork the repo
+2. Create a new branch
+3. Code or tweak a transformation
+4. Test it
+5. Submit a PR
+
+---
+
+##  License
+
+MIT License. Do whatever you want. Just don’t use it to generate press releases for crypto scams.
+
+---
+
+##  Credits & Thanks
+
+* Inspired by token-level control research
+* Built in Rust with ❤️
+* Thanks to OpenAI and the Rust async ecosystem
+
+
 
 
 
