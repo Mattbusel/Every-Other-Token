@@ -201,9 +201,7 @@ Pull requests welcome!
 
 ---
 
-##  License
 
-MIT License. Do whatever you want. Just don’t use it to generate press releases for crypto scams.
 
 ---
 
