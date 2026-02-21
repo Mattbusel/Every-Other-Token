@@ -265,7 +265,9 @@ impl TokenInterceptor {
         &mut self,
         prompt: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.print_header(prompt);
+        if self.web_tx.is_none() {
+            self.print_header(prompt);
+        }
 
         // If --orchestrator is active, pre-process through MCP pipeline
         let effective_prompt = if self.orchestrator {
@@ -294,7 +296,9 @@ impl TokenInterceptor {
             Provider::Anthropic => self.stream_anthropic(&effective_prompt).await?,
         }
 
-        self.print_footer();
+        if self.web_tx.is_none() {
+            self.print_footer();
+        }
         Ok(())
     }
 
@@ -668,7 +672,7 @@ impl TokenInterceptor {
 
 #[derive(Parser)]
 #[command(name = "every-other-token")]
-#[command(version = "2.0.0")]
+#[command(version = "3.0.0")]
 #[command(about = "A real-time token stream mutator for LLM interpretability research")]
 struct Args {
     /// Input prompt to send to the LLM
