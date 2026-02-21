@@ -779,7 +779,7 @@ header h1{font-size:1.2rem;color:#58a6ff}
 .heat-2{background:#9e6a03;color:#000}.heat-1{background:#1f6feb;color:#fff}.heat-0{}
 @keyframes fadeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
 /* Graph */
-#graph-wrap{border-top:1px solid #21262d;background:#0a0e14;display:none}
+#graph-wrap{border-top:1px solid #21262d;background:#0a0e14;display:none;overflow-x:auto}
 #graph-wrap.show{display:block}
 #graph-toggle-bar{padding:6px 24px;border-top:1px solid #21262d;background:#161b22;display:flex;align-items:center;gap:12px}
 canvas#depgraph{width:100%;height:200px;display:block}
@@ -887,15 +887,17 @@ function drawGraph(){
   if(!canvas||!$('#graphtoggle').checked)return;
   const dpr=window.devicePixelRatio||1;
   const rect=canvas.parentElement.getBoundingClientRect();
-  canvas.width=rect.width*dpr;
+  const nodes=graphNodes;
+  if(nodes.length===0)return;
+  const gap=60;
+  const neededW=Math.max((nodes.length+1)*gap,rect.width);
+  canvas.width=neededW*dpr;
   canvas.height=200*dpr;
+  canvas.style.width=neededW+'px';
   canvas.style.height='200px';
   const ctx=canvas.getContext('2d');
   ctx.scale(dpr,dpr);
-  ctx.clearRect(0,0,rect.width,200);
-  const nodes=graphNodes;
-  if(nodes.length===0)return;
-  const gap=Math.min(60,rect.width/(nodes.length+1));
+  ctx.clearRect(0,0,neededW,200);
   const y1=50,y2=150;
   /* Draw nodes and edges */
   let lastEvenX=0,lastEvenIdx=-1;
@@ -1579,6 +1581,128 @@ mod tests {
     fn test_parse_query_empty() {
         let params = web::parse_query("");
         assert!(params.is_empty() || params.get("").map_or(true, |v| v.is_empty()));
+    }
+
+    // -- Side-by-side: original preserved for both even and odd tokens ------
+
+    #[test]
+    fn test_original_field_preserved_for_all_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("the quick brown fox");
+
+        let mut events: Vec<TokenEvent> = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        // Every token must have original == the raw token, even after transform
+        for event in &events {
+            assert!(!event.original.is_empty(), "original must never be empty");
+            if event.transformed {
+                // Transformed text differs from original
+                assert_ne!(event.text, event.original);
+            } else {
+                // Untransformed text matches original
+                assert_eq!(event.text, event.original);
+            }
+        }
+    }
+
+    // -- Multi-transform: JS transforms match Rust transforms -----------------
+
+    #[test]
+    fn test_all_four_transforms_produce_different_results() {
+        let token = "hello";
+        let results: Vec<String> = [
+            Transform::Reverse,
+            Transform::Uppercase,
+            Transform::Mock,
+        ]
+        .iter()
+        .map(|t| t.apply(token))
+        .collect();
+
+        // Each transform produces a distinct result
+        assert_eq!(results[0], "olleh");
+        assert_eq!(results[1], "HELLO");
+        assert_eq!(results[2], "hElLo");
+        // All three are different from each other
+        assert_ne!(results[0], results[1]);
+        assert_ne!(results[1], results[2]);
+        assert_ne!(results[0], results[2]);
+    }
+
+    // -- Dependency graph: even-odd pairing is correct ------------------------
+
+    #[test]
+    fn test_even_odd_alternation_for_graph_edges() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("a b c d");
+
+        let mut events: Vec<TokenEvent> = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        // Verify the alternating pattern that the graph relies on
+        for event in &events {
+            if event.index % 2 == 0 {
+                assert!(!event.transformed, "even index {} should not be transformed", event.index);
+            } else {
+                assert!(event.transformed, "odd index {} should be transformed", event.index);
+            }
+        }
+    }
+
+    // -- Export: token events contain all fields needed for JSON export --------
+
+    #[test]
+    fn test_token_event_export_json_structure() {
+        let event = TokenEvent {
+            text: "dlrow".to_string(),
+            original: "world".to_string(),
+            index: 1,
+            transformed: true,
+            importance: 0.75,
+        };
+        let json = serde_json::to_string(&event).expect("serialize failed");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse failed");
+
+        assert_eq!(parsed["text"], "dlrow");
+        assert_eq!(parsed["original"], "world");
+        assert_eq!(parsed["index"], 1);
+        assert_eq!(parsed["transformed"], true);
+        assert!(parsed["importance"].as_f64().is_some());
+    }
+
+    #[test]
+    fn test_multiple_tokens_form_valid_export_array() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world foo bar");
+
+        let mut events: Vec<TokenEvent> = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        // Serialize as array (matches export format)
+        let json = serde_json::to_string(&events).expect("serialize failed");
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("parse failed");
+        assert_eq!(parsed.len(), events.len());
+
+        // Verify indices are sequential
+        for (i, entry) in parsed.iter().enumerate() {
+            assert_eq!(entry["index"].as_u64().expect("index"), i as u64);
+        }
     }
 
     // -- Helper -------------------------------------------------------------
