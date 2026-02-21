@@ -93,9 +93,29 @@ pub fn calculate_token_importance(token: &str, position: usize) -> f64 {
     }
 
     let important_patterns = [
-        "the", "and", "or", "but", "if", "when", "where", "how", "why", "what",
-        "robot", "AI", "technology", "system", "data", "algorithm", "model",
-        "create", "build", "develop", "analyze", "process", "generate",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "when",
+        "where",
+        "how",
+        "why",
+        "what",
+        "robot",
+        "AI",
+        "technology",
+        "system",
+        "data",
+        "algorithm",
+        "model",
+        "create",
+        "build",
+        "develop",
+        "analyze",
+        "process",
+        "generate",
     ];
 
     let lower_token = token.to_lowercase();
@@ -160,10 +180,22 @@ mod tests {
 
     #[test]
     fn test_transform_from_str_valid() {
-        assert!(matches!(Transform::from_str_loose("reverse"), Ok(Transform::Reverse)));
-        assert!(matches!(Transform::from_str_loose("uppercase"), Ok(Transform::Uppercase)));
-        assert!(matches!(Transform::from_str_loose("mock"), Ok(Transform::Mock)));
-        assert!(matches!(Transform::from_str_loose("noise"), Ok(Transform::Noise)));
+        assert!(matches!(
+            Transform::from_str_loose("reverse"),
+            Ok(Transform::Reverse)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("uppercase"),
+            Ok(Transform::Uppercase)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("mock"),
+            Ok(Transform::Mock)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("noise"),
+            Ok(Transform::Noise)
+        ));
     }
 
     #[test]
@@ -176,9 +208,18 @@ mod tests {
 
     #[test]
     fn test_transform_from_str_case_insensitive() {
-        assert!(matches!(Transform::from_str_loose("REVERSE"), Ok(Transform::Reverse)));
-        assert!(matches!(Transform::from_str_loose("Uppercase"), Ok(Transform::Uppercase)));
-        assert!(matches!(Transform::from_str_loose("MoCk"), Ok(Transform::Mock)));
+        assert!(matches!(
+            Transform::from_str_loose("REVERSE"),
+            Ok(Transform::Reverse)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("Uppercase"),
+            Ok(Transform::Uppercase)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("MoCk"),
+            Ok(Transform::Mock)
+        ));
     }
 
     #[test]
@@ -227,14 +268,21 @@ mod tests {
         for _ in 0..50 {
             let result = Transform::Noise.apply("x");
             let noise_char = result.chars().last().expect("should have noise char");
-            assert!(noise_set.contains(&noise_char), "unexpected: {}", noise_char);
+            assert!(
+                noise_set.contains(&noise_char),
+                "unexpected: {}",
+                noise_char
+            );
         }
     }
 
     #[test]
     fn test_reverse_is_involution() {
         let token = "hello";
-        assert_eq!(Transform::Reverse.apply(&Transform::Reverse.apply(token)), token);
+        assert_eq!(
+            Transform::Reverse.apply(&Transform::Reverse.apply(token)),
+            token
+        );
     }
 
     #[test]
@@ -370,38 +418,72 @@ mod tests {
 
     #[test]
     fn test_importance_early_position_boost() {
-        let early: f64 = (0..5).map(|p| calculate_token_importance("word", p)).sum::<f64>() / 5.0;
-        let mid: f64 = (10..15).map(|p| calculate_token_importance("word", p)).sum::<f64>() / 5.0;
+        let early: f64 = (0..5)
+            .map(|p| calculate_token_importance("word", p))
+            .sum::<f64>()
+            / 5.0;
+        let mid: f64 = (10..15)
+            .map(|p| calculate_token_importance("word", p))
+            .sum::<f64>()
+            / 5.0;
         assert!(early > mid - 0.2);
     }
 
     #[test]
     fn test_importance_uppercase_boost() {
         let n = 200;
-        let upper: f64 = (0..n).map(|_| calculate_token_importance("AI", 25)).sum::<f64>() / n as f64;
-        let lower: f64 = (0..n).map(|_| calculate_token_importance("ai", 25)).sum::<f64>() / n as f64;
+        let upper: f64 = (0..n)
+            .map(|_| calculate_token_importance("AI", 25))
+            .sum::<f64>()
+            / n as f64;
+        let lower: f64 = (0..n)
+            .map(|_| calculate_token_importance("ai", 25))
+            .sum::<f64>()
+            / n as f64;
         assert!(upper > lower);
     }
 
     #[test]
     fn test_importance_keyword_boost() {
         let n = 200;
-        let kw: f64 = (0..n).map(|_| calculate_token_importance("algorithm", 25)).sum::<f64>() / n as f64;
-        let plain: f64 = (0..n).map(|_| calculate_token_importance("xyz", 25)).sum::<f64>() / n as f64;
+        let kw: f64 = (0..n)
+            .map(|_| calculate_token_importance("algorithm", 25))
+            .sum::<f64>()
+            / n as f64;
+        let plain: f64 = (0..n)
+            .map(|_| calculate_token_importance("xyz", 25))
+            .sum::<f64>()
+            / n as f64;
         assert!(kw > plain);
     }
 
     #[test]
     fn test_importance_long_token_boost() {
         let n = 200;
-        let long: f64 = (0..n).map(|_| calculate_token_importance("supercalifragilistic", 25)).sum::<f64>() / n as f64;
-        let short: f64 = (0..n).map(|_| calculate_token_importance("a", 25)).sum::<f64>() / n as f64;
+        let long: f64 = (0..n)
+            .map(|_| calculate_token_importance("supercalifragilistic", 25))
+            .sum::<f64>()
+            / n as f64;
+        let short: f64 = (0..n)
+            .map(|_| calculate_token_importance("a", 25))
+            .sum::<f64>()
+            / n as f64;
         assert!(long > short);
     }
 
     #[test]
     fn test_importance_all_tokens_in_range() {
-        let tokens = [".", ",", "!", "?", "a", "AI", "algorithm", "the", "superlongtoken"];
+        let tokens = [
+            ".",
+            ",",
+            "!",
+            "?",
+            "a",
+            "AI",
+            "algorithm",
+            "the",
+            "superlongtoken",
+        ];
         for token in &tokens {
             for pos in [0, 1, 5, 25, 50, 100] {
                 let imp = calculate_token_importance(token, pos);

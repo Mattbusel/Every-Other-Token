@@ -58,12 +58,10 @@ impl TokenInterceptor {
         orchestrator: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let api_key = match provider {
-            Provider::Openai => env::var("OPENAI_API_KEY").map_err(|_| {
-                "OPENAI_API_KEY not set. Export it or pass via environment."
-            })?,
-            Provider::Anthropic => env::var("ANTHROPIC_API_KEY").map_err(|_| {
-                "ANTHROPIC_API_KEY not set. Export it or pass via environment."
-            })?,
+            Provider::Openai => env::var("OPENAI_API_KEY")
+                .map_err(|_| "OPENAI_API_KEY not set. Export it or pass via environment.")?,
+            Provider::Anthropic => env::var("ANTHROPIC_API_KEY")
+                .map_err(|_| "ANTHROPIC_API_KEY not set. Export it or pass via environment.")?,
         };
 
         Ok(TokenInterceptor {
@@ -98,8 +96,7 @@ impl TokenInterceptor {
         let effective_prompt = if self.orchestrator {
             eprintln!(
                 "{}",
-                "[orchestrator] routing through MCP pipeline at localhost:3000"
-                    .bright_magenta()
+                "[orchestrator] routing through MCP pipeline at localhost:3000".bright_magenta()
             );
             match self.orchestrator_infer(prompt).await {
                 Ok(enriched) => enriched,
@@ -249,10 +246,7 @@ impl TokenInterceptor {
     // Orchestrator MCP infer call
     // -----------------------------------------------------------------------
 
-    async fn orchestrator_infer(
-        &self,
-        prompt: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    async fn orchestrator_infer(&self, prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
         let mcp_request = McpInferRequest {
             jsonrpc: "2.0".to_string(),
             method: "tools/call".to_string(),
@@ -275,11 +269,7 @@ impl TokenInterceptor {
             .await?;
 
         if !response.status().is_success() {
-            return Err(format!(
-                "Orchestrator returned HTTP {}",
-                response.status()
-            )
-            .into());
+            return Err(format!("Orchestrator returned HTTP {}", response.status()).into());
         }
 
         let mcp_resp: McpInferResponse = response.json().await?;
@@ -348,10 +338,7 @@ impl TokenInterceptor {
     }
 
     pub fn print_header(&self, prompt: &str) {
-        println!(
-            "{}",
-            "EVERY OTHER TOKEN INTERCEPTOR".bright_cyan().bold()
-        );
+        println!("{}", "EVERY OTHER TOKEN INTERCEPTOR".bright_cyan().bold());
         println!(
             "{}: {}",
             "Provider".bright_yellow(),
@@ -396,14 +383,8 @@ impl TokenInterceptor {
 
     pub fn print_footer(&self) {
         println!("\n{}", "=".repeat(50).bright_blue());
-        println!(
-            "Complete! Processed {} tokens.",
-            self.token_count
-        );
-        println!(
-            "Transform applied to {} tokens.",
-            self.transformed_count
-        );
+        println!("Complete! Processed {} tokens.", self.token_count);
+        println!("Transform applied to {} tokens.", self.transformed_count);
     }
 }
 
@@ -435,8 +416,12 @@ mod tests {
     fn test_new_openai_requires_api_key() {
         std::env::remove_var("OPENAI_API_KEY");
         let result = TokenInterceptor::new(
-            Provider::Openai, Transform::Reverse, "gpt-4".to_string(),
-            false, false, false,
+            Provider::Openai,
+            Transform::Reverse,
+            "gpt-4".to_string(),
+            false,
+            false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -445,8 +430,12 @@ mod tests {
     fn test_new_anthropic_requires_api_key() {
         std::env::remove_var("ANTHROPIC_API_KEY");
         let result = TokenInterceptor::new(
-            Provider::Anthropic, Transform::Reverse, "claude".to_string(),
-            false, false, false,
+            Provider::Anthropic,
+            Transform::Reverse,
+            "claude".to_string(),
+            false,
+            false,
+            false,
         );
         assert!(result.is_err());
     }
