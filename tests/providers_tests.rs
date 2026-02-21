@@ -213,6 +213,7 @@ fn test_token_event_serializes_all_fields() {
         index: 1,
         transformed: true,
         importance: 0.75,
+        chaos_label: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -231,6 +232,7 @@ fn test_token_event_roundtrip() {
         index: 5,
         transformed: false,
         importance: 0.87,
+        chaos_label: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -249,6 +251,7 @@ fn test_token_event_zero_importance() {
         index: 0,
         transformed: false,
         importance: 0.0,
+        chaos_label: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":0.0"));
@@ -262,6 +265,7 @@ fn test_token_event_max_importance() {
         index: 0,
         transformed: false,
         importance: 1.0,
+        chaos_label: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":1.0"));
@@ -275,6 +279,7 @@ fn test_token_event_clone() {
         index: 0,
         transformed: false,
         importance: 0.5,
+        chaos_label: None,
     };
     let cloned = event.clone();
     assert_eq!(cloned.text, event.text);
@@ -292,6 +297,7 @@ fn test_multiple_token_events_serialize_as_array() {
             index: 0,
             transformed: false,
             importance: 0.5,
+            chaos_label: None,
         },
         every_other_token::TokenEvent {
             text: "dlrow".to_string(),
@@ -299,6 +305,7 @@ fn test_multiple_token_events_serialize_as_array() {
             index: 1,
             transformed: true,
             importance: 0.7,
+            chaos_label: None,
         },
     ];
     let json = serde_json::to_string(&events).expect("serialize");

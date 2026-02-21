@@ -26,6 +26,9 @@ pub struct TokenEvent {
     pub index: usize,
     pub transformed: bool,
     pub importance: f64,
+    /// For Chaos transform: which sub-transform was applied. None for other transforms.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chaos_label: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -301,11 +304,17 @@ impl TokenInterceptor {
                 let is_odd = self.token_count % 2 != 0;
                 let importance = calculate_token_importance(&token, self.token_count);
 
-                let display_text = if is_odd {
+                let (display_text, chaos_label) = if is_odd {
                     self.transformed_count += 1;
-                    self.transform.apply(&token)
+                    let (text, label) = self.transform.apply_with_label(&token);
+                    let cl = if matches!(self.transform, Transform::Chaos) {
+                        Some(label.to_string())
+                    } else {
+                        None
+                    };
+                    (text, cl)
                 } else {
-                    token.clone()
+                    (token.clone(), None)
                 };
 
                 // Web mode: send event through channel
@@ -316,6 +325,7 @@ impl TokenInterceptor {
                         index: self.token_count,
                         transformed: is_odd,
                         importance,
+                        chaos_label,
                     };
                     let _ = tx.send(event);
                 } else {
@@ -892,5 +902,92 @@ mod tests {
         interceptor.heatmap_mode = true;
         interceptor.process_content("hello world");
         assert_eq!(interceptor.token_count, 2);
+    }
+
+    // -- chaos_label field tests --
+
+    #[test]
+    fn test_chaos_label_set_for_chaos_transform() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.transform = Transform::Chaos;
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        // "world" is the odd token — should have chaos_label
+        let known = ["reverse", "uppercase", "mock", "noise"];
+        let odd = events.iter().find(|e| e.transformed).expect("should have odd token");
+        let label = odd.chaos_label.as_ref().expect("chaos_label should be Some for Chaos transform");
+        assert!(known.contains(&label.as_str()), "unexpected label: {}", label);
+    }
+
+    #[test]
+    fn test_chaos_label_none_for_reverse_transform() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.transform = Transform::Reverse;
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        for event in &events {
+            assert!(event.chaos_label.is_none(), "Reverse should not set chaos_label");
+        }
+    }
+
+    #[test]
+    fn test_chaos_label_none_for_even_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.transform = Transform::Chaos;
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world foo bar");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        for event in events.iter().filter(|e| !e.transformed) {
+            assert!(event.chaos_label.is_none(), "Even tokens should not have chaos_label");
+        }
+    }
+
+    #[test]
+    fn test_chaos_label_serialization() {
+        let event = TokenEvent {
+            text: "dlrow".to_string(),
+            original: "world".to_string(),
+            index: 1,
+            transformed: true,
+            importance: 0.5,
+            chaos_label: Some("reverse".to_string()),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("chaos_label"));
+        assert!(json.contains("reverse"));
+    }
+
+    #[test]
+    fn test_chaos_label_skipped_when_none() {
+        let event = TokenEvent {
+            text: "hello".to_string(),
+            original: "hello".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.3,
+            chaos_label: None,
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(!json.contains("chaos_label"), "None chaos_label should be skipped in JSON");
     }
 }
