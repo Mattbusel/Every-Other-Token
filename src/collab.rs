@@ -854,7 +854,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         // Create a receiver before broadcasting
-        let rx = {
+        let mut rx = {
             let guard = store.lock().unwrap();
             guard.get(&code).unwrap().broadcast_tx.subscribe()
         };
