@@ -186,7 +186,11 @@ mod tests {
         let json = r#"{"jsonrpc":"2.0","result":{"content":[{"text":"enriched prompt"}]}}"#;
         let resp: McpInferResponse = serde_json::from_str(json).expect("deser failed");
         assert!(resp.error.is_none());
-        let text = resp.result.as_ref().and_then(|r| r.content.first()).and_then(|c| c.text.as_ref());
+        let text = resp
+            .result
+            .as_ref()
+            .and_then(|r| r.content.first())
+            .and_then(|c| c.text.as_ref());
         assert_eq!(text, Some(&"enriched prompt".to_string()));
     }
 
@@ -195,7 +199,10 @@ mod tests {
         let json = r#"{"jsonrpc":"2.0","error":{"message":"pipeline down"}}"#;
         let resp: McpInferResponse = serde_json::from_str(json).expect("deser failed");
         assert!(resp.result.is_none());
-        assert_eq!(resp.error.as_ref().map(|e| &e.message[..]), Some("pipeline down"));
+        assert_eq!(
+            resp.error.as_ref().map(|e| &e.message[..]),
+            Some("pipeline down")
+        );
     }
 
     #[test]
@@ -203,7 +210,14 @@ mod tests {
         let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
         let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser failed");
         assert_eq!(event.event_type, "content_block_delta");
-        assert_eq!(event.delta.as_ref().and_then(|d| d.text.as_ref()).map(|s| s.as_str()), Some("Hello"));
+        assert_eq!(
+            event
+                .delta
+                .as_ref()
+                .and_then(|d| d.text.as_ref())
+                .map(|s| s.as_str()),
+            Some("Hello")
+        );
     }
 
     #[test]
@@ -219,12 +233,16 @@ mod tests {
         let json = r#"{"id":"chatcmpl-abc","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#;
         let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser failed");
         assert_eq!(chunk.choices.len(), 1);
-        assert_eq!(chunk.choices[0].delta.content.as_ref().map(|s| s.as_str()), Some("Hi"));
+        assert_eq!(
+            chunk.choices[0].delta.content.as_ref().map(|s| s.as_str()),
+            Some("Hi")
+        );
     }
 
     #[test]
     fn test_openai_chunk_empty_delta() {
-        let json = r#"{"id":"chatcmpl-abc","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+        let json =
+            r#"{"id":"chatcmpl-abc","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
         let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser failed");
         assert!(chunk.choices[0].delta.content.is_none());
     }
@@ -232,10 +250,15 @@ mod tests {
     #[test]
     fn test_mcp_infer_request_contains_all_fields() {
         let req = McpInferRequest {
-            jsonrpc: "2.0".to_string(), method: "tools/call".to_string(), id: 42,
+            jsonrpc: "2.0".to_string(),
+            method: "tools/call".to_string(),
+            id: 42,
             params: McpInferParams {
                 name: "infer".to_string(),
-                arguments: McpInferArguments { prompt: "test prompt".to_string(), worker: "llama_cpp".to_string() },
+                arguments: McpInferArguments {
+                    prompt: "test prompt".to_string(),
+                    worker: "llama_cpp".to_string(),
+                },
             },
         };
         let json = serde_json::to_string(&req).expect("serialize");
@@ -257,7 +280,9 @@ mod tests {
     fn test_mcp_response_null_text() {
         let json = r#"{"jsonrpc":"2.0","result":{"content":[{"text":null}]}}"#;
         let resp: McpInferResponse = serde_json::from_str(json).expect("deser");
-        assert!(resp.result.as_ref().expect("result").content[0].text.is_none());
+        assert!(resp.result.as_ref().expect("result").content[0]
+            .text
+            .is_none());
     }
 
     #[test]

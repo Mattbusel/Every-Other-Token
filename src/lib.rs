@@ -175,7 +175,7 @@ impl TokenInterceptor {
                 buffer.drain(..=line_end);
 
                 if line.starts_with("data: ") && line != "data: [DONE]" {
-                    let json_str = &line[6..];
+                    let json_str = line.strip_prefix("data: ").unwrap_or(&line);
                     if let Ok(parsed) = serde_json::from_str::<OpenAIChunk>(json_str) {
                         if let Some(choice) = parsed.choices.first() {
                             if let Some(content) = &choice.delta.content {
@@ -234,7 +234,7 @@ impl TokenInterceptor {
                 buffer.drain(..=line_end);
 
                 if line.starts_with("data: ") {
-                    let json_str = &line[6..];
+                    let json_str = line.strip_prefix("data: ").unwrap_or(&line);
                     if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(json_str) {
                         if event.event_type == "content_block_delta" {
                             if let Some(delta) = &event.delta {
@@ -307,7 +307,7 @@ impl TokenInterceptor {
 
         for token in tokens {
             if !token.trim().is_empty() {
-                let is_odd = self.token_count % 2 != 0;
+                let is_odd = !self.token_count.is_multiple_of(2);
                 let importance = calculate_token_importance(&token, self.token_count);
 
                 let (display_text, chaos_label) = if is_odd {
@@ -929,9 +929,19 @@ mod tests {
         }
         // "world" is the odd token — should have chaos_label
         let known = ["reverse", "uppercase", "mock", "noise"];
-        let odd = events.iter().find(|e| e.transformed).expect("should have odd token");
-        let label = odd.chaos_label.as_ref().expect("chaos_label should be Some for Chaos transform");
-        assert!(known.contains(&label.as_str()), "unexpected label: {}", label);
+        let odd = events
+            .iter()
+            .find(|e| e.transformed)
+            .expect("should have odd token");
+        let label = odd
+            .chaos_label
+            .as_ref()
+            .expect("chaos_label should be Some for Chaos transform");
+        assert!(
+            known.contains(&label.as_str()),
+            "unexpected label: {}",
+            label
+        );
     }
 
     #[test]
@@ -948,7 +958,10 @@ mod tests {
             events.push(e);
         }
         for event in &events {
-            assert!(event.chaos_label.is_none(), "Reverse should not set chaos_label");
+            assert!(
+                event.chaos_label.is_none(),
+                "Reverse should not set chaos_label"
+            );
         }
     }
 
@@ -966,7 +979,10 @@ mod tests {
             events.push(e);
         }
         for event in events.iter().filter(|e| !e.transformed) {
-            assert!(event.chaos_label.is_none(), "Even tokens should not have chaos_label");
+            assert!(
+                event.chaos_label.is_none(),
+                "Even tokens should not have chaos_label"
+            );
         }
     }
 
@@ -998,7 +1014,10 @@ mod tests {
             provider: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
-        assert!(!json.contains("chaos_label"), "None chaos_label should be skipped in JSON");
+        assert!(
+            !json.contains("chaos_label"),
+            "None chaos_label should be skipped in JSON"
+        );
     }
 
     // -- provider field tests --
@@ -1043,7 +1062,10 @@ mod tests {
             provider: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
-        assert!(!json.contains("\"provider\""), "None provider should be skipped in JSON");
+        assert!(
+            !json.contains("\"provider\""),
+            "None provider should be skipped in JSON"
+        );
     }
 
     #[test]

@@ -119,7 +119,7 @@ pub fn calculate_token_importance(token: &str, position: usize) -> f64 {
 
     importance += (token.len() as f64 / 20.0).min(0.3);
 
-    let position_factor = if position < 5 || position > 50 {
+    let position_factor = if !(5..=50).contains(&position) {
         0.3
     } else {
         0.1
