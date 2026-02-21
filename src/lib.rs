@@ -2,6 +2,7 @@ pub mod cli;
 pub mod providers;
 pub mod transforms;
 pub mod web;
+pub mod research;
 
 use colored::*;
 use reqwest::Client;
@@ -23,14 +24,6 @@ use transforms::{apply_heatmap_color, calculate_token_importance, tokenize, Tran
 pub struct TokenAlternative {
     pub token: String,
     pub probability: f32,
-}
-
-
-/// A single alternative token with its probability (from logprobs).
-#[derive(Debug, Clone, Serialize)]
-pub struct TokenAlt {
-    pub token: String,
-    pub probability: f64,
 }
 
 // ---------------------------------------------------------------------------

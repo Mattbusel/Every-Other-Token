@@ -46,16 +46,20 @@ pub struct Args {
     pub research: bool,
 
     /// Number of runs in research mode
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "10")]
     pub runs: u32,
 
     /// Output file path for research JSON (defaults to stdout)
-    #[arg(long)]
-    pub output: Option<String>,
+    #[arg(long, default_value = "research_output.json")]
+    pub output: String,
 
-    /// System prompt (for A/B experiments and research)
+    /// System prompt A for A/B experiment mode
     #[arg(long)]
-    pub system_prompt: Option<String>,
+    pub system_a: Option<String>,
+
+    /// System prompt B for A/B experiment mode
+    #[arg(long)]
+    pub system_b: Option<String>,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -187,7 +191,7 @@ mod tests {
     #[test]
     fn test_args_runs_default_one() {
         let args = Args::parse_from(["eot", "prompt"]);
-        assert_eq!(args.runs, 1);
+        assert_eq!(args.runs, 10);
     }
 
     #[test]
@@ -199,25 +203,25 @@ mod tests {
     #[test]
     fn test_args_output_default_none() {
         let args = Args::parse_from(["eot", "prompt"]);
-        assert!(args.output.is_none());
+        assert_eq!(args.output, "research_output.json");
     }
 
     #[test]
     fn test_args_output_custom() {
         let args = Args::parse_from(["eot", "prompt", "--output", "results.json"]);
-        assert_eq!(args.output.as_deref(), Some("results.json"));
+        assert_eq!(args.output, "results.json");
     }
 
     #[test]
     fn test_args_system_prompt_default_none() {
         let args = Args::parse_from(["eot", "prompt"]);
-        assert!(args.system_prompt.is_none());
+        assert!(args.system_a.is_none());
     }
 
     #[test]
     fn test_args_system_prompt_set() {
-        let args = Args::parse_from(["eot", "prompt", "--system-prompt", "Be concise."]);
-        assert_eq!(args.system_prompt.as_deref(), Some("Be concise."));
+        let args = Args::parse_from(["eot", "prompt", "--system-a", "Be concise."]);
+        assert_eq!(args.system_a.as_deref(), Some("Be concise."));
     }
 
     #[test]
@@ -233,7 +237,7 @@ mod tests {
         ]);
         assert!(args.research);
         assert_eq!(args.runs, 100);
-        assert_eq!(args.output.as_deref(), Some("out.json"));
+        assert_eq!(args.output, "out.json");
     }
 
     #[test]
@@ -241,5 +245,37 @@ mod tests {
         let args = Args::parse_from(["eot", "prompt", "--research"]);
         assert!(!args.web);
         assert!(args.research);
+    }
+
+    #[test]
+    fn test_args_parse_research_flag() {
+        let args = Args::parse_from(["eot", "prompt", "--research"]);
+        assert!(args.research);
+        assert_eq!(args.runs, 10);
+        assert_eq!(args.output, "research_output.json");
+    }
+
+    #[test]
+    fn test_args_parse_research_custom_runs() {
+        let args = Args::parse_from(["eot", "prompt", "--research", "--runs", "50"]);
+        assert_eq!(args.runs, 50);
+    }
+
+    #[test]
+    fn test_args_parse_research_custom_output() {
+        let args = Args::parse_from(["eot", "prompt", "--research", "--output", "out.json"]);
+        assert_eq!(args.output, "out.json");
+    }
+
+    #[test]
+    fn test_args_parse_system_a() {
+        let args = Args::parse_from(["eot", "prompt", "--system-a", "Be concise."]);
+        assert_eq!(args.system_a, Some("Be concise.".to_string()));
+    }
+
+    #[test]
+    fn test_args_parse_system_b() {
+        let args = Args::parse_from(["eot", "prompt", "--system-b", "Be verbose."]);
+        assert_eq!(args.system_b, Some("Be verbose.".to_string()));
     }
 }
