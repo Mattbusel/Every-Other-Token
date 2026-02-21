@@ -472,6 +472,31 @@ pub async fn handle_ws(
                                     let _ = ws_sink.send(WsMessage::Text(pong)).await;
                                 }
                             }
+                            // Host broadcasts a token event to all guests in the room.
+                            "token" => {
+                                if is_host {
+                                    // Re-broadcast the full token payload so guests render it.
+                                    broadcast(&store, &code, parsed.clone());
+                                    // Also record if active.
+                                    maybe_record(&store, &code, parsed);
+                                }
+                            }
+                            // Host sends this to record a token without broadcasting.
+                            "_record_token" => {
+                                if is_host {
+                                    maybe_record(&store, &code, parsed);
+                                }
+                            }
+                            // Host signals the stream has finished.
+                            "stream_done" => {
+                                if is_host {
+                                    broadcast(
+                                        &store,
+                                        &code,
+                                        serde_json::json!({"type": "stream_done"}),
+                                    );
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -1495,5 +1520,132 @@ mod tests {
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].payload["type"], "token");
         assert_eq!(events[3].payload["type"], "chat");
+    }
+
+    // -- token broadcast handler tests ---------------------------------------
+
+    #[test]
+    fn test_broadcast_token_reaches_subscriber() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        let (_, mut rx) = join_room(&store, &code, "watcher", false).unwrap();
+
+        // Simulate what handle_ws does for a "token" message from host
+        broadcast(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "text": "hello", "index": 0}),
+        );
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg["type"], "token");
+        assert_eq!(msg["text"], "hello");
+    }
+
+    #[test]
+    fn test_broadcast_token_also_records_when_active() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        start_recording(&store, &code);
+
+        let token_payload = serde_json::json!({"type": "token", "text": "hi", "index": 0});
+        maybe_record(&store, &code, token_payload);
+
+        let events = stop_recording(&store, &code);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].payload["type"], "token");
+        assert_eq!(events[0].payload["text"], "hi");
+    }
+
+    #[test]
+    fn test_record_token_not_recorded_when_not_active() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // NOT started recording
+
+        maybe_record(&store, &code, serde_json::json!({"type": "token"}));
+
+        // Recording was never started so events list should be empty after stop
+        let events = stop_recording(&store, &code);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_stream_done_broadcast_reaches_subscriber() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        let (_, mut rx) = join_room(&store, &code, "viewer", false).unwrap();
+
+        broadcast(&store, &code, serde_json::json!({"type": "stream_done"}));
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg["type"], "stream_done");
+    }
+
+    #[test]
+    fn test_token_broadcast_increments_room_count_independently() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // No auto-increment on broadcast; but participant count should stay correct
+        let (_, _rx) = join_room(&store, &code, "p1", false).unwrap();
+        let (_, _rx2) = join_room(&store, &code, "p2", false).unwrap();
+
+        broadcast(&store, &code, serde_json::json!({"type": "token", "index": 0}));
+
+        let snap = room_state_snapshot(&store, &code);
+        assert_eq!(snap["participants"].as_array().unwrap().len(), 2);
+    }
+
+    // -- stream_done JS handler test (via INDEX_HTML from web module) ---------
+    // (These live in web.rs test block; here we verify server-side logic only)
+
+    #[test]
+    fn test_maybe_record_chat_and_token_interleaved() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        start_recording(&store, &code);
+
+        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 0}));
+        maybe_record(&store, &code, serde_json::json!({"type": "chat", "text": "nice"}));
+        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 1}));
+
+        let events = stop_recording(&store, &code);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[1].payload["type"], "chat");
+    }
+
+    #[test]
+    fn test_recording_offset_ms_is_non_decreasing() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        start_recording(&store, &code);
+
+        for i in 0..5 {
+            maybe_record(&store, &code, serde_json::json!({"i": i}));
+        }
+
+        let events = stop_recording(&store, &code);
+        assert_eq!(events.len(), 5);
+        for w in events.windows(2) {
+            assert!(w[1].offset_ms >= w[0].offset_ms);
+        }
+    }
+
+    #[test]
+    fn test_multiple_rooms_record_independently() {
+        let store = new_room_store();
+        let code_a = create_room(&store);
+        let code_b = create_room(&store);
+
+        start_recording(&store, &code_a);
+        maybe_record(&store, &code_a, serde_json::json!({"room": "a"}));
+        // code_b is NOT recording
+        maybe_record(&store, &code_b, serde_json::json!({"room": "b"}));
+
+        let a_events = stop_recording(&store, &code_a);
+        let b_events = stop_recording(&store, &code_b);
+
+        assert_eq!(a_events.len(), 1);
+        assert!(b_events.is_empty());
     }
 }

@@ -803,6 +803,11 @@ function onWsMsg(m){
       doReplayEvent(m.event,m.offset_ms); break;
     case 'replay_done':
       $('#replay-prog').classList.remove('show'); break;
+    case 'stream_done':
+      /* Host's stream finished — re-enable stream button for guests */
+      $('#start').disabled=false;$('#start').textContent='Stream';
+      if(!amHost){enableSurgery($('#v-single'));renderResearch();}
+      break;
     case 'error':
       alert('Room: '+m.message); break;
   }
@@ -2153,5 +2158,177 @@ mod tests {
     #[test]
     fn test_index_html_has_ws_route_pattern() {
         assert!(INDEX_HTML.contains("/ws/"));
+    }
+
+    // -- Multiplayer completeness tests --------------------------------------
+
+    #[test]
+    fn test_index_html_has_stream_done_handler() {
+        assert!(INDEX_HTML.contains("stream_done"));
+    }
+
+    #[test]
+    fn test_index_html_stream_done_enables_guests() {
+        // stream_done case must call enableSurgery for guests
+        let pos = INDEX_HTML.find("stream_done").expect("stream_done not found");
+        let after = &INDEX_HTML[pos..pos + 300];
+        assert!(after.contains("enableSurgery") || after.contains("amHost"));
+    }
+
+    #[test]
+    fn test_index_html_has_vote_buttons() {
+        assert!(INDEX_HTML.contains("btn-vote-up"));
+        assert!(INDEX_HTML.contains("btn-vote-dn"));
+    }
+
+    #[test]
+    fn test_index_html_has_vote_update_handler() {
+        assert!(INDEX_HTML.contains("vote_update"));
+    }
+
+    #[test]
+    fn test_index_html_has_record_started_handler() {
+        assert!(INDEX_HTML.contains("record_started"));
+    }
+
+    #[test]
+    fn test_index_html_has_record_stopped_handler() {
+        assert!(INDEX_HTML.contains("record_stopped"));
+    }
+
+    #[test]
+    fn test_index_html_has_join_session_input() {
+        assert!(INDEX_HTML.contains("join-code") || INDEX_HTML.contains("btn-join"));
+    }
+
+    #[test]
+    fn test_index_html_multiplayer_token_broadcast_via_ws() {
+        // Host sends token events over WS for guests to render
+        assert!(INDEX_HTML.contains("sendWs({type:'token'"));
+    }
+
+    #[test]
+    fn test_index_html_stream_done_sent_via_ws() {
+        // stream_done must appear in the HTML and must be co-located with [DONE] SSE handling
+        assert!(INDEX_HTML.contains("stream_done"));
+        // They must be within 200 chars of each other somewhere in the file
+        let text = INDEX_HTML.as_bytes();
+        let found = text.windows(200).any(|w| {
+            let s = std::str::from_utf8(w).unwrap_or("");
+            s.contains("[DONE]") && s.contains("stream_done")
+        });
+        assert!(found, "stream_done should be sent near [DONE] SSE handler");
+    }
+
+    #[test]
+    fn test_index_html_mutation_observer_broadcasts_surgery() {
+        assert!(INDEX_HTML.contains("MutationObserver"));
+        assert!(INDEX_HTML.contains("surgery"));
+    }
+
+    #[test]
+    fn test_index_html_has_peer_edited_css() {
+        assert!(INDEX_HTML.contains("peer-edited"));
+    }
+
+    #[test]
+    fn test_collab_module_generate_code_length() {
+        let code = crate::collab::generate_code();
+        assert_eq!(code.len(), 6);
+    }
+
+    #[test]
+    fn test_collab_module_generate_code_alphanumeric() {
+        for _ in 0..20 {
+            let code = crate::collab::generate_code();
+            assert!(code.chars().all(|c| c.is_ascii_alphanumeric()));
+        }
+    }
+
+    #[test]
+    fn test_collab_module_generate_code_uppercase() {
+        for _ in 0..10 {
+            let code = crate::collab::generate_code();
+            assert!(code.chars().all(|c| !c.is_ascii_lowercase()));
+        }
+    }
+
+    #[test]
+    fn test_collab_module_create_room_returns_code() {
+        let store = crate::collab::new_room_store();
+        let code = crate::collab::create_room(&store);
+        assert_eq!(code.len(), 6);
+        let guard = store.lock().unwrap();
+        assert!(guard.contains_key(&code));
+    }
+
+    #[test]
+    fn test_collab_module_join_nonexistent_room_errors() {
+        let store = crate::collab::new_room_store();
+        let result = crate::collab::join_room(&store, "ZZZZZZ", "Bob", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_collab_module_participant_colors_nonempty() {
+        assert!(!crate::collab::PARTICIPANT_COLORS.is_empty());
+        for color in crate::collab::PARTICIPANT_COLORS {
+            assert!(color.starts_with('#'));
+        }
+    }
+
+    #[test]
+    fn test_collab_module_broadcast_reaches_subscriber() {
+        let store = crate::collab::new_room_store();
+        let code = crate::collab::create_room(&store);
+        let (_, mut rx) = crate::collab::join_room(&store, &code, "viewer", false).unwrap();
+        crate::collab::broadcast(&store, &code, serde_json::json!({"type": "ping"}));
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn test_collab_module_room_state_snapshot_has_expected_fields() {
+        let store = crate::collab::new_room_store();
+        let code = crate::collab::create_room(&store);
+        let snap = crate::collab::room_state_snapshot(&store, &code);
+        assert!(snap["code"].is_string());
+        assert!(snap["participants"].is_array());
+        assert!(snap["surgery_log"].is_array());
+        assert!(snap["chat_log"].is_array());
+        assert!(snap["is_recording"].is_boolean());
+    }
+
+    #[test]
+    fn test_collab_module_vote_increments_correctly() {
+        let store = crate::collab::new_room_store();
+        let code = crate::collab::create_room(&store);
+        let (up, down) = crate::collab::vote(&store, &code, "reverse", "up").unwrap();
+        assert_eq!(up, 1);
+        assert_eq!(down, 0);
+        let (up2, _) = crate::collab::vote(&store, &code, "reverse", "up").unwrap();
+        assert_eq!(up2, 2);
+    }
+
+    #[test]
+    fn test_collab_module_vote_down() {
+        let store = crate::collab::new_room_store();
+        let code = crate::collab::create_room(&store);
+        let (up, down) = crate::collab::vote(&store, &code, "reverse", "down").unwrap();
+        assert_eq!(up, 0);
+        assert_eq!(down, 1);
+    }
+
+    #[test]
+    fn test_room_replay_route_pattern() {
+        // /replay/ route serves recorded events
+        assert!(INDEX_HTML.contains("/replay/") || INDEX_HTML.contains("replay_request"));
+    }
+
+    #[test]
+    fn test_index_html_host_session_broadcasts_tokens() {
+        // The start-click hook should send WS token messages when hosting
+        let hook_pos = INDEX_HTML.find("_baseStartClick").expect("base start click hook not found");
+        let after = &INDEX_HTML[hook_pos..hook_pos + 500];
+        assert!(after.contains("amHost") || after.contains("roomCode"));
     }
 }
