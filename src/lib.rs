@@ -5,7 +5,7 @@ pub mod web;
 
 use colored::*;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, Write};
 use tokio::sync::mpsc;
@@ -15,11 +15,30 @@ use providers::*;
 use transforms::{apply_heatmap_color, calculate_token_importance, tokenize, Transform};
 
 // ---------------------------------------------------------------------------
+// Token probability types
+// ---------------------------------------------------------------------------
+
+/// One alternative token and its probability (for top-K logprob display).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenAlternative {
+    pub token: String,
+    pub probability: f32,
+}
+
+
+/// A single alternative token with its probability (from logprobs).
+#[derive(Debug, Clone, Serialize)]
+pub struct TokenAlt {
+    pub token: String,
+    pub probability: f64,
+}
+
+// ---------------------------------------------------------------------------
 // Token event (for web UI streaming)
 // ---------------------------------------------------------------------------
 
 /// A single processed token, sent as an SSE event to the web UI.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenEvent {
     pub text: String,
     pub original: String,
@@ -32,6 +51,15 @@ pub struct TokenEvent {
     /// For diff mode: which provider produced this token ("openai" or "anthropic").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
+    /// Model confidence 0.0–1.0, derived from API logprob. None when unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    /// Per-token perplexity (exp(-log_prob)). None when logprobs unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub perplexity: Option<f32>,
+    /// Top alternative tokens with their probabilities (from top_logprobs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<TokenAlternative>,
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +82,8 @@ pub struct TokenInterceptor {
     pub web_tx: Option<mpsc::UnboundedSender<TokenEvent>>,
     /// When set, each emitted TokenEvent carries this provider label (for diff mode).
     pub web_provider_label: Option<String>,
+    /// Optional system prompt prepended to the conversation.
+    pub system_prompt: Option<String>,
 }
 
 impl TokenInterceptor {
@@ -86,6 +116,7 @@ impl TokenInterceptor {
             orchestrator_url: "http://localhost:3000".to_string(),
             web_tx: None,
             web_provider_label: None,
+            system_prompt: None,
         })
     }
 
@@ -138,14 +169,18 @@ impl TokenInterceptor {
     // -----------------------------------------------------------------------
 
     async fn stream_openai(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut messages = Vec::new();
+        if let Some(sys) = &self.system_prompt {
+            messages.push(OpenAIChatMessage { role: "system".to_string(), content: sys.clone() });
+        }
+        messages.push(OpenAIChatMessage { role: "user".to_string(), content: prompt.to_string() });
         let request = OpenAIChatRequest {
             model: self.model.clone(),
-            messages: vec![OpenAIChatMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            }],
+            messages,
             stream: true,
             temperature: 0.7,
+            logprobs: true,
+            top_logprobs: 5,
         };
 
         let response = self
@@ -179,7 +214,24 @@ impl TokenInterceptor {
                     if let Ok(parsed) = serde_json::from_str::<OpenAIChunk>(json_str) {
                         if let Some(choice) = parsed.choices.first() {
                             if let Some(content) = &choice.delta.content {
-                                self.process_content(content);
+                                // Extract logprob data from the first API token in this chunk
+                                let (log_prob, top_alts) = choice
+                                    .logprobs
+                                    .as_ref()
+                                    .and_then(|lp| lp.content.first())
+                                    .map(|lc| {
+                                        let alts = lc
+                                            .top_logprobs
+                                            .iter()
+                                            .map(|t| TokenAlternative {
+                                                token: t.token.clone(),
+                                                probability: t.logprob.exp(),
+                                            })
+                                            .collect::<Vec<_>>();
+                                        (Some(lc.logprob), alts)
+                                    })
+                                    .unwrap_or((None, vec![]));
+                                self.process_content_logprob(content, log_prob, top_alts);
                             }
                         }
                     }
@@ -204,6 +256,7 @@ impl TokenInterceptor {
             max_tokens: 4096,
             stream: true,
             temperature: 0.7,
+            system: self.system_prompt.clone(),
         };
 
         let response = self
@@ -239,7 +292,8 @@ impl TokenInterceptor {
                         if event.event_type == "content_block_delta" {
                             if let Some(delta) = &event.delta {
                                 if let Some(text) = &delta.text {
-                                    self.process_content(text);
+                                    // Anthropic streaming does not expose logprobs
+                                    self.process_content_logprob(text, None, vec![]);
                                 }
                             }
                         }
@@ -302,8 +356,47 @@ impl TokenInterceptor {
     // Token processing (shared by both providers)
     // -----------------------------------------------------------------------
 
+    /// Process a content chunk without logprob data.
     pub fn process_content(&mut self, content: &str) {
+        self.process_content_logprob(content, None, vec![]);
+    }
+    /// Process a content chunk with optional logprob data (research mode API).
+    pub fn process_content_with_logprob(
+        &mut self,
+        content: &str,
+        lp: Option<providers::OpenAILogprobContent>,
+    ) {
+        let (log_prob, top_alts) = if let Some(ref entry) = lp {
+            let alts: Vec<TokenAlternative> = entry
+                .top_logprobs
+                .iter()
+                .map(|t| TokenAlternative {
+                    token: t.token.clone(),
+                    probability: t.logprob.exp(),
+                })
+                .collect();
+            (Some(entry.logprob.exp()), alts)
+        } else {
+            (None, vec![])
+        };
+        self.process_content_logprob(content, log_prob, top_alts);
+    }
+
+
+    /// Process a content chunk, optionally attaching logprob-derived fields to
+    /// the first non-whitespace token produced.
+    ///
+    /// * `log_prob` — natural-log probability of the leading API token, if known.
+    /// * `top_alts` — alternative tokens from `top_logprobs`, already converted
+    ///   to probabilities (`exp(logprob)`).
+    pub fn process_content_logprob(
+        &mut self,
+        content: &str,
+        log_prob: Option<f32>,
+        top_alts: Vec<TokenAlternative>,
+    ) {
         let tokens = tokenize(content);
+        let mut first_real = true; // attach logprob data to first non-whitespace token
 
         for token in tokens {
             if !token.trim().is_empty() {
@@ -323,6 +416,16 @@ impl TokenInterceptor {
                     (token.clone(), None)
                 };
 
+                // Logprob data only goes on the first real token of each API chunk
+                let (token_confidence, token_perplexity, token_alts) = if first_real {
+                    first_real = false;
+                    let conf = log_prob.map(|lp| lp.exp().clamp(0.0, 1.0));
+                    let perp = log_prob.map(|lp| (-lp).exp());
+                    (conf, perp, top_alts.clone())
+                } else {
+                    (None, None, vec![])
+                };
+
                 // Web mode: send event through channel
                 if let Some(tx) = &self.web_tx {
                     let event = TokenEvent {
@@ -333,6 +436,9 @@ impl TokenInterceptor {
                         importance,
                         chaos_label,
                         provider: self.web_provider_label.clone(),
+                        confidence: token_confidence,
+                        perplexity: token_perplexity,
+                        alternatives: token_alts,
                     };
                     let _ = tx.send(event);
                 } else {
@@ -405,6 +511,127 @@ impl TokenInterceptor {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Headless research session
+// ---------------------------------------------------------------------------
+
+/// Aggregated statistics from one or more headless inference runs.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResearchSession {
+    pub prompt: String,
+    pub provider: String,
+    pub model: String,
+    pub transform: String,
+    pub runs: u32,
+    pub total_tokens: usize,
+    pub total_transformed: usize,
+    pub vocabulary_diversity: f64,
+    pub mean_token_length: f64,
+    pub mean_perplexity: Option<f64>,
+    pub mean_confidence: Option<f64>,
+    pub top_perplexity_tokens: Vec<String>,
+    pub estimated_cost_usd: f64,
+    pub citation: String,
+}
+
+/// Run `runs` headless inference calls, collect all `TokenEvent`s, and return
+/// an aggregated `ResearchSession`.  Call sites must provide a constructed
+/// interceptor (no web_tx set — events are returned via the mpsc channel).
+pub async fn run_research_headless(
+    prompt: &str,
+    provider: providers::Provider,
+    transform: transforms::Transform,
+    model: String,
+    runs: u32,
+) -> Result<ResearchSession, Box<dyn std::error::Error>> {
+    let mut all_tokens: Vec<TokenEvent> = Vec::new();
+
+    for _ in 0..runs {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = TokenInterceptor::new(
+            provider.clone(),
+            transform.clone(),
+            model.clone(),
+            false,
+            false,
+            false,
+        )?;
+        interceptor.web_tx = Some(tx);
+        interceptor.intercept_stream(prompt).await?;
+        // Drain channel
+        while let Ok(ev) = rx.try_recv() {
+            all_tokens.push(ev);
+        }
+    }
+
+    let total = all_tokens.len();
+    let total_transformed = all_tokens.iter().filter(|t| t.transformed).count();
+
+    let unique: std::collections::HashSet<String> =
+        all_tokens.iter().map(|t| t.original.to_lowercase()).collect();
+    let vocab_diversity = if total > 0 {
+        unique.len() as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    let mean_token_length = if total > 0 {
+        all_tokens.iter().map(|t| t.original.len() as f64).sum::<f64>() / total as f64
+    } else {
+        0.0
+    };
+
+    let perp_tokens: Vec<f64> = all_tokens.iter().filter_map(|t| t.perplexity.map(|p| p as f64)).collect();
+    let mean_perplexity = if perp_tokens.is_empty() {
+        None
+    } else {
+        Some(perp_tokens.iter().sum::<f64>() / perp_tokens.len() as f64)
+    };
+
+    let conf_tokens: Vec<f64> = all_tokens.iter().filter_map(|t| t.confidence.map(|c| c as f64)).collect();
+    let mean_confidence = if conf_tokens.is_empty() {
+        None
+    } else {
+        Some(conf_tokens.iter().sum::<f64>() / conf_tokens.len() as f64)
+    };
+
+    // Top 10 highest-perplexity original tokens
+    let mut by_perp: Vec<&TokenEvent> = all_tokens.iter().filter(|t| t.perplexity.is_some()).collect();
+    by_perp.sort_by(|a, b| {
+        b.perplexity.partial_cmp(&a.perplexity).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let top_perplexity_tokens: Vec<String> = by_perp
+        .iter()
+        .take(10)
+        .map(|t| t.original.clone())
+        .collect();
+
+    // Cost estimate: GPT-3.5 rate $0.002 / 1K tokens
+    let estimated_cost_usd = total as f64 / 1000.0 * 0.002;
+
+    let citation = format!(
+        "Every Other Token v4.0.0 | prompt=\"{}\" | provider={} | model={} | transform={:?} | runs={} | tokens={}",
+        prompt, provider, model, transform, runs, total
+    );
+
+    Ok(ResearchSession {
+        prompt: prompt.to_string(),
+        provider: provider.to_string(),
+        model,
+        transform: format!("{:?}", transform),
+        runs,
+        total_tokens: total,
+        total_transformed,
+        vocabulary_diversity: vocab_diversity,
+        mean_token_length,
+        mean_perplexity,
+        mean_confidence,
+        top_perplexity_tokens,
+        estimated_cost_usd,
+        citation,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +652,7 @@ mod tests {
             orchestrator_url: "http://localhost:3000".to_string(),
             web_tx: None,
             web_provider_label: None,
+            system_prompt: None,
         }
     }
 
@@ -996,6 +1224,9 @@ mod tests {
             importance: 0.5,
             chaos_label: Some("reverse".to_string()),
             provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("chaos_label"));
@@ -1012,6 +1243,9 @@ mod tests {
             importance: 0.3,
             chaos_label: None,
             provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(
@@ -1060,6 +1294,9 @@ mod tests {
             importance: 0.5,
             chaos_label: None,
             provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(
@@ -1078,6 +1315,9 @@ mod tests {
             importance: 0.5,
             chaos_label: None,
             provider: Some("anthropic".to_string()),
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("\"provider\""));
@@ -1104,5 +1344,166 @@ mod tests {
         assert_eq!(e1.provider.as_deref(), Some("openai"));
         assert_eq!(e2.provider.as_deref(), Some("anthropic"));
         assert_ne!(e1.provider, e2.provider);
+    }
+
+    // -- TokenAlternative tests --
+
+    #[test]
+    fn test_token_alternative_serializes() {
+        let alt = TokenAlternative { token: "hello".to_string(), probability: 0.75 };
+        let json = serde_json::to_string(&alt).expect("serialize");
+        assert!(json.contains("\"token\":\"hello\""));
+        assert!(json.contains("\"probability\":0.75") || json.contains("probability"));
+    }
+
+    #[test]
+    fn test_token_alternative_clone() {
+        let alt = TokenAlternative { token: "world".to_string(), probability: 0.5 };
+        let alt2 = alt.clone();
+        assert_eq!(alt2.token, alt.token);
+    }
+
+    // -- process_content_logprob tests --
+
+    #[test]
+    fn test_process_content_logprob_attaches_confidence() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        // logprob of 0.0 → probability = 1.0 (max confidence)
+        i.process_content_logprob("hello world", Some(0.0_f32), vec![]);
+        let ev = rx.try_recv().expect("event");
+        assert_eq!(ev.confidence, Some(1.0_f32));
+    }
+
+    #[test]
+    fn test_process_content_logprob_none_gives_none_confidence() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        i.process_content_logprob("hello", None, vec![]);
+        let ev = rx.try_recv().expect("event");
+        assert!(ev.confidence.is_none());
+        assert!(ev.perplexity.is_none());
+    }
+
+    #[test]
+    fn test_process_content_logprob_computes_perplexity() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        // logprob = -1.0 → perplexity = exp(1.0) ≈ 2.718
+        i.process_content_logprob("word", Some(-1.0_f32), vec![]);
+        let ev = rx.try_recv().expect("event");
+        let perp = ev.perplexity.expect("perplexity present");
+        assert!((perp - std::f32::consts::E).abs() < 0.01, "expected ~e, got {}", perp);
+    }
+
+    #[test]
+    fn test_process_content_logprob_attaches_alternatives_to_first_token() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        let alts = vec![
+            TokenAlternative { token: "hi".to_string(), probability: 0.9 },
+            TokenAlternative { token: "hey".to_string(), probability: 0.05 },
+        ];
+        i.process_content_logprob("hello world", Some(-0.1_f32), alts);
+        let first = rx.try_recv().expect("first token");
+        assert_eq!(first.alternatives.len(), 2);
+        // second token gets no alternatives
+        let second = rx.try_recv().expect("second token");
+        assert!(second.alternatives.is_empty());
+    }
+
+    #[test]
+    fn test_process_content_delegates_to_logprob() {
+        // process_content is a thin wrapper around process_content_logprob
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        i.process_content("hello");
+        let ev = rx.try_recv().expect("event");
+        assert!(ev.confidence.is_none());
+        assert!(ev.alternatives.is_empty());
+    }
+
+    #[test]
+    fn test_confidence_serialized_when_some() {
+        let event = TokenEvent {
+            text: "hi".to_string(),
+            original: "hi".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+            chaos_label: None,
+            provider: None,
+            confidence: Some(0.92),
+            perplexity: Some(1.08),
+            alternatives: vec![TokenAlternative { token: "hey".to_string(), probability: 0.05 }],
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("confidence"));
+        assert!(json.contains("perplexity"));
+        assert!(json.contains("alternatives"));
+        assert!(json.contains("hey"));
+    }
+
+    #[test]
+    fn test_confidence_omitted_when_none() {
+        let event = TokenEvent {
+            text: "hi".to_string(),
+            original: "hi".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+            chaos_label: None,
+            provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(!json.contains("confidence"));
+        assert!(!json.contains("perplexity"));
+        assert!(!json.contains("alternatives"));
+    }
+
+    #[test]
+    fn test_system_prompt_field_initializes_none() {
+        let i = make_test_interceptor();
+        assert!(i.system_prompt.is_none());
+    }
+
+    #[test]
+    fn test_system_prompt_can_be_set() {
+        let mut i = make_test_interceptor();
+        i.system_prompt = Some("Be concise.".to_string());
+        assert_eq!(i.system_prompt.as_deref(), Some("Be concise."));
+    }
+
+    #[test]
+    fn test_logprob_confidence_clamps_at_one() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        // logprob > 0 is theoretically invalid but clamp should protect us
+        i.process_content_logprob("token", Some(2.0_f32), vec![]);
+        let ev = rx.try_recv().expect("event");
+        let conf = ev.confidence.expect("confidence");
+        assert!(conf <= 1.0, "confidence should not exceed 1.0");
+    }
+
+    #[test]
+    fn test_process_content_logprob_multiple_tokens_only_first_gets_logprob() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i.web_tx = Some(tx);
+        i.process_content_logprob("the quick brown fox", Some(-0.5_f32), vec![]);
+        let mut events: Vec<TokenEvent> = Vec::new();
+        while let Ok(ev) = rx.try_recv() { events.push(ev); }
+        assert!(events.len() >= 2);
+        assert!(events[0].confidence.is_some(), "first token should have confidence");
+        assert!(events[1].confidence.is_none(), "subsequent tokens should not");
     }
 }

@@ -40,6 +40,22 @@ pub struct Args {
     /// Port for the web UI server
     #[arg(long, default_value = "8888")]
     pub port: u16,
+
+    /// Enable headless research mode — runs N times and outputs JSON stats
+    #[arg(long)]
+    pub research: bool,
+
+    /// Number of runs in research mode
+    #[arg(long, default_value = "1")]
+    pub runs: u32,
+
+    /// Output file path for research JSON (defaults to stdout)
+    #[arg(long)]
+    pub output: Option<String>,
+
+    /// System prompt (for A/B experiments and research)
+    #[arg(long)]
+    pub system_prompt: Option<String>,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -154,5 +170,76 @@ mod tests {
     fn test_args_custom_port() {
         let args = Args::parse_from(["eot", "prompt", "--port", "3000"]);
         assert_eq!(args.port, 3000);
+    }
+
+    #[test]
+    fn test_args_research_flag_default_false() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(!args.research);
+    }
+
+    #[test]
+    fn test_args_research_flag_set() {
+        let args = Args::parse_from(["eot", "prompt", "--research"]);
+        assert!(args.research);
+    }
+
+    #[test]
+    fn test_args_runs_default_one() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert_eq!(args.runs, 1);
+    }
+
+    #[test]
+    fn test_args_runs_custom() {
+        let args = Args::parse_from(["eot", "prompt", "--runs", "50"]);
+        assert_eq!(args.runs, 50);
+    }
+
+    #[test]
+    fn test_args_output_default_none() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(args.output.is_none());
+    }
+
+    #[test]
+    fn test_args_output_custom() {
+        let args = Args::parse_from(["eot", "prompt", "--output", "results.json"]);
+        assert_eq!(args.output.as_deref(), Some("results.json"));
+    }
+
+    #[test]
+    fn test_args_system_prompt_default_none() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(args.system_prompt.is_none());
+    }
+
+    #[test]
+    fn test_args_system_prompt_set() {
+        let args = Args::parse_from(["eot", "prompt", "--system-prompt", "Be concise."]);
+        assert_eq!(args.system_prompt.as_deref(), Some("Be concise."));
+    }
+
+    #[test]
+    fn test_args_research_with_runs_and_output() {
+        let args = Args::parse_from([
+            "eot",
+            "test prompt",
+            "--research",
+            "--runs",
+            "100",
+            "--output",
+            "out.json",
+        ]);
+        assert!(args.research);
+        assert_eq!(args.runs, 100);
+        assert_eq!(args.output.as_deref(), Some("out.json"));
+    }
+
+    #[test]
+    fn test_args_research_does_not_require_web() {
+        let args = Args::parse_from(["eot", "prompt", "--research"]);
+        assert!(!args.web);
+        assert!(args.research);
     }
 }

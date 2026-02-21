@@ -94,6 +94,36 @@ canvas#depgraph{width:100%;height:200px;display:block}
 .token.surgeable{cursor:pointer}
 .token.surgeable:hover{text-decoration:underline dotted #e3b341;background:rgba(227,179,65,.08)}
 .token-input{font-family:inherit;font-size:inherit;background:#1f2937;color:#e3b341;border:1px solid #e3b341;border-radius:3px;padding:0 2px;min-width:20px;outline:none}
+/* Confidence bars */
+.conf-bar{display:inline-block;width:100%;height:2px;border-radius:1px;margin-top:1px;vertical-align:bottom}
+.token-wrap{display:inline-flex;flex-direction:column;align-items:center;vertical-align:top}
+.conf-high{background:#3fb950}.conf-mid{background:#e3b341}.conf-low{background:#f85149}.conf-none{background:#30363d}
+/* High-perplexity pulse */
+@keyframes perpPulse{0%,100%{opacity:1}50%{opacity:.4}}
+.high-perp{animation:perpPulse 1.2s ease-in-out 3}
+/* Perplexity sparkline */
+#perp-spark-wrap{padding:4px 24px;background:#161b22;border-top:1px solid #21262d;display:none}
+#perp-spark-wrap.show{display:block}
+#perp-spark{width:100%;height:40px;display:block}
+/* A/B Experiment view */
+.view-experiment{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;height:100%;gap:0}
+.exp-panel{padding:12px 16px;line-height:1.8;font-size:.9rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #21262d}
+.exp-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;color:#58a6ff}
+.exp-label.b{color:#a371f7}
+.exp-perp-chart{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;overflow:hidden}
+.exp-diverge-map{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;overflow-y:auto;font-size:.8rem}
+.ab-system-prompts{display:none;gap:10px;padding:6px 24px;background:#161b22;border-bottom:1px solid #21262d;flex-wrap:wrap}
+.ab-system-prompts.show{display:flex}
+/* Research dashboard */
+#research-dash{display:none;padding:12px 24px;background:#0d1117;border-top:2px solid #21262d;font-size:.78rem}
+#research-dash.show{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.dash-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px 12px}
+.dash-card h3{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.dash-card .val{font-size:1.1rem;color:#c9d1d9;font-weight:bold}
+.dash-card .sub{font-size:.7rem;color:#484f58;margin-top:2px}
+#conf-hist{display:flex;align-items:flex-end;gap:1px;height:32px;margin-top:4px}
+.hist-bar{flex:1;background:#1f6feb;min-height:2px;border-radius:1px 1px 0 0}
+#citation{font-size:.68rem;color:#484f58;word-break:break-all;margin-top:4px;line-height:1.4}
 </style>
 </head>
 <body>
@@ -104,9 +134,15 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed">Split</button>
     <button class="btn btn-mode" id="btn-multi" title="All 4 transforms simultaneously">Quad</button>
     <button class="btn btn-mode" id="btn-diff" title="Live diff: OpenAI vs Anthropic simultaneously">Diff</button>
+    <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt">Experiment</button>
+    <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence">Research</button>
     <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
   </div>
 </header>
+<div id="ab-prompts" class="ab-system-prompts">
+  <div class="field"><label>System Prompt A</label><input type="text" id="sysprompt-a" value="You are a creative storyteller." style="min-width:280px"></div>
+  <div class="field"><label>System Prompt B</label><input type="text" id="sysprompt-b" value="You are a technical writer. Be precise and concise." style="min-width:280px"></div>
+</div>
 <div class="controls">
   <div class="field"><label>Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
   <div class="field"><label>Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select></div>
@@ -136,9 +172,37 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <div class="diff-col" id="diff-openai"><span class="diff-label">OpenAI</span></div>
     <div class="diff-col" id="diff-anthropic"><span class="diff-label">Anthropic</span></div>
   </div>
+  <!-- A/B Experiment: 4 panels -->
+  <div class="view-experiment" id="v-experiment" style="display:none">
+    <div class="exp-panel" id="exp-a"><span class="exp-label">System Prompt A</span></div>
+    <div class="exp-panel" id="exp-b"><span class="exp-label b">System Prompt B</span></div>
+    <div class="exp-perp-chart" id="exp-perp"><span style="font-size:.7rem;color:#8b949e">Perplexity comparison (A=blue, B=purple) — run streams to populate</span><br><canvas id="exp-perp-canvas" style="width:100%;height:120px;display:block;margin-top:4px"></canvas></div>
+    <div class="exp-diverge-map" id="exp-diverge"><span style="font-size:.7rem;color:#8b949e">Divergence map — run streams to populate</span></div>
+  </div>
+  <!-- Research dashboard -->
+  <div id="v-research" style="display:none;padding:16px 24px;overflow-y:auto;height:100%">
+    <h2 style="color:#58a6ff;font-size:1rem;margin-bottom:4px">Research Dashboard</h2>
+    <p style="font-size:.75rem;color:#8b949e;margin-bottom:12px">Stats computed from the most recent stream. Stream tokens first.</p>
+    <div id="research-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"></div>
+    <div style="margin-top:16px">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top 10 High-Perplexity Tokens</div>
+      <ol id="research-perp-list" style="list-style:none;font-size:.8rem;color:#c9d1d9"></ol>
+    </div>
+    <div style="margin-top:16px">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Confidence Distribution</div>
+      <div id="research-conf-hist" style="display:flex;gap:2px;align-items:flex-end;height:48px;margin-top:4px"></div>
+      <div style="display:flex;justify-content:space-between;font-size:.6rem;color:#484f58;margin-top:2px"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+    </div>
+    <div style="margin-top:16px">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Citation</div>
+      <code id="research-citation" style="font-size:.7rem;color:#e3b341;white-space:pre-wrap;display:block;background:#161b22;padding:8px;border-radius:4px;border:1px solid #21262d"></code>
+    </div>
+  </div>
 </div>
 <div id="graph-wrap"><canvas id="depgraph"></canvas></div>
+<div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none"><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
 <div id="stats"></div>
+<div id="research-dash"></div>
 <script>
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
@@ -154,24 +218,25 @@ const TX={
 
 /* ---- State ---- */
 let es=null, mode='single', allTokens=[], graphNodes=[], surgeryLog=[];
-const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff')};
+let perpWindow=[], expATokens=[], expBTokens=[];
+const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff'),experiment:$('#v-experiment'),research:$('#v-research')};
 
 /* ---- View mode switching ---- */
 function setMode(m){
   mode=m;
-  Object.values(views).forEach(v=>v.style.display='none');
-  if(m==='diff'){$('#v-diff').style.display=''}
-  else{views[m].style.display=''}
+  Object.values(views).forEach(v=>{if(v)v.style.display='none'});
+  if(m==='experiment'){$('#v-experiment').style.display='';$('#ab-prompts').classList.add('show')}
+  else{if(views[m])views[m].style.display='';$('#ab-prompts').classList.remove('show')}
   $$('.btn-mode').forEach(b=>b.classList.remove('active'));
-  if(m==='single')$('#btn-single').classList.add('active');
-  if(m==='sbs')$('#btn-sbs').classList.add('active');
-  if(m==='multi')$('#btn-multi').classList.add('active');
-  if(m==='diff')$('#btn-diff').classList.add('active');
+  $('#btn-'+m)&&$('#btn-'+m).classList.add('active');
+  if(m==='research')renderResearch();
 }
 $('#btn-single').onclick=()=>setMode('single');
 $('#btn-sbs').onclick=()=>setMode('sbs');
 $('#btn-multi').onclick=()=>setMode('multi');
 $('#btn-diff').onclick=()=>{setMode('diff');if(!es)startDiff()};
+$('#btn-experiment').onclick=()=>setMode('experiment');
+$('#btn-research').onclick=()=>setMode('research');
 
 /* ---- Graph toggle ---- */
 $('#graphtoggle').onchange=function(){
@@ -180,7 +245,7 @@ $('#graphtoggle').onchange=function(){
 };
 
 /* ---- Helpers ---- */
-function mkSpan(text,isOdd,importance,extraCls,chaosLabel){
+function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity){
   const s=document.createElement('span');
   s.className='token '+(isOdd?'odd':'even');
   if(extraCls)s.classList.add(extraCls);
@@ -189,8 +254,140 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel){
     s.classList.add('heat-'+h);
   }
   if(chaosLabel&&isOdd)s.title='chaos → '+chaosLabel;
+  /* Confidence bar: colored underline */
+  if(confidence!=null){
+    const cls=confidence>=0.7?'conf-high':confidence>=0.4?'conf-mid':'conf-low';
+    s.classList.add(cls);
+    s.title=(s.title?s.title+' | ':'')+('conf: '+(confidence*100).toFixed(0)+'%');
+  }
+  /* Perplexity pulse for surprising tokens (perplexity > 5) */
+  if(perplexity!=null&&perplexity>5)s.classList.add('high-perp');
   s.textContent=text;
   return s;
+}
+
+/* ---- Perplexity sparkline ---- */
+function updatePerpSparkline(perplexity){
+  if(perplexity==null)return;
+  perpWindow.push(perplexity);
+  if(perpWindow.length>60)perpWindow.shift();
+  const spark=$('#perp-spark-wrap');
+  if(!spark)return;
+  spark.classList.add('show');
+  const line=$('#perp-line');
+  if(!line)return;
+  const max=Math.max(...perpWindow,1);
+  const pts=perpWindow.map((v,i)=>{
+    const x=Math.round(i/(perpWindow.length-1||1)*600);
+    const y=Math.round((1-v/max)*36+2);
+    return x+','+y;
+  }).join(' ');
+  line.setAttribute('points',pts);
+}
+
+/* ---- Research Dashboard ---- */
+function renderResearch(){
+  const grid=$('#research-grid');
+  const perpList=$('#research-perp-list');
+  const confHist=$('#research-conf-hist');
+  const citation=$('#research-citation');
+  if(!grid)return;
+  if(allTokens.length===0){grid.innerHTML='<div style="color:#8b949e;font-size:.8rem">No tokens yet. Run a stream first.</div>';return;}
+  /* Vocab diversity */
+  const unique=new Set(allTokens.map(t=>t.original.toLowerCase())).size;
+  const diversity=(unique/allTokens.length).toFixed(3);
+  /* Avg token length */
+  const avgLen=(allTokens.reduce((s,t)=>s+t.original.length,0)/allTokens.length).toFixed(1);
+  /* Perplexity stats */
+  const withPerp=allTokens.filter(t=>t.perplexity!=null);
+  const avgPerp=withPerp.length>0?(withPerp.reduce((s,t)=>s+t.perplexity,0)/withPerp.length).toFixed(2):'n/a';
+  /* Confidence stats */
+  const withConf=allTokens.filter(t=>t.confidence!=null);
+  const avgConf=withConf.length>0?((withConf.reduce((s,t)=>s+t.confidence,0)/withConf.length)*100).toFixed(0)+'%':'n/a';
+  /* Cost estimate (GPT-3.5 pricing: ~$0.002/1K tokens) */
+  const costEst=allTokens.length>0?'$'+(allTokens.length/1000*0.002).toFixed(4):'n/a';
+  grid.innerHTML=`
+    <div class="dash-card"><h3>Vocab Diversity</h3><div class="val">${diversity}</div><div class="sub">${unique} unique / ${allTokens.length} total</div></div>
+    <div class="dash-card"><h3>Avg Token Length</h3><div class="val">${avgLen}</div><div class="sub">characters per token</div></div>
+    <div class="dash-card"><h3>Avg Perplexity</h3><div class="val">${avgPerp}</div><div class="sub">exp(-logprob); lower=confident</div></div>
+    <div class="dash-card"><h3>Avg Confidence</h3><div class="val">${avgConf}</div><div class="sub">from top-1 logprob</div></div>
+    <div class="dash-card"><h3>Token Count</h3><div class="val">${allTokens.length}</div><div class="sub">${allTokens.filter(t=>t.transformed).length} transformed</div></div>
+    <div class="dash-card"><h3>Est. Cost</h3><div class="val">${costEst}</div><div class="sub">GPT-3.5 rate ($0.002/1K)</div></div>
+  `.replace(/dash-card/g,'r-card').replace(/class="val"/g,'class="r-stat"').replace(/class="sub"/g,'class="r-sub"');
+  /* Top 10 perplexity tokens */
+  if(perpList){
+    const sorted=[...withPerp].sort((a,b)=>b.perplexity-a.perplexity).slice(0,10);
+    perpList.innerHTML=sorted.map((t,i)=>`<li style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d;font-size:.78rem"><span style="color:#c9d1d9">${i+1}. "${t.original}"</span><span style="color:#f85149">${t.perplexity.toFixed(1)}</span></li>`).join('');
+  }
+  /* Confidence histogram (10 buckets) */
+  if(confHist&&withConf.length>0){
+    const buckets=Array(10).fill(0);
+    withConf.forEach(t=>{const b=Math.min(9,Math.floor(t.confidence*10));buckets[b]++});
+    const maxB=Math.max(...buckets,1);
+    confHist.innerHTML=buckets.map((v,i)=>`<div style="flex:1;background:#1f6feb;height:${Math.round(v/maxB*44)+2}px;border-radius:2px 2px 0 0;opacity:${0.4+i*0.06}" title="${(i*10)}-${(i+1)*10}%: ${v} tokens"></div>`).join('');
+  }
+  /* Citation */
+  if(citation){
+    const ts=new Date().toISOString().replace('T',' ').replace(/\.\d+Z$/,' UTC');
+    citation.textContent=`Every Other Token (v4.0.0). Session recorded ${ts}.\nTokens: ${allTokens.length}, Transform: ${$('#transform').value}, Provider: ${$('#provider').value}, Model: ${$('#model').value||'auto'}.\nVocab diversity: ${diversity}, Avg perplexity: ${avgPerp}, Avg confidence: ${avgConf}.`;
+  }
+}
+
+/* ---- A/B Experiment streaming ---- */
+let expATokens2=[], expBTokens2=[];
+function startExperiment(){
+  if(es){es.close();es=null}
+  $('#exp-a').innerHTML='<span class="exp-label">System Prompt A</span>';
+  $('#exp-b').innerHTML='<span class="exp-label b">System Prompt B</span>';
+  $('#exp-diverge').innerHTML='<span style="font-size:.7rem;color:#8b949e">Divergence map — streaming...</span>';
+  expATokens2=[];expBTokens2=[];
+  const p=encodeURIComponent($('#prompt').value);
+  const t=$('#transform').value;
+  const m=encodeURIComponent($('#model').value);
+  const sa=encodeURIComponent(($('#sysprompt-a')&&$('#sysprompt-a').value)||'You are a creative storyteller.');
+  const sb=encodeURIComponent(($('#sysprompt-b')&&$('#sysprompt-b').value)||'You are a technical writer. Be precise.');
+  const url='/ab-stream?prompt='+p+'&transform='+t+'&model='+m+'&sys_a='+sa+'&sys_b='+sb;
+  $('#start').disabled=true;$('#start').textContent='Experimenting...';
+  es=new EventSource(url);
+  es.onmessage=e=>{
+    if(e.data==='[DONE]'){
+      es.close();es=null;
+      $('#start').disabled=false;$('#start').textContent='Stream';
+      renderExpDivergence();
+      return;
+    }
+    try{
+      const tk=JSON.parse(e.data);
+      if(tk.side==='a'){
+        expATokens2.push(tk);
+        const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
+        sp.dataset.idx=tk.index;
+        $('#exp-a').appendChild(sp);$('#exp-a').scrollTop=$('#exp-a').scrollHeight;
+        updatePerpSparkline(tk.perplexity);
+      } else if(tk.side==='b'){
+        expBTokens2.push(tk);
+        const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
+        sp.dataset.idx=tk.index;
+        $('#exp-b').appendChild(sp);$('#exp-b').scrollTop=$('#exp-b').scrollHeight;
+      }
+      $('#stats').textContent='A: '+expATokens2.length+' tokens | B: '+expBTokens2.length+' tokens';
+    }catch(_){}
+  };
+  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
+}
+function renderExpDivergence(){
+  const el=$('#exp-diverge');if(!el)return;
+  const minLen=Math.min(expATokens2.length,expBTokens2.length);
+  if(minLen===0){el.innerHTML='<span style="font-size:.7rem;color:#8b949e">No tokens to compare.</span>';return;}
+  let matches=0;
+  const rows=[];
+  for(let i=0;i<minLen;i++){
+    const match=expATokens2[i].original===expBTokens2[i].original;
+    if(match)matches++;
+    rows.push(`<div style="display:flex;gap:8px;font-size:.75rem;padding:1px 0;color:${match?'#3fb950':'#f85149'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${expATokens2[i].original}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${expBTokens2[i].original}</span></div>`);
+  }
+  const pct=Math.round(matches/minLen*100);
+  el.innerHTML=`<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Similarity: ${pct}% (${matches}/${minLen})</div>`+rows.slice(0,50).join('');
 }
 
 /* ---- Token surgery ---- */
@@ -283,6 +480,7 @@ function drawGraph(){
 /* ---- Streaming ---- */
 $('#start').onclick=()=>{
   if(mode==='diff'){startDiff();return}
+  if(mode==='experiment'){startExperiment();return}
   if(es){es.close();es=null}
   /* Clear all views */
   $('#v-single').innerHTML='';
@@ -313,6 +511,8 @@ $('#start').onclick=()=>{
       enableSurgery($('#v-single'));
       enableSurgery($('#sbs-orig'));
       enableSurgery($('#sbs-xform'));
+      /* Update research dashboard */
+      renderResearch();
       return;
     }
     try{
@@ -322,14 +522,15 @@ $('#start').onclick=()=>{
       count++;if(tk.transformed)xformed++;
 
       /* Single column */
-      const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
+      const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
       singleSp.dataset.idx=tk.index;
       $('#v-single').appendChild(singleSp);
+      updatePerpSparkline(tk.perplexity);
 
       /* Side-by-side: left=original, right=transformed */
-      const origSp=mkSpan(tk.original,false,tk.importance);origSp.dataset.idx=tk.index;
+      const origSp=mkSpan(tk.original,false,tk.importance,null,null,tk.confidence,tk.perplexity);origSp.dataset.idx=tk.index;
       $('#sbs-orig').appendChild(origSp);
-      const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);xformSp.dataset.idx=tk.index;
+      const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);xformSp.dataset.idx=tk.index;
       $('#sbs-xform').appendChild(xformSp);
 
       /* Multi-transform: apply all 4+chaos transforms to original for odd tokens */
@@ -744,6 +945,106 @@ async fn handle_connection(
 
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
         }
+        "/ab-stream" => {
+            // A/B Experiment: same prompt sent to provider with two different system prompts
+            let params = parse_query(query_str);
+            let prompt = params.get("prompt").cloned().unwrap_or_default();
+            let transform_str = params
+                .get("transform")
+                .cloned()
+                .unwrap_or_else(|| "reverse".to_string());
+            let model_input = params.get("model").cloned().unwrap_or_default();
+            let sys_a = params
+                .get("sys_a")
+                .cloned()
+                .unwrap_or_else(|| "You are a creative storyteller.".to_string());
+            let sys_b = params
+                .get("sys_b")
+                .cloned()
+                .unwrap_or_else(|| "You are a technical writer. Be precise.".to_string());
+
+            let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
+            let model = if model_input.is_empty() {
+                match default_provider {
+                    Provider::Openai => "gpt-3.5-turbo".to_string(),
+                    Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
+                }
+            } else {
+                model_input
+            };
+
+            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+            stream.write_all(headers.as_bytes()).await?;
+
+            let (merged_tx, mut merged_rx) =
+                mpsc::unbounded_channel::<(&'static str, TokenEvent)>();
+
+            // Side A
+            let a_result = TokenInterceptor::new(
+                default_provider.clone(),
+                transform.clone(),
+                model.clone(),
+                true,
+                false,
+                orchestrator,
+            )
+            .map_err(|e| e.to_string());
+            if let Ok(mut side_a) = a_result {
+                let (tx_a, mut rx_a) = mpsc::unbounded_channel::<TokenEvent>();
+                side_a.web_tx = Some(tx_a);
+                side_a.system_prompt = Some(sys_a);
+                let prompt_a = prompt.clone();
+                tokio::spawn(async move {
+                    let _ = side_a.intercept_stream(&prompt_a).await;
+                });
+                let mtx = merged_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(ev) = rx_a.recv().await {
+                        let _ = mtx.send(("a", ev));
+                    }
+                });
+            }
+
+            // Side B
+            let b_result = TokenInterceptor::new(
+                default_provider.clone(),
+                transform,
+                model,
+                true,
+                false,
+                orchestrator,
+            )
+            .map_err(|e| e.to_string());
+            if let Ok(mut side_b) = b_result {
+                let (tx_b, mut rx_b) = mpsc::unbounded_channel::<TokenEvent>();
+                side_b.web_tx = Some(tx_b);
+                side_b.system_prompt = Some(sys_b);
+                let prompt_b = prompt.clone();
+                tokio::spawn(async move {
+                    let _ = side_b.intercept_stream(&prompt_b).await;
+                });
+                let mtx = merged_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(ev) = rx_b.recv().await {
+                        let _ = mtx.send(("b", ev));
+                    }
+                });
+            }
+
+            drop(merged_tx);
+
+            while let Some((side, event)) = merged_rx.recv().await {
+                let diff_event = DiffTokenEvent { side, event: &event };
+                if let Ok(json) = serde_json::to_string(&diff_event) {
+                    let sse = format!("data: {}\n\n", json);
+                    if stream.write_all(sse.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+
+            let _ = stream.write_all(b"data: [DONE]\n\n").await;
+        }
         _ => {
             let response =
                 "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found";
@@ -1118,6 +1419,9 @@ mod tests {
             importance: 0.5,
             chaos_label: None,
             provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let diff = DiffTokenEvent {
             side: "openai",
@@ -1139,6 +1443,9 @@ mod tests {
             importance: 0.7,
             chaos_label: Some("reverse".to_string()),
             provider: None,
+            confidence: None,
+            perplexity: None,
+            alternatives: vec![],
         };
         let diff = DiffTokenEvent {
             side: "anthropic",
@@ -1153,5 +1460,124 @@ mod tests {
     #[test]
     fn test_index_html_surgery_log_in_export() {
         assert!(INDEX_HTML.contains("surgery_log"));
+    }
+
+    // -- Research suite feature tests ----------------------------------------
+
+    #[test]
+    fn test_index_html_has_experiment_button() {
+        assert!(INDEX_HTML.contains("btn-experiment"));
+        assert!(INDEX_HTML.contains("Experiment"));
+    }
+
+    #[test]
+    fn test_index_html_has_research_button() {
+        assert!(INDEX_HTML.contains("btn-research"));
+        assert!(INDEX_HTML.contains("Research"));
+    }
+
+    #[test]
+    fn test_index_html_has_experiment_view() {
+        assert!(INDEX_HTML.contains("v-experiment"));
+    }
+
+    #[test]
+    fn test_index_html_has_research_view() {
+        assert!(INDEX_HTML.contains("v-research"));
+    }
+
+    #[test]
+    fn test_index_html_has_perplexity_sparkline() {
+        assert!(INDEX_HTML.contains("perp-spark"));
+    }
+
+    #[test]
+    fn test_index_html_has_research_grid() {
+        assert!(INDEX_HTML.contains("research-grid") || INDEX_HTML.contains("research-dash"));
+    }
+
+    #[test]
+    fn test_index_html_has_render_research_fn() {
+        assert!(INDEX_HTML.contains("renderResearch"));
+    }
+
+    #[test]
+    fn test_index_html_render_research_called_on_done() {
+        // renderResearch() must appear after enableSurgery in the [DONE] handler
+        let done_pos = INDEX_HTML.find("[DONE]").expect("[DONE] not found");
+        let research_pos = INDEX_HTML[done_pos..]
+            .find("renderResearch")
+            .expect("renderResearch not found after [DONE]");
+        let surgery_pos = INDEX_HTML[done_pos..]
+            .find("enableSurgery")
+            .expect("enableSurgery not found after [DONE]");
+        assert!(research_pos > surgery_pos, "renderResearch should come after enableSurgery");
+    }
+
+    #[test]
+    fn test_index_html_has_start_experiment_fn() {
+        assert!(INDEX_HTML.contains("startExperiment"));
+    }
+
+    #[test]
+    fn test_index_html_has_update_perp_sparkline_fn() {
+        assert!(INDEX_HTML.contains("updatePerpSparkline"));
+    }
+
+    #[test]
+    fn test_index_html_has_ab_stream_route() {
+        assert!(INDEX_HTML.contains("/ab-stream"));
+    }
+
+    #[test]
+    fn test_index_html_has_ab_system_prompts() {
+        assert!(INDEX_HTML.contains("sys_a") || INDEX_HTML.contains("ab-prompts"));
+    }
+
+    #[test]
+    fn test_index_html_has_experiment_divergence() {
+        assert!(INDEX_HTML.contains("exp-diverge") || INDEX_HTML.contains("renderExpDivergence"));
+    }
+
+    #[test]
+    fn test_index_html_has_confidence_rendering() {
+        assert!(INDEX_HTML.contains("confidence"));
+    }
+
+    #[test]
+    fn test_index_html_has_perplexity_rendering() {
+        assert!(INDEX_HTML.contains("perplexity"));
+    }
+
+    #[test]
+    fn test_index_html_has_confidence_css_classes() {
+        assert!(INDEX_HTML.contains("conf-high"));
+        assert!(INDEX_HTML.contains("conf-mid"));
+        assert!(INDEX_HTML.contains("conf-low"));
+    }
+
+    #[test]
+    fn test_index_html_has_high_perp_animation() {
+        assert!(INDEX_HTML.contains("high-perp") || INDEX_HTML.contains("perpPulse"));
+    }
+
+    #[test]
+    fn test_index_html_has_ab_panel_a() {
+        assert!(INDEX_HTML.contains("exp-a"));
+    }
+
+    #[test]
+    fn test_index_html_has_ab_panel_b() {
+        assert!(INDEX_HTML.contains("exp-b"));
+    }
+
+    #[test]
+    fn test_index_html_has_experiment_view_in_views_map() {
+        assert!(INDEX_HTML.contains("experiment:$('#v-experiment')"));
+    }
+
+    #[test]
+    fn test_index_html_has_research_view_in_views_map() {
+        assert!(INDEX_HTML.contains("research:$('#v-research')"));
     }
 }
