@@ -346,7 +346,8 @@ function startExperiment(){
   const m=encodeURIComponent($('#model').value);
   const sa=encodeURIComponent(($('#sysprompt-a')&&$('#sysprompt-a').value)||'You are a creative storyteller.');
   const sb=encodeURIComponent(($('#sysprompt-b')&&$('#sysprompt-b').value)||'You are a technical writer. Be precise.');
-  const url='/ab-stream?prompt='+p+'&transform='+t+'&model='+m+'&sys_a='+sa+'&sys_b='+sb;
+  const prov=$('#provider').value;
+  const url='/ab-stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&sys_a='+sa+'&sys_b='+sb;
   $('#start').disabled=true;$('#start').textContent='Experimenting...';
   es=new EventSource(url);
   es.onmessage=e=>{
@@ -632,7 +633,7 @@ $('#btn-export').onclick=()=>{
     timestamp:new Date().toISOString(),
     token_count:allTokens.length,
     transformed_count:allTokens.filter(t=>t.transformed).length,
-    tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance,chaos_label:t.chaos_label||null})),
+    tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance,chaos_label:t.chaos_label||null,confidence:t.confidence,perplexity:t.perplexity,alternatives:t.alternatives||[]})),
     surgery_log:surgeryLog
   };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});

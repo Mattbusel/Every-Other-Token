@@ -1507,3 +1507,91 @@ mod tests {
         assert!(events[1].confidence.is_none(), "subsequent tokens should not");
     }
 }
+
+#[cfg(test)]
+mod research_tests {
+    use super::*;
+
+    fn make_session(tokens: usize, confidence: Option<f32>, perplexity: Option<f32>) -> ResearchSession {
+        ResearchSession {
+            prompt: "test prompt".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-3.5-turbo".to_string(),
+            transform: "Reverse".to_string(),
+            runs: 1,
+            total_tokens: tokens,
+            total_transformed: tokens / 2,
+            vocabulary_diversity: 0.8,
+            mean_token_length: 4.5,
+            mean_perplexity: perplexity.map(|p| p as f64),
+            mean_confidence: confidence.map(|c| c as f64),
+            top_perplexity_tokens: vec!["word".to_string()],
+            estimated_cost_usd: tokens as f64 / 1000.0 * 0.002,
+            citation: format!("Every Other Token v4.0.0 | tokens={}", tokens),
+        }
+    }
+
+    #[test]
+    fn test_research_session_serializes_basic_fields() {
+        let s = make_session(10, Some(0.85), Some(2.3));
+        let json = serde_json::to_string(&s).expect("serialize");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(v["prompt"], "test prompt");
+        assert_eq!(v["total_tokens"], 10);
+        assert_eq!(v["runs"], 1);
+        assert_eq!(v["provider"], "openai");
+    }
+
+    #[test]
+    fn test_research_session_none_fields_serialize_as_null() {
+        let s = make_session(5, None, None);
+        let json = serde_json::to_string(&s).expect("serialize");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert!(v["mean_perplexity"].is_null());
+        assert!(v["mean_confidence"].is_null());
+    }
+
+    #[test]
+    fn test_research_session_estimated_cost_scales_with_tokens() {
+        let s100 = make_session(100, None, None);
+        let s1000 = make_session(1000, None, None);
+        assert!(s1000.estimated_cost_usd > s100.estimated_cost_usd);
+        assert!((s100.estimated_cost_usd - 0.0002).abs() < 1e-10);
+        assert!((s1000.estimated_cost_usd - 0.002).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_research_session_vocab_diversity_in_bounds() {
+        let s = make_session(20, None, None);
+        assert!(s.vocabulary_diversity >= 0.0 && s.vocabulary_diversity <= 1.0);
+    }
+
+    #[test]
+    fn test_research_session_top_tokens_at_most_ten() {
+        let s = ResearchSession {
+            top_perplexity_tokens: (0..10).map(|i| format!("t{}", i)).collect(),
+            ..make_session(100, None, None)
+        };
+        assert_eq!(s.top_perplexity_tokens.len(), 10);
+    }
+
+    #[test]
+    fn test_research_session_citation_contains_prompt() {
+        let s = make_session(5, None, None);
+        assert!(s.citation.contains("Every Other Token"));
+    }
+
+    #[test]
+    fn test_research_session_runs_field_roundtrips() {
+        let s = ResearchSession { runs: 42, ..make_session(10, None, None) };
+        let json = serde_json::to_string(&s).expect("serialize");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(v["runs"], 42);
+    }
+
+    #[test]
+    fn test_research_session_transform_field() {
+        let s = make_session(10, None, None);
+        assert_eq!(s.transform, "Reverse");
+    }
+}
