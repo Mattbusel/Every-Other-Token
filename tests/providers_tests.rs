@@ -215,6 +215,9 @@ fn test_token_event_serializes_all_fields() {
         importance: 0.75,
         chaos_label: None,
         provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -235,6 +238,9 @@ fn test_token_event_roundtrip() {
         importance: 0.87,
         chaos_label: None,
         provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -255,6 +261,9 @@ fn test_token_event_zero_importance() {
         importance: 0.0,
         chaos_label: None,
         provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":0.0"));
@@ -270,6 +279,9 @@ fn test_token_event_max_importance() {
         importance: 1.0,
         chaos_label: None,
         provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":1.0"));
@@ -285,6 +297,9 @@ fn test_token_event_clone() {
         importance: 0.5,
         chaos_label: None,
         provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
     };
     let cloned = event.clone();
     assert_eq!(cloned.text, event.text);
@@ -304,6 +319,9 @@ fn test_multiple_token_events_serialize_as_array() {
             importance: 0.5,
             chaos_label: None,
             provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
         },
         every_other_token::TokenEvent {
             text: "dlrow".to_string(),
@@ -313,6 +331,9 @@ fn test_multiple_token_events_serialize_as_array() {
             importance: 0.7,
             chaos_label: None,
             provider: None,
+        confidence: None,
+        perplexity: None,
+        alternatives: vec![],
         },
     ];
     let json = serde_json::to_string(&events).expect("serialize");

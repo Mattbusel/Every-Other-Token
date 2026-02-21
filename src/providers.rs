@@ -1,6 +1,31 @@
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
+// -- Token probability / logprob types --------------------------------------
+
+/// One alternative token returned alongside a logprob entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAITopLogprob {
+    pub token: String,
+    pub logprob: f32,
+}
+
+/// Per-API-token logprob entry in a streaming chunk.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenAILogprobContent {
+    pub token: String,
+    pub logprob: f32,
+    #[serde(default)]
+    pub top_logprobs: Vec<OpenAITopLogprob>,
+}
+
+/// The `logprobs` block on a streaming choice.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenAIChunkLogprobs {
+    #[serde(default)]
+    pub content: Vec<OpenAILogprobContent>,
+}
+
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum Provider {
     Openai,
@@ -30,6 +55,8 @@ pub struct OpenAIChatRequest {
     pub messages: Vec<OpenAIChatMessage>,
     pub stream: bool,
     pub temperature: f32,
+    pub logprobs: bool,
+    pub top_logprobs: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +69,8 @@ pub struct OpenAIChoice {
     pub delta: OpenAIDelta,
     #[allow(dead_code)]
     pub finish_reason: Option<String>,
+    #[serde(default)]
+    pub logprobs: Option<OpenAIChunkLogprobs>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +93,8 @@ pub struct AnthropicRequest {
     pub max_tokens: u32,
     pub stream: bool,
     pub temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -315,5 +346,115 @@ mod tests {
         let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
         assert_eq!(event.event_type, "ping");
         assert!(event.delta.is_none());
+    }
+
+    // -- Logprob type tests --
+
+    #[test]
+    fn test_openai_chat_request_has_logprobs_fields() {
+        let req = OpenAIChatRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![OpenAIChatMessage { role: "user".to_string(), content: "hi".to_string() }],
+            stream: true,
+            temperature: 0.7,
+            logprobs: true,
+            top_logprobs: 5,
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("\"logprobs\":true"));
+        assert!(json.contains("\"top_logprobs\":5"));
+    }
+
+    #[test]
+    fn test_openai_top_logprob_deserializes() {
+        let json = r#"{"token":"hello","logprob":-0.5}"#;
+        let tlp: OpenAITopLogprob = serde_json::from_str(json).expect("deser");
+        assert_eq!(tlp.token, "hello");
+        assert!((tlp.logprob - (-0.5)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_openai_logprob_content_deserializes() {
+        let json = r#"{"token":"world","logprob":-1.2,"top_logprobs":[{"token":"world","logprob":-1.2},{"token":"earth","logprob":-2.5}]}"#;
+        let lc: OpenAILogprobContent = serde_json::from_str(json).expect("deser");
+        assert_eq!(lc.token, "world");
+        assert_eq!(lc.top_logprobs.len(), 2);
+        assert_eq!(lc.top_logprobs[1].token, "earth");
+    }
+
+    #[test]
+    fn test_openai_chunk_logprobs_empty_content() {
+        let json = r#"{"content":[]}"#;
+        let cl: OpenAIChunkLogprobs = serde_json::from_str(json).expect("deser");
+        assert!(cl.content.is_empty());
+    }
+
+    #[test]
+    fn test_openai_choice_with_logprobs_deserializes() {
+        let json = r#"{"delta":{"content":"Hi"},"finish_reason":null,"logprobs":{"content":[{"token":"Hi","logprob":-0.1,"top_logprobs":[{"token":"Hi","logprob":-0.1},{"token":"Hey","logprob":-2.3}]}]}}"#;
+        let choice: OpenAIChoice = serde_json::from_str(json).expect("deser");
+        assert_eq!(choice.delta.content.as_deref(), Some("Hi"));
+        let lp = choice.logprobs.as_ref().expect("logprobs present");
+        assert_eq!(lp.content.len(), 1);
+        assert!((lp.content[0].logprob - (-0.1)).abs() < 1e-5);
+        assert_eq!(lp.content[0].top_logprobs[1].token, "Hey");
+    }
+
+    #[test]
+    fn test_openai_choice_without_logprobs_is_none() {
+        let json = r#"{"delta":{"content":"Hi"},"finish_reason":null}"#;
+        let choice: OpenAIChoice = serde_json::from_str(json).expect("deser");
+        assert!(choice.logprobs.is_none());
+    }
+
+    #[test]
+    fn test_anthropic_request_with_system_serializes() {
+        let req = AnthropicRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+            max_tokens: 1024,
+            stream: true,
+            temperature: 0.7,
+            system: Some("You are a helpful assistant.".to_string()),
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("\"system\":\"You are a helpful assistant.\""));
+    }
+
+    #[test]
+    fn test_anthropic_request_without_system_omits_field() {
+        let req = AnthropicRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+            max_tokens: 1024,
+            stream: true,
+            temperature: 0.7,
+            system: None,
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(!json.contains("system"));
+    }
+
+    #[test]
+    fn test_openai_top_logprob_clone() {
+        let t = OpenAITopLogprob { token: "foo".to_string(), logprob: -1.0 };
+        let t2 = t.clone();
+        assert_eq!(t2.token, t.token);
+        assert!((t2.logprob - t.logprob).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_openai_logprob_content_no_top_logprobs() {
+        let json = r#"{"token":"test","logprob":-0.8}"#;
+        let lc: OpenAILogprobContent = serde_json::from_str(json).expect("deser");
+        assert!(lc.top_logprobs.is_empty());
+    }
+
+    #[test]
+    fn test_openai_top_logprob_serializes() {
+        let t = OpenAITopLogprob { token: "bar".to_string(), logprob: -2.0 };
+        let json = serde_json::to_string(&t).expect("serialize");
+        assert!(json.contains("\"token\":\"bar\""));
+        assert!(json.contains("\"logprob\":-2.0"));
     }
 }
