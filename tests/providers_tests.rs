@@ -214,6 +214,7 @@ fn test_token_event_serializes_all_fields() {
         transformed: true,
         importance: 0.75,
         chaos_label: None,
+        provider: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -233,6 +234,7 @@ fn test_token_event_roundtrip() {
         transformed: false,
         importance: 0.87,
         chaos_label: None,
+        provider: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -252,6 +254,7 @@ fn test_token_event_zero_importance() {
         transformed: false,
         importance: 0.0,
         chaos_label: None,
+        provider: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":0.0"));
@@ -266,6 +269,7 @@ fn test_token_event_max_importance() {
         transformed: false,
         importance: 1.0,
         chaos_label: None,
+        provider: None,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":1.0"));
@@ -280,6 +284,7 @@ fn test_token_event_clone() {
         transformed: false,
         importance: 0.5,
         chaos_label: None,
+        provider: None,
     };
     let cloned = event.clone();
     assert_eq!(cloned.text, event.text);
@@ -298,6 +303,7 @@ fn test_multiple_token_events_serialize_as_array() {
             transformed: false,
             importance: 0.5,
             chaos_label: None,
+            provider: None,
         },
         every_other_token::TokenEvent {
             text: "dlrow".to_string(),
@@ -306,6 +312,7 @@ fn test_multiple_token_events_serialize_as_array() {
             transformed: true,
             importance: 0.7,
             chaos_label: None,
+            provider: None,
         },
     ];
     let json = serde_json::to_string(&events).expect("serialize");
