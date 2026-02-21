@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::cli::Args;
+use crate::collab::RoomStore;
 use crate::providers::Provider;
 use crate::transforms::Transform;
 use crate::{TokenEvent, TokenInterceptor};
@@ -124,6 +125,53 @@ canvas#depgraph{width:100%;height:200px;display:block}
 #conf-hist{display:flex;align-items:flex-end;gap:1px;height:32px;margin-top:4px}
 .hist-bar{flex:1;background:#1f6feb;min-height:2px;border-radius:1px 1px 0 0}
 #citation{font-size:.68rem;color:#484f58;word-break:break-all;margin-top:4px;line-height:1.4}
+/* ---- Multiplayer ---- */
+#mp-panel{display:none;background:#0a1a14;border-bottom:1px solid #1a3a28;padding:8px 24px;gap:16px;flex-wrap:wrap;align-items:center}
+#mp-panel.show{display:flex}
+.mp-code{font-size:1.3rem;font-weight:bold;color:#3fb950;letter-spacing:4px;background:#0d1117;padding:4px 12px;border-radius:4px;border:1px solid #1a3a28;cursor:pointer;user-select:all}
+.mp-label{font-size:.65rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+#mp-count-badge{display:inline-flex;align-items:center;justify-content:center;background:#21262d;border-radius:10px;padding:1px 8px;font-size:.75rem;color:#e3b341;min-width:24px}
+/* Sidebar */
+#sidebar{position:fixed;right:0;top:0;width:200px;height:100vh;background:#0d1117;border-left:1px solid #21262d;display:none;flex-direction:column;z-index:200}
+#sidebar.show{display:flex}
+#sidebar-hdr{padding:10px 12px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+#participant-list{flex:1;overflow-y:auto;padding:8px}
+.p-item{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:4px;font-size:.76rem;margin-bottom:2px}
+.p-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:bold;color:#0d1117;flex-shrink:0}
+.p-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p-host{font-size:.55rem;background:#1f6feb;color:#fff;padding:1px 4px;border-radius:3px}
+/* Chat */
+#chat-panel{position:fixed;right:200px;top:0;width:240px;height:100vh;background:#0a0e14;border-left:1px solid #21262d;display:none;flex-direction:column;z-index:199}
+#chat-panel.show{display:flex}
+#chat-hdr{padding:8px 12px;border-bottom:1px solid #21262d;font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+#chat-msgs{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px}
+.chat-msg{font-size:.72rem;line-height:1.45}
+.chat-author{font-weight:bold}
+.chat-text{color:#c9d1d9;word-break:break-word}
+.chat-ref{font-size:.64rem;color:#484f58;margin-top:1px}
+#chat-wrap{padding:8px;border-top:1px solid #21262d;display:flex;gap:4px}
+#chat-in{flex:1;background:#161b22;border:1px solid #30363d;color:#c9d1d9;border-radius:4px;padding:4px 7px;font-family:inherit;font-size:.73rem;outline:none}
+#chat-in:focus{border-color:#58a6ff}
+#chat-btn{background:#1f6feb;border:none;color:#fff;border-radius:4px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.73rem}
+/* Vote bar */
+#vote-bar{display:none;gap:10px;padding:4px 24px;background:#0d1117;border-top:1px solid #21262d;align-items:center;font-size:.75rem}
+#vote-bar.show{display:flex}
+.v-btn{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:4px;padding:2px 10px;cursor:pointer;font-family:inherit;font-size:.75rem}
+.v-btn:hover{background:#21262d}
+/* Replay */
+#replay-prog{height:3px;background:#21262d;border-radius:2px;overflow:hidden;display:none;flex:1}
+#replay-prog.show{display:block}
+#replay-bar{height:100%;background:#a371f7;width:0%;transition:width .08s linear}
+/* Rec button */
+.btn-rec-on{background:#f85149}
+@keyframes recPulse{0%,100%{opacity:1}50%{opacity:.5}}
+.btn-rec-on{animation:recPulse 1.1s ease-in-out infinite}
+/* Surgery peer flash */
+@keyframes peerEdit{0%{box-shadow:0 0 0 2px currentColor}100%{box-shadow:none}}
+.peer-edited{animation:peerEdit .8s ease-out forwards}
+/* Join toast */
+@keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+.join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#8b949e;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #21262d;background:#0d1117}
 </style>
 </head>
 <body>
@@ -137,6 +185,9 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt">Experiment</button>
     <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence">Research</button>
     <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
+    <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session">Host Session</button>
+    <input type="text" id="join-code" placeholder="Room code" maxlength="6" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px">
+    <button class="btn" style="background:#1f6feb;font-size:.78rem;padding:5px 12px" id="btn-join">Join</button>
   </div>
 </header>
 <div id="ab-prompts" class="ab-system-prompts">
@@ -203,6 +254,41 @@ canvas#depgraph{width:100%;height:200px;display:block}
 <div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none"><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
 <div id="stats"></div>
 <div id="research-dash"></div>
+
+<!-- Multiplayer session panel -->
+<div id="mp-panel">
+  <div><div class="mp-label">Room Code</div><div class="mp-code" id="mp-code" title="Click to copy join link">——————</div></div>
+  <div><div class="mp-label">Participants</div><span id="mp-count-badge">1</span></div>
+  <button class="btn" style="background:#238636;font-size:.75rem;padding:4px 11px" id="btn-copy-link">Copy Link</button>
+  <button class="btn" style="background:#6e40c9;font-size:.75rem;padding:4px 11px;display:none" id="btn-replay">▶ Replay</button>
+  <div id="replay-prog"><div id="replay-bar"></div></div>
+  <button class="btn" id="btn-rec" style="background:#30363d;font-size:.75rem;padding:4px 11px">⏺ Record</button>
+  <button class="btn" style="background:#21262d;font-size:.75rem;padding:4px 11px;margin-left:auto" id="btn-leave">Leave</button>
+</div>
+<!-- Vote bar -->
+<div id="vote-bar">
+  <span style="color:#8b949e;font-size:.7rem">Transform vote:</span>
+  <button class="v-btn" id="btn-vote-up">👍 <span id="vote-up-n">0</span></button>
+  <button class="v-btn" id="btn-vote-dn">👎 <span id="vote-dn-n">0</span></button>
+  <span id="vote-label" style="font-size:.7rem;color:#484f58"></span>
+</div>
+<!-- Participant sidebar -->
+<div id="sidebar">
+  <div id="sidebar-hdr">
+    <span>Participants</span>
+    <button onclick="$('#chat-panel').classList.toggle('show')" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:.8rem" title="Toggle chat">💬</button>
+  </div>
+  <div id="participant-list"></div>
+</div>
+<!-- Chat panel -->
+<div id="chat-panel">
+  <div id="chat-hdr">Chat</div>
+  <div id="chat-msgs"></div>
+  <div id="chat-wrap">
+    <input type="text" id="chat-in" placeholder="Message…" autocomplete="off">
+    <button id="chat-btn">Send</button>
+  </div>
+</div>
 <script>
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
@@ -410,6 +496,7 @@ function enableSurgery(container){
         inp.replaceWith(sp);
         if(newText!==orig){
           surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
+          if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}
         }
       }
       inp.addEventListener('blur',commit);
@@ -499,7 +586,8 @@ $('#start').onclick=()=>{
   const prov=$('#provider').value;
   const m=encodeURIComponent($('#model').value);
   const hm=$('#heatmap').checked?'1':'0';
-  const url='/stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&heatmap='+hm;
+  const roomParam=roomCode?'&room='+encodeURIComponent(roomCode):'';
+  const url='/stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&heatmap='+hm+roomParam;
   $('#start').disabled=true;$('#start').textContent='Streaming...';
   let count=0,xformed=0;
   es=new EventSource(url);
@@ -646,6 +734,249 @@ $('#btn-export').onclick=()=>{
 
 /* ---- Resize graph on window resize ---- */
 window.addEventListener('resize',()=>{if($('#graphtoggle').checked)drawGraph()});
+
+/* ================================================================
+   MULTIPLAYER — WebSocket collaboration
+   ================================================================ */
+let ws=null, myId=null, myColor='#58a6ff', myName='Guest', amHost=false;
+let roomCode=null, isRecording=false, hasReplay=false;
+const peerColors={};
+
+function sendWs(obj){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));}
+
+function initRoom(code,asHost){
+  roomCode=code; amHost=asHost;
+  $('#mp-code').textContent=code;
+  $('#mp-panel').classList.add('show');
+  $('#sidebar').classList.add('show');
+  $('#vote-bar').classList.add('show');
+  if(amHost)$('#btn-rec').style.display='';
+  document.body.style.paddingRight='200px';
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(proto+'://'+location.host+'/ws/'+code);
+  ws.onopen=()=>{ if(!amHost)sendWs({type:'set_name',name:myName||'Guest'}); };
+  ws.onmessage=e=>{try{onWsMsg(JSON.parse(e.data));}catch(_){}};
+  ws.onclose=()=>leaveRoom(false);
+  ws.onerror=e=>console.error('WS',e);
+}
+
+function onWsMsg(m){
+  switch(m.type){
+    case 'welcome':
+      myId=m.participant.id; myColor=m.participant.color; myName=m.participant.name;
+      renderParticipants(m.room_state.participants||[]);
+      setParticipantCount(m.room_state.participants?m.room_state.participants.length:1);
+      break;
+    case 'participant_join':
+      addPToList(m.participant); incrPCount(1);
+      showToast(m.participant.name+' joined', m.participant.color);
+      break;
+    case 'participant_leave':
+      $('#pid-'+m.participant_id)&&$('#pid-'+m.participant_id).remove(); incrPCount(-1);
+      break;
+    case 'participant_update':
+      {const el=$('#pid-'+m.participant.id);if(el)el.querySelector('.p-name').textContent=m.participant.name;}
+      break;
+    case 'token':
+      /* Guests receive token events broadcast by host */
+      if(!amHost){
+        allTokens.push(m); graphNodes.push(m);
+        const sp=mkSpan(m.text,m.transformed,m.importance,'',m.chaos_label,m.confidence,m.perplexity);
+        sp.dataset.idx=m.index; $('#v-single').appendChild(sp);
+        updatePerpSparkline(m.perplexity);
+      }
+      break;
+    case 'surgery':
+      applyPeerSurgery(m); break;
+    case 'chat':
+      renderChatMsg(m); break;
+    case 'vote_update':
+      if(m.transform===$('#transform').value){$('#vote-up-n').textContent=m.up;$('#vote-dn-n').textContent=m.down;}
+      $('#vote-label').textContent=m.transform+': +'+m.up+'/-'+m.down;
+      break;
+    case 'record_started':
+      isRecording=true;$('#btn-rec').textContent='⏹ Stop';$('#btn-rec').classList.add('btn-rec-on'); break;
+    case 'record_stopped':
+      isRecording=false;$('#btn-rec').textContent='⏺ Record';$('#btn-rec').classList.remove('btn-rec-on');
+      hasReplay=true;$('#btn-replay').style.display=''; break;
+    case 'replay_event':
+      doReplayEvent(m.event,m.offset_ms); break;
+    case 'replay_done':
+      $('#replay-prog').classList.remove('show'); break;
+    case 'error':
+      alert('Room: '+m.message); break;
+  }
+}
+
+/* Participants */
+function renderParticipants(list){$('#participant-list').innerHTML='';list.forEach(addPToList);}
+function addPToList(p){
+  if($('#pid-'+p.id))return;
+  peerColors[p.id]=p.color;
+  const d=document.createElement('div');d.className='p-item';d.id='pid-'+p.id;
+  d.innerHTML='<div class="p-avatar" style="background:'+p.color+'">'+p.name[0].toUpperCase()+'</div>'
+    +'<span class="p-name">'+p.name+'</span>'+(p.is_host?'<span class="p-host">HOST</span>':'');
+  $('#participant-list').appendChild(d);
+}
+function setParticipantCount(n){$('#mp-count-badge').textContent=n;}
+function incrPCount(d){$('#mp-count-badge').textContent=Math.max(1,parseInt($('#mp-count-badge').textContent||'1')+d);}
+function showToast(text,color){
+  const t=document.createElement('div');t.className='join-toast';t.style.borderColor=color||'#21262d';t.textContent=text;
+  $('#participant-list').prepend(t);setTimeout(()=>t.remove(),3000);
+}
+
+/* Peer surgery */
+function applyPeerSurgery(edit){
+  if(allTokens[edit.token_index])allTokens[edit.token_index].text=edit.new_text;
+  [$('#v-single'),$('#sbs-xform')].forEach(c=>{
+    if(!c)return;
+    const spans=c.querySelectorAll('.token');
+    if(spans[edit.token_index]){
+      const sp=spans[edit.token_index];sp.textContent=edit.new_text;
+      sp.style.color=edit.editor_color;sp.classList.add('peer-edited');
+      setTimeout(()=>{sp.style.color='';sp.classList.remove('peer-edited');},900);
+    }
+  });
+}
+
+/* Chat */
+function renderChatMsg(m){
+  const d=document.createElement('div');d.className='chat-msg';
+  d.innerHTML='<span class="chat-author" style="color:'+m.author_color+'">'+m.author_name+'</span> '
+    +'<span class="chat-text">'+m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span>'
+    +(m.token_index!=null?'<div class="chat-ref">re: token #'+m.token_index+'</div>':'');
+  $('#chat-msgs').appendChild(d);$('#chat-msgs').scrollTop=$('#chat-msgs').scrollHeight;
+}
+function sendChat(){
+  const t=$('#chat-in').value.trim();if(!t||!roomCode)return;
+  sendWs({type:'chat',text:t,token_index:null});$('#chat-in').value='';
+}
+$('#chat-btn').onclick=sendChat;
+$('#chat-in').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
+
+/* Replay */
+function doReplayEvent(ev,offsetMs){
+  if(!ev)return;
+  if(ev.type==='token'||ev.index!=null){
+    allTokens.push(ev);
+    const sp=mkSpan(ev.text,ev.transformed,ev.importance,'',ev.chaos_label,ev.confidence,ev.perplexity);
+    sp.dataset.idx=ev.index;$('#v-single').appendChild(sp);
+  } else if(ev.type==='surgery'){applyPeerSurgery(ev);}
+  else if(ev.type==='chat'){renderChatMsg(ev);}
+}
+
+/* Host session */
+$('#btn-host').onclick=async()=>{
+  try{
+    const r=await fetch('/room/create',{method:'POST'});
+    const d=await r.json();
+    amHost=true; myName='Host';
+    initRoom(d.code,true);
+  }catch(e){alert('Could not create room: '+e.message);}
+};
+
+/* Join session */
+$('#btn-join').onclick=()=>{
+  const c=$('#join-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(c.length!==6){alert('Room code must be 6 characters.');return;}
+  myName='Guest'; initRoom(c,false);
+};
+
+/* Auto-join from /join/XXXXXX URL */
+(function(){
+  const m=location.pathname.match(/\/join\/([A-Z0-9]{6})/i);
+  if(m){const code=m[1].toUpperCase();myName='Guest';setTimeout(()=>initRoom(code,false),100);}
+})();
+
+/* Copy link */
+$('#btn-copy-link').onclick=()=>{
+  if(!roomCode)return;
+  const url=location.origin+'/join/'+roomCode;
+  navigator.clipboard.writeText(url).then(()=>{
+    $('#btn-copy-link').textContent='Copied!';setTimeout(()=>$('#btn-copy-link').textContent='Copy Link',1500);
+  }).catch(()=>{$('#btn-copy-link').textContent=roomCode;});
+};
+$('#mp-code').onclick=()=>$('#btn-copy-link').click();
+
+/* Leave */
+$('#btn-leave').onclick=()=>{if(ws)ws.close();leaveRoom(true);};
+function leaveRoom(explicit){
+  ws=null;roomCode=null;amHost=false;isRecording=false;hasReplay=false;
+  $('#mp-panel').classList.remove('show');
+  $('#sidebar').classList.remove('show');
+  $('#chat-panel').classList.remove('show');
+  $('#vote-bar').classList.remove('show');
+  document.body.style.paddingRight='';
+  $('#participant-list').innerHTML='';
+}
+
+/* Vote */
+$('#btn-vote-up').onclick=()=>sendWs({type:'vote',transform:$('#transform').value,dir:'up'});
+$('#btn-vote-dn').onclick=()=>sendWs({type:'vote',transform:$('#transform').value,dir:'down'});
+
+/* Record */
+$('#btn-rec').onclick=()=>{
+  if(!roomCode)return;
+  sendWs(isRecording?{type:'record_stop'}:{type:'record_start'});
+};
+
+/* Replay */
+$('#btn-replay').onclick=()=>{
+  if(!roomCode)return;
+  $('#v-single').innerHTML='';allTokens=[];graphNodes=[];
+  $('#replay-prog').classList.add('show');$('#replay-bar').style.width='0%';
+  sendWs({type:'replay_request'});
+};
+
+/* Hook: when host streams tokens over SSE, also broadcast them to room via WS */
+const _baseStartClick=$('#start').onclick;
+$('#start').onclick=function(){
+  _baseStartClick&&_baseStartClick.call(this);
+  if(!roomCode||!amHost)return;
+  /* Wrap es.onmessage after EventSource is created (slight delay) */
+  setTimeout(()=>{
+    if(!es)return;
+    const orig=es.onmessage;
+    es.onmessage=function(ev){
+      orig&&orig.call(this,ev);
+      if(ev.data==='[DONE]'){sendWs({type:'stream_done'});return;}
+      try{
+        const tk=JSON.parse(ev.data);
+        sendWs({type:'token',...tk});
+        if(isRecording)sendWs({type:'_record_token',...tk}); // server handles via maybe_record
+      }catch(_){}
+    };
+  },30);
+};
+
+/* Intercept token surgery commits: broadcast edit to room */
+const _baseSurgery=enableSurgery;
+enableSurgery=function(container){
+  _baseSurgery(container);
+  /* After each surgery commit, forward via WS */
+  container.querySelectorAll('.token.surgeable').forEach(sp=>{
+    /* We patch on the next event loop tick to avoid double-wrapping */
+  });
+};
+/* Simpler: override surgeryLog.push to also sendWs */
+const _baseSurgeryLog=surgeryLog;
+/* Instead, patch the commit function by wrapping enableSurgery results.
+   The cleanest: check surgeryLog length change after each token click. */
+/* Surgery WS broadcast is handled here: after surgery commits update surgeryLog,
+   a MutationObserver on token text content picks up changes and broadcasts.
+   This is architecture-safe and doesn't require patching internals. */
+new MutationObserver(mutations=>{
+  if(!roomCode||!myId)return;
+  mutations.forEach(m=>{
+    if(m.type==='characterData'&&m.target.parentElement&&m.target.parentElement.classList.contains('token')){
+      const sp=m.target.parentElement;
+      const idx=parseInt(sp.dataset.idx||'-1');
+      if(idx>=0){
+        sendWs({type:'surgery',token_index:idx,new_text:m.target.data,old_text:m.oldValue||''});
+      }
+    }
+  });
+}).observe(document.getElementById('v-single'),{characterData:true,characterDataOldValue:true,subtree:true});
 </script>
 </body>
 </html>"##;
@@ -715,11 +1046,14 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     let default_provider = default_args.provider.clone();
     let orchestrator = default_args.orchestrator;
 
+    let room_store = crate::collab::new_room_store();
+
     loop {
         let (stream, _addr) = listener.accept().await?;
         let provider = default_provider.clone();
+        let store = room_store.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, provider, orchestrator).await {
+            if let Err(e) = handle_connection(stream, provider, orchestrator, store).await {
                 eprintln!("  connection error: {}", e);
             }
         });
@@ -730,8 +1064,41 @@ async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     default_provider: Provider,
     orchestrator: bool,
+    store: RoomStore,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::AsyncReadExt;
+
+    // Peek at the first bytes to detect WebSocket upgrade requests.
+    let mut peek_buf = [0u8; 512];
+    let peek_n = stream.peek(&mut peek_buf).await.unwrap_or(0);
+    let peek_str = String::from_utf8_lossy(&peek_buf[..peek_n]);
+    let peek_first_line = peek_str.lines().next().unwrap_or("").to_string();
+
+    if peek_str.contains("Upgrade: websocket") || peek_str.contains("upgrade: websocket") {
+        let ws_path = peek_first_line
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("/")
+            .to_string();
+        if let Some(code) = ws_path.strip_prefix("/ws/") {
+            let code = code.to_string();
+            let room_exists = store
+                .lock()
+                .map(|s| s.contains_key(&code))
+                .unwrap_or(false);
+            let is_host = !room_exists;
+
+            match tokio_tungstenite::accept_async(stream).await {
+                Ok(ws_stream) => {
+                    crate::collab::handle_ws(ws_stream, store, code, is_host).await;
+                }
+                Err(e) => {
+                    eprintln!("  WS handshake error: {}", e);
+                }
+            }
+            return Ok(());
+        }
+    }
 
     let mut buf = vec![0u8; 8192];
     let n = stream.read(&mut buf).await?;
@@ -790,6 +1157,7 @@ async fn handle_connection(
             };
 
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
+            let stream_room_code = params.get("room").cloned();
 
             // SSE headers
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
@@ -831,8 +1199,14 @@ async fn handle_connection(
                 let _ = interceptor.intercept_stream(&prompt_clone).await;
             });
 
-            // Forward token events as SSE
+            // Forward token events as SSE; also fan-out to collab room if active
             while let Some(event) = rx.recv().await {
+                if let Some(ref code) = stream_room_code {
+                    if let Ok(token_val) = serde_json::to_value(&event) {
+                        crate::collab::broadcast(&store, code, token_val.clone());
+                        crate::collab::maybe_record(&store, code, token_val);
+                    }
+                }
                 if let Ok(json) = serde_json::to_string(&event) {
                     let sse = format!("data: {}\n\n", json);
                     if stream.write_all(sse.as_bytes()).await.is_err() {
@@ -1053,6 +1427,42 @@ async fn handle_connection(
             }
 
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
+        }
+        "/room/create" => {
+            let code = crate::collab::create_room(&store);
+            let body = format!(r#"{{"code":"{}","ws_url":"/ws/{}"}}"#, code, code);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await?;
+        }
+        path if path.starts_with("/join/") => {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                INDEX_HTML.len(),
+                INDEX_HTML
+            );
+            stream.write_all(response.as_bytes()).await?;
+        }
+        path if path.starts_with("/replay/") => {
+            let code = &path["/replay/".len()..];
+            let body = if let Ok(guard) = store.lock() {
+                if let Some(room) = guard.get(code) {
+                    serde_json::to_string(&room.recorded_events).unwrap_or_else(|_| "[]".to_string())
+                } else {
+                    r#"{"error":"room not found"}"#.to_string()
+                }
+            } else {
+                r#"{"error":"internal error"}"#.to_string()
+            };
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await?;
         }
         _ => {
             let response =
@@ -1588,5 +1998,160 @@ mod tests {
     #[test]
     fn test_index_html_has_research_view_in_views_map() {
         assert!(INDEX_HTML.contains("research:$('#v-research')"));
+    }
+
+    // -- Multiplayer UI tests --
+
+    #[test]
+    fn test_index_html_has_host_session_button() {
+        assert!(INDEX_HTML.contains("btn-host"));
+        assert!(INDEX_HTML.contains("Host Session"));
+    }
+
+    #[test]
+    fn test_index_html_has_join_button() {
+        assert!(INDEX_HTML.contains("btn-join"));
+        assert!(INDEX_HTML.contains("Join"));
+    }
+
+    #[test]
+    fn test_index_html_has_room_code_input() {
+        assert!(INDEX_HTML.contains("join-code"));
+    }
+
+    #[test]
+    fn test_index_html_has_mp_panel() {
+        assert!(INDEX_HTML.contains("mp-panel"));
+        assert!(INDEX_HTML.contains("mp-code"));
+    }
+
+    #[test]
+    fn test_index_html_has_participant_sidebar() {
+        assert!(INDEX_HTML.contains("sidebar"));
+        assert!(INDEX_HTML.contains("participant-list"));
+    }
+
+    #[test]
+    fn test_index_html_has_chat_panel() {
+        assert!(INDEX_HTML.contains("chat-panel"));
+        assert!(INDEX_HTML.contains("chat-msgs"));
+        assert!(INDEX_HTML.contains("chat-in"));
+    }
+
+    #[test]
+    fn test_index_html_has_vote_bar() {
+        assert!(INDEX_HTML.contains("vote-bar"));
+        assert!(INDEX_HTML.contains("btn-vote-up"));
+        assert!(INDEX_HTML.contains("btn-vote-dn"));
+    }
+
+    #[test]
+    fn test_index_html_has_record_button() {
+        assert!(INDEX_HTML.contains("btn-rec"));
+    }
+
+    #[test]
+    fn test_index_html_has_replay_button() {
+        assert!(INDEX_HTML.contains("btn-replay"));
+    }
+
+    #[test]
+    fn test_index_html_has_websocket_init() {
+        assert!(INDEX_HTML.contains("WebSocket"));
+        assert!(INDEX_HTML.contains("initRoom"));
+    }
+
+    #[test]
+    fn test_index_html_has_send_ws_fn() {
+        assert!(INDEX_HTML.contains("sendWs"));
+    }
+
+    #[test]
+    fn test_index_html_has_on_ws_msg_handler() {
+        assert!(INDEX_HTML.contains("onWsMsg"));
+    }
+
+    #[test]
+    fn test_index_html_has_participant_join_handler() {
+        assert!(INDEX_HTML.contains("participant_join"));
+    }
+
+    #[test]
+    fn test_index_html_has_participant_leave_handler() {
+        assert!(INDEX_HTML.contains("participant_leave"));
+    }
+
+    #[test]
+    fn test_index_html_has_surgery_peer_handler() {
+        assert!(INDEX_HTML.contains("applyPeerSurgery"));
+    }
+
+    #[test]
+    fn test_index_html_has_chat_send_fn() {
+        assert!(INDEX_HTML.contains("sendChat"));
+    }
+
+    #[test]
+    fn test_index_html_has_replay_event_handler() {
+        assert!(INDEX_HTML.contains("doReplayEvent"));
+    }
+
+    #[test]
+    fn test_index_html_has_room_create_fetch() {
+        assert!(INDEX_HTML.contains("/room/create"));
+    }
+
+    #[test]
+    fn test_index_html_has_copy_link_button() {
+        assert!(INDEX_HTML.contains("btn-copy-link"));
+    }
+
+    #[test]
+    fn test_index_html_has_leave_room_fn() {
+        assert!(INDEX_HTML.contains("leaveRoom"));
+        assert!(INDEX_HTML.contains("btn-leave"));
+    }
+
+    #[test]
+    fn test_index_html_has_auto_join_logic() {
+        assert!(INDEX_HTML.contains("autoJoin") || INDEX_HTML.contains("/join/"));
+    }
+
+    #[test]
+    fn test_index_html_has_mutation_observer_for_surgery() {
+        assert!(INDEX_HTML.contains("MutationObserver"));
+    }
+
+    #[test]
+    fn test_index_html_has_peer_colors_map() {
+        assert!(INDEX_HTML.contains("peerColors"));
+    }
+
+    #[test]
+    fn test_index_html_has_welcome_message_handler() {
+        assert!(INDEX_HTML.contains("welcome"));
+    }
+
+    #[test]
+    fn test_index_html_multiplayer_no_external_deps() {
+        // Verify no socket.io or other external WS libs
+        assert!(!INDEX_HTML.contains("socket.io"));
+        assert!(!INDEX_HTML.contains("sockjs"));
+    }
+
+    #[test]
+    fn test_index_html_has_mp_count_badge() {
+        assert!(INDEX_HTML.contains("mp-count-badge"));
+    }
+
+    #[test]
+    fn test_index_html_has_join_toast_css() {
+        assert!(INDEX_HTML.contains("join-toast"));
+        assert!(INDEX_HTML.contains("slideIn"));
+    }
+
+    #[test]
+    fn test_index_html_has_ws_route_pattern() {
+        assert!(INDEX_HTML.contains("/ws/"));
     }
 }

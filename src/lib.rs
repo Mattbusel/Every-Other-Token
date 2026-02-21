@@ -3,6 +3,7 @@ pub mod providers;
 pub mod transforms;
 pub mod web;
 pub mod research;
+pub mod collab;
 
 use colored::*;
 use reqwest::Client;
