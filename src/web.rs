@@ -954,6 +954,10 @@ async fn handle_connection(
                 .get("transform")
                 .cloned()
                 .unwrap_or_else(|| "reverse".to_string());
+            let provider_str = params
+                .get("provider")
+                .cloned()
+                .unwrap_or_else(|| default_provider.to_string());
             let model_input = params.get("model").cloned().unwrap_or_default();
             let sys_a = params
                 .get("sys_a")
@@ -964,9 +968,13 @@ async fn handle_connection(
                 .cloned()
                 .unwrap_or_else(|| "You are a technical writer. Be precise.".to_string());
 
+            let ab_provider = match provider_str.as_str() {
+                "anthropic" => Provider::Anthropic,
+                _ => Provider::Openai,
+            };
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
             let model = if model_input.is_empty() {
-                match default_provider {
+                match ab_provider {
                     Provider::Openai => "gpt-3.5-turbo".to_string(),
                     Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
                 }
@@ -982,7 +990,7 @@ async fn handle_connection(
 
             // Side A
             let a_result = TokenInterceptor::new(
-                default_provider.clone(),
+                ab_provider.clone(),
                 transform.clone(),
                 model.clone(),
                 true,
@@ -1008,7 +1016,7 @@ async fn handle_connection(
 
             // Side B
             let b_result = TokenInterceptor::new(
-                default_provider.clone(),
+                ab_provider,
                 transform,
                 model,
                 true,
