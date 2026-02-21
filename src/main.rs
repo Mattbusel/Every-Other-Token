@@ -198,6 +198,7 @@ struct McpError {
 #[derive(Debug, Clone, Serialize)]
 pub struct TokenEvent {
     pub text: String,
+    pub original: String,
     pub index: usize,
     pub transformed: bool,
     pub importance: f64,
@@ -498,6 +499,7 @@ impl TokenInterceptor {
                 if let Some(tx) = &self.web_tx {
                     let event = TokenEvent {
                         text: display_text,
+                        original: token.clone(),
                         index: self.token_count,
                         transformed: is_odd,
                         importance,
@@ -720,7 +722,8 @@ mod web {
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpListener;
 
-    /// Embedded single-page HTML application.
+    /// Embedded single-page HTML application with side-by-side, multi-transform,
+    /// dependency graph, and export features.
     const INDEX_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -730,76 +733,218 @@ mod web {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0d1117;color:#c9d1d9;font-family:'Cascadia Code','Fira Code',monospace;min-height:100vh;display:flex;flex-direction:column}
-header{padding:24px 32px 16px;border-bottom:1px solid #21262d}
-header h1{font-size:1.4rem;color:#58a6ff;margin-bottom:4px}
-header p{font-size:.85rem;color:#8b949e}
-.controls{display:flex;gap:12px;padding:16px 32px;flex-wrap:wrap;align-items:end;border-bottom:1px solid #21262d;background:#161b22}
-.field{display:flex;flex-direction:column;gap:4px}
-.field label{font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
-.field input,.field select{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:8px 12px;border-radius:6px;font-family:inherit;font-size:.9rem}
+header{padding:16px 24px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:1.2rem;color:#58a6ff}
+.hdr-right{display:flex;gap:8px}
+.controls{display:flex;gap:10px;padding:12px 24px;flex-wrap:wrap;align-items:end;border-bottom:1px solid #21262d;background:#161b22}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+.field input,.field select{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:.85rem}
 .field input:focus,.field select:focus{outline:none;border-color:#58a6ff}
-.field input[type=text]{min-width:320px}
-button#start{background:#238636;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-family:inherit;font-size:.9rem;cursor:pointer;align-self:end}
-button#start:hover{background:#2ea043}
-button#start:disabled{background:#21262d;color:#484f58;cursor:not-allowed}
-.toggle{display:flex;align-items:center;gap:6px;font-size:.85rem;color:#8b949e;cursor:pointer;user-select:none}
+.field input[type=text]{min-width:240px}
+.btn{border:none;padding:6px 14px;border-radius:6px;font-family:inherit;font-size:.85rem;cursor:pointer;color:#fff}
+.btn-go{background:#238636}.btn-go:hover{background:#2ea043}
+.btn-go:disabled{background:#21262d;color:#484f58;cursor:not-allowed}
+.btn-mode{background:#30363d}.btn-mode:hover{background:#484f58}
+.btn-mode.active{background:#1f6feb}
+.btn-export{background:#6e40c9}.btn-export:hover{background:#8957e5}
+.toggle{display:flex;align-items:center;gap:5px;font-size:.8rem;color:#8b949e;cursor:pointer;user-select:none}
 .toggle input{accent-color:#58a6ff}
-#output{flex:1;padding:24px 32px;line-height:1.8;font-size:1.05rem;overflow-y:auto;white-space:pre-wrap;word-wrap:break-word}
-.token{display:inline;animation:fadeIn .15s ease-in}
+/* View modes */
+#views{flex:1;overflow:auto;position:relative}
+/* Single column */
+.view-single{padding:20px 24px;line-height:1.8;font-size:1rem;white-space:pre-wrap;word-wrap:break-word}
+/* Side-by-side */
+.view-sidebyside{display:grid;grid-template-columns:1fr 1fr;height:100%}
+.sbs-col{padding:16px 20px;line-height:1.8;font-size:.95rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto}
+.sbs-col:first-child{border-right:1px solid #21262d}
+.sbs-label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
+/* Multi-transform 2x2 grid */
+.view-multi{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;height:100%}
+.multi-panel{padding:12px 16px;line-height:1.6;font-size:.85rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #21262d}
+.multi-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block}
+.mp-reverse .multi-label{color:#58a6ff}
+.mp-uppercase .multi-label{color:#f0883e}
+.mp-mock .multi-label{color:#a371f7}
+.mp-noise .multi-label{color:#3fb950}
+.mp-reverse .token.odd{color:#58a6ff;font-weight:bold}
+.mp-uppercase .token.odd{color:#f0883e;font-weight:bold}
+.mp-mock .token.odd{color:#a371f7;font-weight:bold}
+.mp-noise .token.odd{color:#3fb950;font-weight:bold}
+/* Tokens */
+.token{display:inline;animation:fadeIn .12s ease-in}
 .token.odd{color:#00d4ff;font-weight:bold}
 .token.even{color:#c9d1d9}
-/* heatmap backgrounds */
-.heat-4{background:#da3633;color:#fff}
-.heat-3{background:#b62324;color:#fff}
-.heat-2{background:#9e6a03;color:#000}
-.heat-1{background:#1f6feb;color:#fff}
-.heat-0{background:transparent}
+.heat-4{background:#da3633;color:#fff}.heat-3{background:#b62324;color:#fff}
+.heat-2{background:#9e6a03;color:#000}.heat-1{background:#1f6feb;color:#fff}.heat-0{}
 @keyframes fadeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
-#stats{padding:12px 32px;border-top:1px solid #21262d;font-size:.8rem;color:#8b949e;background:#161b22}
+/* Graph */
+#graph-wrap{border-top:1px solid #21262d;background:#0a0e14;display:none}
+#graph-wrap.show{display:block}
+#graph-toggle-bar{padding:6px 24px;border-top:1px solid #21262d;background:#161b22;display:flex;align-items:center;gap:12px}
+canvas#depgraph{width:100%;height:200px;display:block}
+/* Stats */
+#stats{padding:8px 24px;border-top:1px solid #21262d;font-size:.78rem;color:#8b949e;background:#161b22;display:flex;gap:20px;flex-wrap:wrap}
 </style>
 </head>
 <body>
 <header>
   <h1>Every Other Token</h1>
-  <p>Real-time token stream mutator for LLM interpretability research</p>
+  <div class="hdr-right">
+    <button class="btn btn-mode active" id="btn-single" title="Single stream">Single</button>
+    <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed">Split</button>
+    <button class="btn btn-mode" id="btn-multi" title="All 4 transforms simultaneously">Quad</button>
+    <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
+  </div>
 </header>
 <div class="controls">
-  <div class="field">
-    <label>Prompt</label>
-    <input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt...">
-  </div>
-  <div class="field">
-    <label>Transform</label>
-    <select id="transform">
-      <option value="reverse">reverse</option>
-      <option value="uppercase">uppercase</option>
-      <option value="mock">mock</option>
-      <option value="noise">noise</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Provider</label>
-    <select id="provider">
-      <option value="openai">OpenAI</option>
-      <option value="anthropic">Anthropic</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Model</label>
-    <input type="text" id="model" value="" placeholder="auto" style="min-width:180px">
-  </div>
+  <div class="field"><label>Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
+  <div class="field"><label>Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option></select></div>
+  <div class="field"><label>Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
+  <div class="field"><label>Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
-  <button id="start">Stream</button>
+  <label class="toggle"><input type="checkbox" id="graphtoggle"> Graph</label>
+  <button class="btn btn-go" id="start">Stream</button>
 </div>
-<div id="output"></div>
+<div id="views">
+  <!-- Single column (default) -->
+  <div class="view-single" id="v-single"></div>
+  <!-- Side-by-side -->
+  <div class="view-sidebyside" id="v-sbs" style="display:none">
+    <div class="sbs-col" id="sbs-orig"><span class="sbs-label">Original</span></div>
+    <div class="sbs-col" id="sbs-xform"><span class="sbs-label">Transformed</span></div>
+  </div>
+  <!-- Multi-transform 2x2 -->
+  <div class="view-multi" id="v-multi" style="display:none">
+    <div class="multi-panel mp-reverse" id="mp-reverse"><span class="multi-label">Reverse</span></div>
+    <div class="multi-panel mp-uppercase" id="mp-uppercase"><span class="multi-label">Uppercase</span></div>
+    <div class="multi-panel mp-mock" id="mp-mock"><span class="multi-label">Mock</span></div>
+    <div class="multi-panel mp-noise" id="mp-noise"><span class="multi-label">Noise</span></div>
+  </div>
+</div>
+<div id="graph-wrap"><canvas id="depgraph"></canvas></div>
 <div id="stats"></div>
 <script>
 const $=s=>document.querySelector(s);
-let es=null;
+const $$=s=>document.querySelectorAll(s);
+
+/* ---- Transform functions (JS mirrors of Rust) ---- */
+const TX={
+  reverse:s=>s.split('').reverse().join(''),
+  uppercase:s=>s.toUpperCase(),
+  mock:s=>s.split('').map((c,i)=>i%2===0?c.toLowerCase():c.toUpperCase()).join(''),
+  noise:s=>{const n='*+~@#$%';return s+n[Math.floor(Math.random()*n.length)]}
+};
+
+/* ---- State ---- */
+let es=null, mode='single', allTokens=[], graphNodes=[];
+const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi')};
+
+/* ---- View mode switching ---- */
+function setMode(m){
+  mode=m;
+  Object.values(views).forEach(v=>v.style.display='none');
+  views[m].style.display='';
+  $$('.btn-mode').forEach(b=>b.classList.remove('active'));
+  if(m==='single')$('#btn-single').classList.add('active');
+  if(m==='sbs')$('#btn-sbs').classList.add('active');
+  if(m==='multi')$('#btn-multi').classList.add('active');
+}
+$('#btn-single').onclick=()=>setMode('single');
+$('#btn-sbs').onclick=()=>setMode('sbs');
+$('#btn-multi').onclick=()=>setMode('multi');
+
+/* ---- Graph toggle ---- */
+$('#graphtoggle').onchange=function(){
+  $('#graph-wrap').classList.toggle('show',this.checked);
+  if(this.checked)drawGraph();
+};
+
+/* ---- Helpers ---- */
+function mkSpan(text,isOdd,importance,extraCls){
+  const s=document.createElement('span');
+  s.className='token '+(isOdd?'odd':'even');
+  if(extraCls)s.classList.add(extraCls);
+  if($('#heatmap').checked){
+    const h=importance>=.8?4:importance>=.6?3:importance>=.4?2:importance>=.2?1:0;
+    s.classList.add('heat-'+h);
+  }
+  s.textContent=text;
+  return s;
+}
+
+function heatColor(imp){
+  if(imp>=.8)return'#f85149';
+  if(imp>=.6)return'#f0883e';
+  if(imp>=.4)return'#e3b341';
+  if(imp>=.2)return'#58a6ff';
+  return'#484f58';
+}
+
+/* ---- Canvas dependency graph ---- */
+function drawGraph(){
+  const canvas=$('#depgraph');
+  if(!canvas||!$('#graphtoggle').checked)return;
+  const dpr=window.devicePixelRatio||1;
+  const rect=canvas.parentElement.getBoundingClientRect();
+  canvas.width=rect.width*dpr;
+  canvas.height=200*dpr;
+  canvas.style.height='200px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,rect.width,200);
+  const nodes=graphNodes;
+  if(nodes.length===0)return;
+  const gap=Math.min(60,rect.width/(nodes.length+1));
+  const y1=50,y2=150;
+  /* Draw nodes and edges */
+  let lastEvenX=0,lastEvenIdx=-1;
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i];
+    const x=(i+1)*gap;
+    const y=n.transformed?y2:y1;
+    /* If odd, draw line to previous even */
+    if(n.transformed&&lastEvenIdx>=0){
+      const ex=(lastEvenIdx+1)*gap;
+      ctx.beginPath();
+      ctx.moveTo(ex,y1+8);
+      ctx.bezierCurveTo(ex,y1+40,x,y2-40,x,y2-8);
+      ctx.lineWidth=Math.min(n.original.length,6);
+      ctx.strokeStyle=heatColor(n.importance);
+      ctx.globalAlpha=0.6;
+      ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    if(!n.transformed){lastEvenX=x;lastEvenIdx=i;}
+    /* Node circle */
+    ctx.beginPath();
+    ctx.arc(x,y,7,0,Math.PI*2);
+    ctx.fillStyle=n.transformed?'#00d4ff':'#c9d1d9';
+    ctx.fill();
+    ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.stroke();
+    /* Label */
+    ctx.fillStyle='#8b949e';
+    ctx.font='10px monospace';
+    ctx.textAlign='center';
+    const label=n.text.length>6?n.text.slice(0,5)+'…':n.text;
+    ctx.fillText(label,x,y+(n.transformed?20:-14));
+  }
+}
+
+/* ---- Streaming ---- */
 $('#start').onclick=()=>{
   if(es){es.close();es=null}
-  const out=$('#output');out.innerHTML='';
+  /* Clear all views */
+  $('#v-single').innerHTML='';
+  $('#sbs-orig').innerHTML='<span class="sbs-label">Original</span>';
+  $('#sbs-xform').innerHTML='<span class="sbs-label">Transformed</span>';
+  ['reverse','uppercase','mock','noise'].forEach(t=>{
+    $('#mp-'+t).innerHTML='<span class="multi-label">'+t+'</span>';
+  });
   $('#stats').textContent='';
+  allTokens=[];graphNodes=[];
+  if($('#graphtoggle').checked)drawGraph();
+
   const p=encodeURIComponent($('#prompt').value);
   const t=$('#transform').value;
   const prov=$('#provider').value;
@@ -810,24 +955,78 @@ $('#start').onclick=()=>{
   let count=0,xformed=0;
   es=new EventSource(url);
   es.onmessage=e=>{
-    if(e.data==='[DONE]'){es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';return}
+    if(e.data==='[DONE]'){
+      es.close();es=null;
+      $('#start').disabled=false;$('#start').textContent='Stream';
+      if($('#graphtoggle').checked)drawGraph();
+      return;
+    }
     try{
       const tk=JSON.parse(e.data);
-      const span=document.createElement('span');
-      span.className='token '+(tk.transformed?'odd':'even');
-      if($('#heatmap').checked){
-        const h=tk.importance>=.8?4:tk.importance>=.6?3:tk.importance>=.4?2:tk.importance>=.2?1:0;
-        span.classList.add('heat-'+h);
-      }
-      span.textContent=tk.text;
-      out.appendChild(span);
-      out.scrollTop=out.scrollHeight;
+      allTokens.push(tk);
+      graphNodes.push(tk);
       count++;if(tk.transformed)xformed++;
-      $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed;
+
+      /* Single column */
+      $('#v-single').appendChild(mkSpan(tk.text,tk.transformed,tk.importance));
+
+      /* Side-by-side: left=original, right=transformed */
+      $('#sbs-orig').appendChild(mkSpan(tk.original,false,tk.importance));
+      $('#sbs-xform').appendChild(mkSpan(tk.text,tk.transformed,tk.importance));
+
+      /* Multi-transform: apply all 4 transforms to original for odd tokens */
+      ['reverse','uppercase','mock','noise'].forEach(txName=>{
+        const panel=$('#mp-'+txName);
+        if(tk.transformed){
+          const applied=TX[txName](tk.original);
+          panel.appendChild(mkSpan(applied,true,tk.importance));
+        } else {
+          panel.appendChild(mkSpan(tk.original,false,tk.importance));
+        }
+      });
+
+      /* Auto-scroll active view */
+      const active=views[mode];
+      if(active)active.scrollTop=active.scrollHeight;
+      /* Scroll panels in multi */
+      if(mode==='multi'){
+        ['reverse','uppercase','mock','noise'].forEach(t=>{
+          const p=$('#mp-'+t);p.scrollTop=p.scrollHeight;
+        });
+      }
+
+      /* Redraw graph periodically */
+      if($('#graphtoggle').checked&&count%5===0)drawGraph();
+
+      $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
     }catch(_){}
   };
   es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
 };
+
+/* ---- Export JSON ---- */
+$('#btn-export').onclick=()=>{
+  if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return}
+  const data={
+    prompt:$('#prompt').value,
+    provider:$('#provider').value,
+    model:$('#model').value||'auto',
+    transform:$('#transform').value,
+    timestamp:new Date().toISOString(),
+    token_count:allTokens.length,
+    transformed_count:allTokens.filter(t=>t.transformed).length,
+    tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance}))
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='every-other-token-'+Date.now()+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(url);
+};
+
+/* ---- Resize graph on window resize ---- */
+window.addEventListener('resize',()=>{if($('#graphtoggle').checked)drawGraph()});
 </script>
 </body>
 </html>"##;
@@ -1334,10 +1533,12 @@ mod tests {
         // "hello" (even, index 0), "world" (odd, index 1)
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].text, "hello");
+        assert_eq!(events[0].original, "hello");
         assert!(!events[0].transformed);
         assert_eq!(events[0].index, 0);
-        // "world" reversed = "dlrow"
+        // "world" reversed = "dlrow", original stays "world"
         assert_eq!(events[1].text, "dlrow");
+        assert_eq!(events[1].original, "world");
         assert!(events[1].transformed);
         assert_eq!(events[1].index, 1);
     }
@@ -1346,12 +1547,14 @@ mod tests {
     fn test_web_tx_token_event_serializes() {
         let event = TokenEvent {
             text: "hello".to_string(),
+            original: "hello".to_string(),
             index: 0,
             transformed: false,
             importance: 0.5,
         };
         let json = serde_json::to_string(&event).expect("serialize failed");
         assert!(json.contains("\"text\":\"hello\""));
+        assert!(json.contains("\"original\":\"hello\""));
         assert!(json.contains("\"transformed\":false"));
         assert!(json.contains("\"importance\":0.5"));
     }
