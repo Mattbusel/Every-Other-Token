@@ -29,6 +29,9 @@ pub struct TokenEvent {
     /// For Chaos transform: which sub-transform was applied. None for other transforms.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chaos_label: Option<String>,
+    /// For diff mode: which provider produced this token ("openai" or "anthropic").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +52,8 @@ pub struct TokenInterceptor {
     pub orchestrator_url: String,
     /// When set, token events are sent here instead of printed to stdout.
     pub web_tx: Option<mpsc::UnboundedSender<TokenEvent>>,
+    /// When set, each emitted TokenEvent carries this provider label (for diff mode).
+    pub web_provider_label: Option<String>,
 }
 
 impl TokenInterceptor {
@@ -80,6 +85,7 @@ impl TokenInterceptor {
             orchestrator,
             orchestrator_url: "http://localhost:3000".to_string(),
             web_tx: None,
+            web_provider_label: None,
         })
     }
 
@@ -326,6 +332,7 @@ impl TokenInterceptor {
                         transformed: is_odd,
                         importance,
                         chaos_label,
+                        provider: self.web_provider_label.clone(),
                     };
                     let _ = tx.send(event);
                 } else {
@@ -417,6 +424,7 @@ mod tests {
             orchestrator: false,
             orchestrator_url: "http://localhost:3000".to_string(),
             web_tx: None,
+            web_provider_label: None,
         }
     }
 
@@ -971,6 +979,7 @@ mod tests {
             transformed: true,
             importance: 0.5,
             chaos_label: Some("reverse".to_string()),
+            provider: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("chaos_label"));
@@ -986,8 +995,92 @@ mod tests {
             transformed: false,
             importance: 0.3,
             chaos_label: None,
+            provider: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(!json.contains("chaos_label"), "None chaos_label should be skipped in JSON");
+    }
+
+    // -- provider field tests --
+
+    #[test]
+    fn test_provider_label_none_by_default() {
+        let interceptor = make_test_interceptor();
+        assert!(interceptor.web_provider_label.is_none());
+    }
+
+    #[test]
+    fn test_provider_label_propagates_to_event() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+        interceptor.web_provider_label = Some("openai".to_string());
+
+        interceptor.process_content("hello world");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        for event in &events {
+            assert_eq!(
+                event.provider.as_deref(),
+                Some("openai"),
+                "provider label should propagate to all events"
+            );
+        }
+    }
+
+    #[test]
+    fn test_provider_label_none_means_skipped_in_json() {
+        let event = TokenEvent {
+            text: "hello".to_string(),
+            original: "hello".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+            chaos_label: None,
+            provider: None,
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(!json.contains("\"provider\""), "None provider should be skipped in JSON");
+    }
+
+    #[test]
+    fn test_provider_label_some_appears_in_json() {
+        let event = TokenEvent {
+            text: "hello".to_string(),
+            original: "hello".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+            chaos_label: None,
+            provider: Some("anthropic".to_string()),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("\"provider\""));
+        assert!(json.contains("anthropic"));
+    }
+
+    #[test]
+    fn test_provider_label_openai_and_anthropic_distinct() {
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut openai_i = make_test_interceptor();
+        openai_i.web_tx = Some(tx1);
+        openai_i.web_provider_label = Some("openai".to_string());
+
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut anthropic_i = make_test_interceptor();
+        anthropic_i.web_tx = Some(tx2);
+        anthropic_i.web_provider_label = Some("anthropic".to_string());
+
+        openai_i.process_content("hello");
+        anthropic_i.process_content("hello");
+
+        let e1 = rx1.try_recv().expect("openai event");
+        let e2 = rx2.try_recv().expect("anthropic event");
+        assert_eq!(e1.provider.as_deref(), Some("openai"));
+        assert_eq!(e2.provider.as_deref(), Some("anthropic"));
+        assert_ne!(e1.provider, e2.provider);
     }
 }

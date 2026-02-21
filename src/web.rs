@@ -1110,6 +1110,7 @@ mod tests {
             transformed: false,
             importance: 0.5,
             chaos_label: None,
+            provider: None,
         };
         let diff = DiffTokenEvent { side: "openai", event: &event };
         let json = serde_json::to_string(&diff).expect("serialize");
@@ -1127,6 +1128,7 @@ mod tests {
             transformed: true,
             importance: 0.7,
             chaos_label: Some("reverse".to_string()),
+            provider: None,
         };
         let diff = DiffTokenEvent { side: "anthropic", event: &event };
         let json = serde_json::to_string(&diff).expect("serialize");
