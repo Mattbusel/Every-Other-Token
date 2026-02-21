@@ -1,4 +1,5 @@
 use colored::*;
+use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -7,6 +8,15 @@ use crate::cli::Args;
 use crate::providers::Provider;
 use crate::transforms::Transform;
 use crate::{TokenEvent, TokenInterceptor};
+
+/// Wraps a `TokenEvent` with a provider-side label for diff streaming.
+#[derive(Debug, Serialize)]
+struct DiffTokenEvent<'a> {
+    side: &'static str,
+    #[serde(flatten)]
+    event: &'a TokenEvent,
+}
+
 
 /// Embedded single-page HTML application with side-by-side, multi-transform,
 /// dependency graph, and export features.
@@ -71,6 +81,20 @@ header h1{font-size:1.2rem;color:#58a6ff}
 canvas#depgraph{width:100%;height:200px;display:block}
 /* Stats */
 #stats{padding:8px 24px;border-top:1px solid #21262d;font-size:.78rem;color:#8b949e;background:#161b22;display:flex;gap:20px;flex-wrap:wrap}
+/* Chaos tooltip */
+.token[title]{position:relative;cursor:help;border-bottom:1px dotted #58a6ff}
+.token[title]:hover::after{content:attr(title);position:absolute;top:-1.8em;left:0;background:#1c2333;color:#58a6ff;padding:2px 6px;border-radius:4px;font-size:.7rem;white-space:nowrap;z-index:10;pointer-events:none}
+/* Diff view */
+.view-diff{display:grid;grid-template-columns:1fr 1fr;height:100%}
+.diff-col{padding:16px 20px;line-height:1.8;font-size:.95rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto}
+.diff-col:first-child{border-right:1px solid #21262d}
+.diff-label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
+.diff-match{background:#0d2010;color:#3fb950}
+.diff-diverge{background:#200d0d;color:#f85149}
+/* Token surgery */
+.token.surgeable{cursor:pointer}
+.token.surgeable:hover{text-decoration:underline dotted #e3b341;background:rgba(227,179,65,.08)}
+.token-input{font-family:inherit;font-size:inherit;background:#1f2937;color:#e3b341;border:1px solid #e3b341;border-radius:3px;padding:0 2px;min-width:20px;outline:none}
 </style>
 </head>
 <body>
@@ -80,12 +104,13 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button class="btn btn-mode active" id="btn-single" title="Single stream">Single</button>
     <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed">Split</button>
     <button class="btn btn-mode" id="btn-multi" title="All 4 transforms simultaneously">Quad</button>
+    <button class="btn btn-mode" id="btn-diff" title="Live diff: OpenAI vs Anthropic simultaneously">Diff</button>
     <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
   </div>
 </header>
 <div class="controls">
   <div class="field"><label>Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
-  <div class="field"><label>Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option></select></div>
+  <div class="field"><label>Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select></div>
   <div class="field"><label>Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
   <div class="field"><label>Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
@@ -107,6 +132,11 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <div class="multi-panel mp-mock" id="mp-mock"><span class="multi-label">Mock</span></div>
     <div class="multi-panel mp-noise" id="mp-noise"><span class="multi-label">Noise</span></div>
   </div>
+  <!-- Diff: OpenAI vs Anthropic side by side -->
+  <div class="view-diff" id="v-diff" style="display:none">
+    <div class="diff-col" id="diff-openai"><span class="diff-label">OpenAI</span></div>
+    <div class="diff-col" id="diff-anthropic"><span class="diff-label">Anthropic</span></div>
+  </div>
 </div>
 <div id="graph-wrap"><canvas id="depgraph"></canvas></div>
 <div id="stats"></div>
@@ -119,26 +149,30 @@ const TX={
   reverse:s=>s.split('').reverse().join(''),
   uppercase:s=>s.toUpperCase(),
   mock:s=>s.split('').map((c,i)=>i%2===0?c.toLowerCase():c.toUpperCase()).join(''),
-  noise:s=>{const n='*+~@#$%';return s+n[Math.floor(Math.random()*n.length)]}
+  noise:s=>{const n='*+~@#$%';return s+n[Math.floor(Math.random()*n.length)]},
+  chaos:s=>{const picks=['reverse','uppercase','mock','noise'];const k=picks[Math.floor(Math.random()*4)];return TX[k](s)}
 };
 
 /* ---- State ---- */
-let es=null, mode='single', allTokens=[], graphNodes=[];
-const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi')};
+let es=null, mode='single', allTokens=[], graphNodes=[], surgeryLog=[];
+const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff')};
 
 /* ---- View mode switching ---- */
 function setMode(m){
   mode=m;
   Object.values(views).forEach(v=>v.style.display='none');
-  views[m].style.display='';
+  if(m==='diff'){$('#v-diff').style.display=''}
+  else{views[m].style.display=''}
   $$('.btn-mode').forEach(b=>b.classList.remove('active'));
   if(m==='single')$('#btn-single').classList.add('active');
   if(m==='sbs')$('#btn-sbs').classList.add('active');
   if(m==='multi')$('#btn-multi').classList.add('active');
+  if(m==='diff')$('#btn-diff').classList.add('active');
 }
 $('#btn-single').onclick=()=>setMode('single');
 $('#btn-sbs').onclick=()=>setMode('sbs');
 $('#btn-multi').onclick=()=>setMode('multi');
+$('#btn-diff').onclick=()=>{setMode('diff');if(!es)startDiff()};
 
 /* ---- Graph toggle ---- */
 $('#graphtoggle').onchange=function(){
@@ -147,7 +181,7 @@ $('#graphtoggle').onchange=function(){
 };
 
 /* ---- Helpers ---- */
-function mkSpan(text,isOdd,importance,extraCls){
+function mkSpan(text,isOdd,importance,extraCls,chaosLabel){
   const s=document.createElement('span');
   s.className='token '+(isOdd?'odd':'even');
   if(extraCls)s.classList.add(extraCls);
@@ -155,8 +189,36 @@ function mkSpan(text,isOdd,importance,extraCls){
     const h=importance>=.8?4:importance>=.6?3:importance>=.4?2:importance>=.2?1:0;
     s.classList.add('heat-'+h);
   }
+  if(chaosLabel&&isOdd)s.title='chaos → '+chaosLabel;
   s.textContent=text;
   return s;
+}
+
+/* ---- Token surgery ---- */
+function enableSurgery(container){
+  container.querySelectorAll('.token').forEach(sp=>{
+    if(sp.classList.contains('surgeable'))return;
+    sp.classList.add('surgeable');
+    sp.addEventListener('click',function(){
+      const orig=sp.textContent;
+      const inp=document.createElement('input');
+      inp.className='token-input';
+      inp.value=orig;
+      inp.style.width=Math.max(orig.length*0.6+1,2)+'em';
+      sp.replaceWith(inp);
+      inp.focus();inp.select();
+      function commit(){
+        const newText=inp.value||orig;
+        sp.textContent=newText;
+        inp.replaceWith(sp);
+        if(newText!==orig){
+          surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
+        }
+      }
+      inp.addEventListener('blur',commit);
+      inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=orig;inp.blur()}});
+    });
+  });
 }
 
 function heatColor(imp){
@@ -221,16 +283,17 @@ function drawGraph(){
 
 /* ---- Streaming ---- */
 $('#start').onclick=()=>{
+  if(mode==='diff'){startDiff();return}
   if(es){es.close();es=null}
   /* Clear all views */
   $('#v-single').innerHTML='';
   $('#sbs-orig').innerHTML='<span class="sbs-label">Original</span>';
   $('#sbs-xform').innerHTML='<span class="sbs-label">Transformed</span>';
-  ['reverse','uppercase','mock','noise'].forEach(t=>{
-    $('#mp-'+t).innerHTML='<span class="multi-label">'+t+'</span>';
+  ['reverse','uppercase','mock','noise','chaos'].forEach(t=>{
+    const el=$('#mp-'+t);if(el)el.innerHTML='<span class="multi-label">'+t+'</span>';
   });
   $('#stats').textContent='';
-  allTokens=[];graphNodes=[];
+  allTokens=[];graphNodes=[];surgeryLog=[];
   if($('#graphtoggle').checked)drawGraph();
 
   const p=encodeURIComponent($('#prompt').value);
@@ -247,6 +310,10 @@ $('#start').onclick=()=>{
       es.close();es=null;
       $('#start').disabled=false;$('#start').textContent='Stream';
       if($('#graphtoggle').checked)drawGraph();
+      /* Enable token surgery on all rendered containers */
+      enableSurgery($('#v-single'));
+      enableSurgery($('#sbs-orig'));
+      enableSurgery($('#sbs-xform'));
       return;
     }
     try{
@@ -256,15 +323,20 @@ $('#start').onclick=()=>{
       count++;if(tk.transformed)xformed++;
 
       /* Single column */
-      $('#v-single').appendChild(mkSpan(tk.text,tk.transformed,tk.importance));
+      const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
+      singleSp.dataset.idx=tk.index;
+      $('#v-single').appendChild(singleSp);
 
       /* Side-by-side: left=original, right=transformed */
-      $('#sbs-orig').appendChild(mkSpan(tk.original,false,tk.importance));
-      $('#sbs-xform').appendChild(mkSpan(tk.text,tk.transformed,tk.importance));
+      const origSp=mkSpan(tk.original,false,tk.importance);origSp.dataset.idx=tk.index;
+      $('#sbs-orig').appendChild(origSp);
+      const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);xformSp.dataset.idx=tk.index;
+      $('#sbs-xform').appendChild(xformSp);
 
-      /* Multi-transform: apply all 4 transforms to original for odd tokens */
-      ['reverse','uppercase','mock','noise'].forEach(txName=>{
+      /* Multi-transform: apply all 4+chaos transforms to original for odd tokens */
+      ['reverse','uppercase','mock','noise','chaos'].forEach(txName=>{
         const panel=$('#mp-'+txName);
+        if(!panel)return;
         if(tk.transformed){
           const applied=TX[txName](tk.original);
           panel.appendChild(mkSpan(applied,true,tk.importance));
@@ -292,6 +364,63 @@ $('#start').onclick=()=>{
   es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
 };
 
+/* ---- Diff streaming ---- */
+let diffOpenaiTokens=[], diffAnthropicTokens=[];
+function startDiff(){
+  if(es){es.close();es=null}
+  $('#diff-openai').innerHTML='<span class="diff-label">OpenAI</span>';
+  $('#diff-anthropic').innerHTML='<span class="diff-label">Anthropic</span>';
+  diffOpenaiTokens=[];diffAnthropicTokens=[];
+  $('#stats').textContent='';
+  const p=encodeURIComponent($('#prompt').value);
+  const t=$('#transform').value;
+  const m=encodeURIComponent($('#model').value);
+  const hm=$('#heatmap').checked?'1':'0';
+  const url='/diff-stream?prompt='+p+'&transform='+t+'&model='+m+'&heatmap='+hm;
+  $('#start').disabled=true;$('#start').textContent='Diffing...';
+  es=new EventSource(url);
+  es.onmessage=e=>{
+    if(e.data==='[DONE]'){
+      es.close();es=null;
+      $('#start').disabled=false;$('#start').textContent='Stream';
+      applyDiffHighlights();
+      return;
+    }
+    try{
+      const tk=JSON.parse(e.data);
+      if(tk.side==='openai'){
+        diffOpenaiTokens.push(tk);
+        const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
+        sp.dataset.idx=tk.index;
+        $('#diff-openai').appendChild(sp);
+        $('#diff-openai').scrollTop=$('#diff-openai').scrollHeight;
+      } else if(tk.side==='anthropic'){
+        diffAnthropicTokens.push(tk);
+        const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
+        sp.dataset.idx=tk.index;
+        $('#diff-anthropic').appendChild(sp);
+        $('#diff-anthropic').scrollTop=$('#diff-anthropic').scrollHeight;
+      }
+      $('#stats').textContent='OpenAI: '+diffOpenaiTokens.length+' tokens | Anthropic: '+diffAnthropicTokens.length+' tokens';
+    }catch(_){}
+  };
+  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
+}
+function applyDiffHighlights(){
+  const oSpans=Array.from($('#diff-openai').querySelectorAll('.token'));
+  const aSpans=Array.from($('#diff-anthropic').querySelectorAll('.token'));
+  let matches=0;
+  const total=Math.max(oSpans.length,aSpans.length);
+  for(let i=0;i<total;i++){
+    const match=oSpans[i]&&aSpans[i]&&oSpans[i].textContent===aSpans[i].textContent;
+    if(oSpans[i])oSpans[i].classList.add(match?'diff-match':'diff-diverge');
+    if(aSpans[i])aSpans[i].classList.add(match?'diff-match':'diff-diverge');
+    if(match)matches++;
+  }
+  const pct=total>0?Math.round(matches/total*100):0;
+  $('#stats').textContent='Match: '+pct+'% ('+matches+'/'+total+') | OpenAI: '+oSpans.length+' tokens | Anthropic: '+aSpans.length+' tokens';
+}
+
 /* ---- Export JSON ---- */
 $('#btn-export').onclick=()=>{
   if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return}
@@ -303,7 +432,8 @@ $('#btn-export').onclick=()=>{
     timestamp:new Date().toISOString(),
     token_count:allTokens.length,
     transformed_count:allTokens.filter(t=>t.transformed).length,
-    tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance}))
+    tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance,chaos_label:t.chaos_label||null})),
+    surgery_log:surgeryLog
   };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
@@ -513,6 +643,98 @@ async fn handle_connection(
             let _ = stream_task.await;
 
             // Send done signal
+            let _ = stream.write_all(b"data: [DONE]\n\n").await;
+        }
+        "/diff-stream" => {
+            let params = parse_query(query_str);
+            let prompt = params.get("prompt").cloned().unwrap_or_default();
+            let transform_str = params
+                .get("transform")
+                .cloned()
+                .unwrap_or_else(|| "reverse".to_string());
+            let model_input = params.get("model").cloned().unwrap_or_default();
+            let heatmap = params.get("heatmap").map_or(false, |v| v == "1");
+
+            let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
+
+            let openai_model = if model_input.is_empty() {
+                "gpt-3.5-turbo".to_string()
+            } else {
+                model_input.clone()
+            };
+            let anthropic_model = if model_input.is_empty() {
+                "claude-sonnet-4-20250514".to_string()
+            } else {
+                model_input.clone()
+            };
+
+            // SSE headers
+            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+            stream.write_all(headers.as_bytes()).await?;
+
+            // Merged channel: (side, event)
+            let (merged_tx, mut merged_rx) = mpsc::unbounded_channel::<(&'static str, TokenEvent)>();
+
+            // Spawn OpenAI side
+            let openai_result = TokenInterceptor::new(
+                Provider::Openai,
+                transform.clone(),
+                openai_model,
+                true,
+                heatmap,
+                orchestrator,
+            )
+            .map_err(|e| e.to_string());
+            if let Ok(mut oai) = openai_result {
+                let (tx_oai, mut rx_oai) = mpsc::unbounded_channel::<TokenEvent>();
+                oai.web_tx = Some(tx_oai);
+                let prompt_o = prompt.clone();
+                tokio::spawn(async move { let _ = oai.intercept_stream(&prompt_o).await; });
+                let mtx = merged_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(ev) = rx_oai.recv().await {
+                        let _ = mtx.send(("openai", ev));
+                    }
+                });
+            }
+
+            // Spawn Anthropic side
+            let anthropic_result = TokenInterceptor::new(
+                Provider::Anthropic,
+                transform,
+                anthropic_model,
+                true,
+                heatmap,
+                orchestrator,
+            )
+            .map_err(|e| e.to_string());
+            if let Ok(mut ant) = anthropic_result {
+                let (tx_ant, mut rx_ant) = mpsc::unbounded_channel::<TokenEvent>();
+                ant.web_tx = Some(tx_ant);
+                let prompt_a = prompt.clone();
+                tokio::spawn(async move { let _ = ant.intercept_stream(&prompt_a).await; });
+                let mtx = merged_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(ev) = rx_ant.recv().await {
+                        let _ = mtx.send(("anthropic", ev));
+                    }
+                });
+            }
+
+            // Drop the original merged_tx so the channel closes when both sides finish
+            drop(merged_tx);
+
+            // Forward merged events as SSE with side tag
+            while let Some((side, event)) = merged_rx.recv().await {
+                let diff_event = DiffTokenEvent { side, event: &event };
+                if let Ok(json) = serde_json::to_string(&diff_event) {
+                    let sse = format!("data: {}\n\n", json);
+                    if stream.write_all(sse.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
         }
         _ => {
@@ -810,5 +1032,111 @@ mod tests {
     fn test_index_html_has_export_download() {
         assert!(INDEX_HTML.contains("download"));
         assert!(INDEX_HTML.contains("application/json"));
+    }
+
+    // -- New feature tests --
+
+    #[test]
+    fn test_index_html_has_chaos_transform() {
+        assert!(INDEX_HTML.contains("chaos"));
+        assert!(INDEX_HTML.contains(r#"value="chaos""#));
+    }
+
+    #[test]
+    fn test_index_html_has_chaos_js_transform() {
+        assert!(INDEX_HTML.contains("TX.chaos") || INDEX_HTML.contains("chaos:s=>"));
+    }
+
+    #[test]
+    fn test_index_html_has_chaos_tooltip_css() {
+        assert!(INDEX_HTML.contains("attr(title)"));
+        assert!(INDEX_HTML.contains(".token[title]"));
+    }
+
+    #[test]
+    fn test_index_html_has_diff_view() {
+        assert!(INDEX_HTML.contains("v-diff"));
+        assert!(INDEX_HTML.contains("diff-openai"));
+        assert!(INDEX_HTML.contains("diff-anthropic"));
+    }
+
+    #[test]
+    fn test_index_html_has_diff_button() {
+        assert!(INDEX_HTML.contains("btn-diff"));
+        assert!(INDEX_HTML.contains("Diff"));
+    }
+
+    #[test]
+    fn test_index_html_has_diff_css() {
+        assert!(INDEX_HTML.contains("view-diff"));
+        assert!(INDEX_HTML.contains("diff-match"));
+        assert!(INDEX_HTML.contains("diff-diverge"));
+    }
+
+    #[test]
+    fn test_index_html_has_diff_highlight_fn() {
+        assert!(INDEX_HTML.contains("applyDiffHighlights"));
+    }
+
+    #[test]
+    fn test_index_html_has_surgery_css() {
+        assert!(INDEX_HTML.contains("surgeable"));
+        assert!(INDEX_HTML.contains("token-input"));
+    }
+
+    #[test]
+    fn test_index_html_has_surgery_fn() {
+        assert!(INDEX_HTML.contains("enableSurgery"));
+        assert!(INDEX_HTML.contains("surgeryLog"));
+    }
+
+    #[test]
+    fn test_index_html_has_diff_stream_fn() {
+        assert!(INDEX_HTML.contains("startDiff"));
+        assert!(INDEX_HTML.contains("diff-stream"));
+    }
+
+    #[test]
+    fn test_index_html_has_chaos_label_in_mkspan() {
+        assert!(INDEX_HTML.contains("chaos_label") || INDEX_HTML.contains("chaosLabel"));
+    }
+
+    #[test]
+    fn test_diff_token_event_serializes_with_side() {
+        let event = crate::TokenEvent {
+            text: "hello".to_string(),
+            original: "hello".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+            chaos_label: None,
+        };
+        let diff = DiffTokenEvent { side: "openai", event: &event };
+        let json = serde_json::to_string(&diff).expect("serialize");
+        assert!(json.contains(r#""side":"openai""#));
+        assert!(json.contains(r#""text":"hello""#));
+        assert!(json.contains(r#""index":0"#));
+    }
+
+    #[test]
+    fn test_diff_token_event_anthropic_side() {
+        let event = crate::TokenEvent {
+            text: "world".to_string(),
+            original: "world".to_string(),
+            index: 1,
+            transformed: true,
+            importance: 0.7,
+            chaos_label: Some("reverse".to_string()),
+        };
+        let diff = DiffTokenEvent { side: "anthropic", event: &event };
+        let json = serde_json::to_string(&diff).expect("serialize");
+        assert!(json.contains(r#""side":"anthropic""#));
+        assert!(json.contains(r#""transformed":true"#));
+        assert!(json.contains(r#""chaos_label":"reverse""#));
+    }
+
+    #[test]
+    fn test_index_html_surgery_log_in_export() {
+        assert!(INDEX_HTML.contains("surgery_log"));
     }
 }

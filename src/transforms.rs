@@ -7,6 +7,7 @@ pub enum Transform {
     Uppercase,
     Mock,
     Noise,
+    Chaos,
 }
 
 impl Transform {
@@ -16,32 +17,69 @@ impl Transform {
             "uppercase" => Ok(Transform::Uppercase),
             "mock" => Ok(Transform::Mock),
             "noise" => Ok(Transform::Noise),
+            "chaos" => Ok(Transform::Chaos),
             _ => Err(format!("Unknown transform: {}", s)),
         }
     }
 
-    pub fn apply(&self, token: &str) -> String {
+    /// Apply the transform and return `(result, label)` where `label` names the
+    /// sub-transform actually applied.  For Chaos, the sub-transform is chosen
+    /// randomly at call time; for others the label equals the transform name.
+    pub fn apply_with_label(&self, token: &str) -> (String, &'static str) {
         match self {
-            Transform::Reverse => token.chars().rev().collect(),
-            Transform::Uppercase => token.to_uppercase(),
-            Transform::Mock => token
-                .chars()
-                .enumerate()
-                .map(|(i, c)| {
-                    if i % 2 == 0 {
-                        c.to_lowercase().next().unwrap_or(c)
-                    } else {
-                        c.to_uppercase().next().unwrap_or(c)
-                    }
-                })
-                .collect(),
+            Transform::Reverse => (token.chars().rev().collect(), "reverse"),
+            Transform::Uppercase => (token.to_uppercase(), "uppercase"),
+            Transform::Mock => {
+                let result = token
+                    .chars()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i % 2 == 0 {
+                            c.to_lowercase().next().unwrap_or(c)
+                        } else {
+                            c.to_uppercase().next().unwrap_or(c)
+                        }
+                    })
+                    .collect();
+                (result, "mock")
+            }
             Transform::Noise => {
                 let mut rng = rand::thread_rng();
                 let noise_chars = ['*', '+', '~', '@', '#', '$', '%'];
                 let noise_char = noise_chars[rng.gen_range(0..noise_chars.len())];
-                format!("{}{}", token, noise_char)
+                (format!("{}{}", token, noise_char), "noise")
+            }
+            Transform::Chaos => {
+                let mut rng = rand::thread_rng();
+                match rng.gen_range(0u8..4) {
+                    0 => (token.chars().rev().collect(), "reverse"),
+                    1 => (token.to_uppercase(), "uppercase"),
+                    2 => {
+                        let result = token
+                            .chars()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                if i % 2 == 0 {
+                                    c.to_lowercase().next().unwrap_or(c)
+                                } else {
+                                    c.to_uppercase().next().unwrap_or(c)
+                                }
+                            })
+                            .collect();
+                        (result, "mock")
+                    }
+                    _ => {
+                        let noise_chars = ['*', '+', '~', '@', '#', '$', '%'];
+                        let noise_char = noise_chars[rng.gen_range(0..noise_chars.len())];
+                        (format!("{}{}", token, noise_char), "noise")
+                    }
+                }
             }
         }
+    }
+
+    pub fn apply(&self, token: &str) -> String {
+        self.apply_with_label(token).0
     }
 }
 
@@ -504,5 +542,98 @@ mod tests {
     #[test]
     fn test_heatmap_color_contains_text() {
         assert!(apply_heatmap_color("mytoken", 0.5).contains("mytoken"));
+    }
+
+    // -- Chaos transform tests --
+
+    #[test]
+    fn test_transform_chaos_from_str() {
+        assert!(matches!(
+            Transform::from_str_loose("chaos"),
+            Ok(Transform::Chaos)
+        ));
+    }
+
+    #[test]
+    fn test_transform_chaos_from_str_case_insensitive() {
+        assert!(matches!(
+            Transform::from_str_loose("CHAOS"),
+            Ok(Transform::Chaos)
+        ));
+        assert!(matches!(
+            Transform::from_str_loose("Chaos"),
+            Ok(Transform::Chaos)
+        ));
+    }
+
+    #[test]
+    fn test_transform_chaos_apply_nonempty() {
+        for _ in 0..20 {
+            let result = Transform::Chaos.apply("hello");
+            assert!(!result.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_transform_chaos_apply_with_label_returns_known_label() {
+        let known = ["reverse", "uppercase", "mock", "noise"];
+        for _ in 0..50 {
+            let (_text, label) = Transform::Chaos.apply_with_label("hello");
+            assert!(known.contains(&label), "unexpected label: {}", label);
+        }
+    }
+
+    #[test]
+    fn test_transform_chaos_apply_with_label_text_nonempty() {
+        for _ in 0..20 {
+            let (text, _label) = Transform::Chaos.apply_with_label("world");
+            assert!(!text.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_transform_chaos_empty_input() {
+        // Noise appends 1 char, others keep length 0; either way no panic
+        let (_text, label) = Transform::Chaos.apply_with_label("");
+        let known = ["reverse", "uppercase", "mock", "noise"];
+        assert!(known.contains(&label));
+    }
+
+    #[test]
+    fn test_apply_with_label_non_chaos_label_matches_name() {
+        assert_eq!(Transform::Reverse.apply_with_label("hi").1, "reverse");
+        assert_eq!(Transform::Uppercase.apply_with_label("hi").1, "uppercase");
+        assert_eq!(Transform::Mock.apply_with_label("hi").1, "mock");
+        assert_eq!(Transform::Noise.apply_with_label("hi").1, "noise");
+    }
+
+    #[test]
+    fn test_apply_with_label_text_matches_apply() {
+        let inputs = ["hello", "world", "test", ""];
+        for input in &inputs {
+            // Deterministic transforms only (not Chaos/Noise which are random)
+            assert_eq!(
+                Transform::Reverse.apply_with_label(input).0,
+                Transform::Reverse.apply(input)
+            );
+            assert_eq!(
+                Transform::Uppercase.apply_with_label(input).0,
+                Transform::Uppercase.apply(input)
+            );
+            assert_eq!(
+                Transform::Mock.apply_with_label(input).0,
+                Transform::Mock.apply(input)
+            );
+        }
+    }
+
+    #[test]
+    fn test_transform_chaos_produces_variety_over_many_calls() {
+        // Over 100 calls, Chaos should produce at least 2 distinct results
+        let mut results: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for _ in 0..100 {
+            results.insert(Transform::Chaos.apply("hello"));
+        }
+        assert!(results.len() >= 2, "Chaos should produce varied results");
     }
 }
