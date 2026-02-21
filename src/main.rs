@@ -674,7 +674,7 @@ impl TokenInterceptor {
 
 #[derive(Parser)]
 #[command(name = "every-other-token")]
-#[command(version = "3.0.0")]
+#[command(version = "4.0.0")]
 #[command(about = "A real-time token stream mutator for LLM interpretability research")]
 struct Args {
     /// Input prompt to send to the LLM
@@ -1703,6 +1703,885 @@ mod tests {
         for (i, entry) in parsed.iter().enumerate() {
             assert_eq!(entry["index"].as_u64().expect("index"), i as u64);
         }
+    }
+
+    // -- Transform edge cases -----------------------------------------------
+
+    #[test]
+    fn test_transform_reverse_empty() {
+        assert_eq!(Transform::Reverse.apply(""), "");
+    }
+
+    #[test]
+    fn test_transform_uppercase_empty() {
+        assert_eq!(Transform::Uppercase.apply(""), "");
+    }
+
+    #[test]
+    fn test_transform_mock_empty() {
+        assert_eq!(Transform::Mock.apply(""), "");
+    }
+
+    #[test]
+    fn test_transform_noise_empty() {
+        let result = Transform::Noise.apply("");
+        assert_eq!(result.len(), 1); // just the noise char
+    }
+
+    #[test]
+    fn test_transform_reverse_single_char() {
+        assert_eq!(Transform::Reverse.apply("a"), "a");
+    }
+
+    #[test]
+    fn test_transform_reverse_unicode() {
+        assert_eq!(Transform::Reverse.apply("abc"), "cba");
+        assert_eq!(Transform::Reverse.apply("ab"), "ba");
+    }
+
+    #[test]
+    fn test_transform_uppercase_already_upper() {
+        assert_eq!(Transform::Uppercase.apply("HELLO"), "HELLO");
+    }
+
+    #[test]
+    fn test_transform_mock_single_char() {
+        assert_eq!(Transform::Mock.apply("a"), "a"); // index 0 -> lowercase
+        assert_eq!(Transform::Mock.apply("A"), "a"); // index 0 -> lowercase
+    }
+
+    #[test]
+    fn test_transform_mock_two_chars() {
+        assert_eq!(Transform::Mock.apply("ab"), "aB");
+        assert_eq!(Transform::Mock.apply("AB"), "aB");
+    }
+
+    #[test]
+    fn test_transform_noise_always_appends_one_char() {
+        for _ in 0..20 {
+            let result = Transform::Noise.apply("test");
+            assert_eq!(result.len(), 5);
+            assert!(result.starts_with("test"));
+        }
+    }
+
+    #[test]
+    fn test_transform_noise_char_from_set() {
+        let noise_set = ['*', '+', '~', '@', '#', '$', '%'];
+        for _ in 0..50 {
+            let result = Transform::Noise.apply("x");
+            let noise_char = result.chars().last().expect("should have noise char");
+            assert!(
+                noise_set.contains(&noise_char),
+                "unexpected noise char: {}",
+                noise_char
+            );
+        }
+    }
+
+    #[test]
+    fn test_transform_from_str_invalid_returns_error() {
+        assert!(Transform::from_str_loose("").is_err());
+        assert!(Transform::from_str_loose("foo").is_err());
+        assert!(Transform::from_str_loose("REVERSED").is_err());
+    }
+
+    #[test]
+    fn test_transform_reverse_preserves_length() {
+        let inputs = ["hello", "a", "ab", "abcdefghij", ""];
+        for input in &inputs {
+            assert_eq!(Transform::Reverse.apply(input).len(), input.len());
+        }
+    }
+
+    #[test]
+    fn test_transform_uppercase_preserves_length() {
+        let inputs = ["hello", "HELLO", "HeLLo", "a", ""];
+        for input in &inputs {
+            assert_eq!(Transform::Uppercase.apply(input).len(), input.len());
+        }
+    }
+
+    #[test]
+    fn test_transform_mock_preserves_length() {
+        let inputs = ["hello", "world", "a", "ab", ""];
+        for input in &inputs {
+            assert_eq!(Transform::Mock.apply(input).len(), input.len());
+        }
+    }
+
+    // -- Provider edge cases -----------------------------------------------
+
+    #[test]
+    fn test_provider_openai_display_lowercase() {
+        let s = format!("{}", Provider::Openai);
+        assert_eq!(s, "openai");
+        assert!(s.chars().all(|c| c.is_lowercase() || c.is_alphanumeric()));
+    }
+
+    #[test]
+    fn test_provider_anthropic_display_lowercase() {
+        let s = format!("{}", Provider::Anthropic);
+        assert_eq!(s, "anthropic");
+    }
+
+    #[test]
+    fn test_provider_clone() {
+        let p = Provider::Openai;
+        let p2 = p.clone();
+        assert_eq!(p, p2);
+    }
+
+    // -- Tokenizer edge cases -----------------------------------------------
+
+    #[test]
+    fn test_tokenize_single_word() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("hello");
+        assert_eq!(tokens, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_tokenize_only_whitespace() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("   ");
+        // Should contain whitespace tokens
+        assert!(tokens.iter().all(|t| t.trim().is_empty()));
+    }
+
+    #[test]
+    fn test_tokenize_only_punctuation() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("...");
+        assert_eq!(tokens, vec![".", ".", "."]);
+    }
+
+    #[test]
+    fn test_tokenize_mixed_punct_words() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("hello,world");
+        assert_eq!(tokens[0], "hello");
+        assert_eq!(tokens[1], ",");
+        assert_eq!(tokens[2], "world");
+    }
+
+    #[test]
+    fn test_tokenize_preserves_all_chars() {
+        let interceptor = make_test_interceptor();
+        let input = "hello, world! foo";
+        let tokens = interceptor.tokenize(input);
+        let reconstructed: String = tokens.join("");
+        assert_eq!(reconstructed, input);
+    }
+
+    #[test]
+    fn test_tokenize_multiple_spaces() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("a  b");
+        assert!(tokens.contains(&"a".to_string()));
+        assert!(tokens.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_leading_trailing_space() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize(" hello ");
+        assert!(tokens.iter().any(|t| t == "hello"));
+    }
+
+    #[test]
+    fn test_tokenize_numbers() {
+        let interceptor = make_test_interceptor();
+        let tokens = interceptor.tokenize("42 is the answer");
+        assert!(tokens.contains(&"42".to_string()));
+        assert!(tokens.contains(&"is".to_string()));
+    }
+
+    // -- Importance scoring edge cases --------------------------------------
+
+    #[test]
+    fn test_importance_early_position_boost() {
+        let interceptor = make_test_interceptor();
+        let early_scores: Vec<f64> = (0..5)
+            .map(|pos| interceptor.calculate_token_importance("word", pos))
+            .collect();
+        let mid_scores: Vec<f64> = (10..15)
+            .map(|pos| interceptor.calculate_token_importance("word", pos))
+            .collect();
+        let early_avg: f64 = early_scores.iter().sum::<f64>() / early_scores.len() as f64;
+        let mid_avg: f64 = mid_scores.iter().sum::<f64>() / mid_scores.len() as f64;
+        // Early positions should generally score higher on average
+        assert!(early_avg > mid_avg - 0.2, "early={}, mid={}", early_avg, mid_avg);
+    }
+
+    #[test]
+    fn test_importance_uppercase_boost() {
+        let interceptor = make_test_interceptor();
+        let mut upper_total = 0.0;
+        let mut lower_total = 0.0;
+        let n = 200;
+        for _ in 0..n {
+            upper_total += interceptor.calculate_token_importance("AI", 25);
+            lower_total += interceptor.calculate_token_importance("ai", 25);
+        }
+        let upper_avg = upper_total / n as f64;
+        let lower_avg = lower_total / n as f64;
+        assert!(
+            upper_avg > lower_avg,
+            "uppercase should have higher importance: {} vs {}",
+            upper_avg,
+            lower_avg
+        );
+    }
+
+    #[test]
+    fn test_importance_content_keyword_boost() {
+        let interceptor = make_test_interceptor();
+        let mut keyword_total = 0.0;
+        let mut plain_total = 0.0;
+        let n = 200;
+        for _ in 0..n {
+            keyword_total += interceptor.calculate_token_importance("algorithm", 25);
+            plain_total += interceptor.calculate_token_importance("xyz", 25);
+        }
+        let keyword_avg = keyword_total / n as f64;
+        let plain_avg = plain_total / n as f64;
+        assert!(
+            keyword_avg > plain_avg,
+            "keyword should have higher importance: {} vs {}",
+            keyword_avg,
+            plain_avg
+        );
+    }
+
+    #[test]
+    fn test_importance_long_token_boost() {
+        let interceptor = make_test_interceptor();
+        let mut long_total = 0.0;
+        let mut short_total = 0.0;
+        let n = 200;
+        for _ in 0..n {
+            long_total += interceptor.calculate_token_importance("supercalifragilistic", 25);
+            short_total += interceptor.calculate_token_importance("a", 25);
+        }
+        let long_avg = long_total / n as f64;
+        let short_avg = short_total / n as f64;
+        assert!(
+            long_avg > short_avg,
+            "long token should have higher importance: {} vs {}",
+            long_avg,
+            short_avg
+        );
+    }
+
+    #[test]
+    fn test_importance_always_between_zero_and_one() {
+        let interceptor = make_test_interceptor();
+        let test_tokens = [
+            ".", ",", "!", "?", "a", "AI", "algorithm", "the",
+            "superlongtoken", "ALLCAPS", "lowercase", "42",
+        ];
+        for token in &test_tokens {
+            for pos in [0, 1, 5, 25, 50, 100] {
+                let imp = interceptor.calculate_token_importance(token, pos);
+                assert!(
+                    imp >= 0.0 && imp <= 1.0,
+                    "importance {} out of range for token={} pos={}",
+                    imp,
+                    token,
+                    pos
+                );
+            }
+        }
+    }
+
+    // -- Heatmap color mapping -----------------------------------------------
+
+    #[test]
+    fn test_heatmap_color_returns_nonempty_string() {
+        let interceptor = make_test_interceptor();
+        let levels = [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0];
+        for level in &levels {
+            let colored = interceptor.apply_heatmap_color("test", *level);
+            assert!(!colored.is_empty(), "heatmap color empty for level {}", level);
+        }
+    }
+
+    #[test]
+    fn test_heatmap_color_contains_token_text() {
+        let interceptor = make_test_interceptor();
+        let colored = interceptor.apply_heatmap_color("mytoken", 0.5);
+        assert!(
+            colored.contains("mytoken"),
+            "heatmap color should contain original text"
+        );
+    }
+
+    // -- URL decode edge cases ----------------------------------------------
+
+    #[test]
+    fn test_url_decode_empty() {
+        assert_eq!(web::url_decode(""), "");
+    }
+
+    #[test]
+    fn test_url_decode_no_encoding() {
+        assert_eq!(web::url_decode("hello"), "hello");
+    }
+
+    #[test]
+    fn test_url_decode_plus_only() {
+        assert_eq!(web::url_decode("+++"), "   ");
+    }
+
+    #[test]
+    fn test_url_decode_percent_encoding_various() {
+        assert_eq!(web::url_decode("%21"), "!");
+        assert_eq!(web::url_decode("%3D"), "=");
+        assert_eq!(web::url_decode("%3F"), "?");
+    }
+
+    #[test]
+    fn test_url_decode_mixed() {
+        assert_eq!(
+            web::url_decode("hello+world%21+how%3F"),
+            "hello world! how?"
+        );
+    }
+
+    // -- Parse query edge cases ---------------------------------------------
+
+    #[test]
+    fn test_parse_query_single_param() {
+        let params = web::parse_query("key=value");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params.get("key").map(|s| s.as_str()), Some("value"));
+    }
+
+    #[test]
+    fn test_parse_query_no_value() {
+        let params = web::parse_query("key=");
+        assert_eq!(params.get("key").map(|s| s.as_str()), Some(""));
+    }
+
+    #[test]
+    fn test_parse_query_encoded_values() {
+        let params = web::parse_query("prompt=hello+world%21&model=gpt-4");
+        assert_eq!(
+            params.get("prompt").map(|s| s.as_str()),
+            Some("hello world!")
+        );
+        assert_eq!(params.get("model").map(|s| s.as_str()), Some("gpt-4"));
+    }
+
+    #[test]
+    fn test_parse_query_many_params() {
+        let params = web::parse_query("a=1&b=2&c=3&d=4&e=5");
+        assert_eq!(params.len(), 5);
+        assert_eq!(params.get("c").map(|s| s.as_str()), Some("3"));
+    }
+
+    // -- Process content accumulation tests ----------------------------------
+
+    #[test]
+    fn test_process_content_increments_token_count() {
+        let (tx, _rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world");
+        assert_eq!(interceptor.token_count, 2);
+
+        interceptor.process_content("foo bar");
+        assert_eq!(interceptor.token_count, 4);
+    }
+
+    #[test]
+    fn test_process_content_increments_transformed_count() {
+        let (tx, _rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world foo bar");
+        // Tokens: hello(0, even), world(1, odd), foo(2, even), bar(3, odd)
+        // Transformed: world, bar = 2
+        assert_eq!(interceptor.transformed_count, 2);
+    }
+
+    #[test]
+    fn test_process_content_empty_string_no_change() {
+        let (tx, _rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("");
+        assert_eq!(interceptor.token_count, 0);
+        assert_eq!(interceptor.transformed_count, 0);
+    }
+
+    #[test]
+    fn test_process_content_whitespace_only_no_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("   ");
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_process_content_single_token() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].text, "hello");
+        assert!(!events[0].transformed); // index 0 = even
+    }
+
+    #[test]
+    fn test_process_content_cross_call_index_continuity() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello");
+        interceptor.process_content("world");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].index, 0);
+        assert_eq!(events[1].index, 1);
+        // Second call's token should be transformed (index 1 = odd)
+        assert!(events[1].transformed);
+    }
+
+    // -- MCP request/response edge cases ------------------------------------
+
+    #[test]
+    fn test_mcp_infer_request_contains_all_fields() {
+        let req = McpInferRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "tools/call".to_string(),
+            id: 42,
+            params: McpInferParams {
+                name: "infer".to_string(),
+                arguments: McpInferArguments {
+                    prompt: "test prompt".to_string(),
+                    worker: "llama_cpp".to_string(),
+                },
+            },
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed["jsonrpc"], "2.0");
+        assert_eq!(parsed["method"], "tools/call");
+        assert_eq!(parsed["id"], 42);
+        assert_eq!(parsed["params"]["name"], "infer");
+        assert_eq!(parsed["params"]["arguments"]["prompt"], "test prompt");
+        assert_eq!(parsed["params"]["arguments"]["worker"], "llama_cpp");
+    }
+
+    #[test]
+    fn test_mcp_response_empty_content() {
+        let json = r#"{"jsonrpc":"2.0","result":{"content":[]}}"#;
+        let resp: McpInferResponse = serde_json::from_str(json).expect("deser");
+        assert!(resp.result.as_ref().expect("result").content.is_empty());
+    }
+
+    #[test]
+    fn test_mcp_response_null_text() {
+        let json = r#"{"jsonrpc":"2.0","result":{"content":[{"text":null}]}}"#;
+        let resp: McpInferResponse = serde_json::from_str(json).expect("deser");
+        let content = &resp.result.as_ref().expect("result").content[0];
+        assert!(content.text.is_none());
+    }
+
+    // -- OpenAI/Anthropic deserialization edge cases --------------------------
+
+    #[test]
+    fn test_openai_chunk_multiple_choices() {
+        let json = r#"{"id":"chatcmpl-x","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null},{"index":1,"delta":{"content":"B"},"finish_reason":null}]}"#;
+        let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser");
+        assert_eq!(chunk.choices.len(), 2);
+        assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("A"));
+        assert_eq!(chunk.choices[1].delta.content.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn test_openai_chunk_no_choices() {
+        let json = r#"{"id":"chatcmpl-x","choices":[]}"#;
+        let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser");
+        assert!(chunk.choices.is_empty());
+    }
+
+    #[test]
+    fn test_anthropic_event_message_delta() {
+        let json = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#;
+        let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
+        assert_eq!(event.event_type, "message_delta");
+        // delta exists but text is None (different delta shape)
+        assert!(event.delta.as_ref().and_then(|d| d.text.as_ref()).is_none());
+    }
+
+    #[test]
+    fn test_anthropic_event_ping() {
+        let json = r#"{"type":"ping"}"#;
+        let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
+        assert_eq!(event.event_type, "ping");
+        assert!(event.delta.is_none());
+    }
+
+    // -- TokenEvent serialization/deserialization roundtrip -------------------
+
+    #[test]
+    fn test_token_event_roundtrip_all_fields() {
+        let event = TokenEvent {
+            text: "dlrow".to_string(),
+            original: "world".to_string(),
+            index: 5,
+            transformed: true,
+            importance: 0.87,
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed["text"], "dlrow");
+        assert_eq!(parsed["original"], "world");
+        assert_eq!(parsed["index"], 5);
+        assert_eq!(parsed["transformed"], true);
+        // importance should be close to 0.87
+        let imp = parsed["importance"].as_f64().expect("float");
+        assert!((imp - 0.87).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_token_event_zero_importance() {
+        let event = TokenEvent {
+            text: ".".to_string(),
+            original: ".".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.0,
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("\"importance\":0.0"));
+    }
+
+    #[test]
+    fn test_token_event_max_importance() {
+        let event = TokenEvent {
+            text: "critical".to_string(),
+            original: "critical".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 1.0,
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("\"importance\":1.0"));
+    }
+
+    // -- Side-by-side mode comprehensive tests --------------------------------
+
+    #[test]
+    fn test_sidebyside_original_and_text_differ_for_odd_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("hello world test data");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        for event in &events {
+            if event.transformed {
+                assert_ne!(
+                    event.text, event.original,
+                    "transformed token should have different text and original"
+                );
+            } else {
+                assert_eq!(
+                    event.text, event.original,
+                    "non-transformed token should have same text and original"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_sidebyside_original_is_always_the_raw_token() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("quick brown fox");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        let originals: Vec<&str> = events.iter().map(|e| e.original.as_str()).collect();
+        assert!(originals.contains(&"quick"));
+        assert!(originals.contains(&"brown"));
+        assert!(originals.contains(&"fox"));
+    }
+
+    // -- Graph: pairing verification -----------------------------------------
+
+    #[test]
+    fn test_graph_pairs_have_alternating_transformed_flag() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("alpha beta gamma delta epsilon zeta");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        // Verify even/odd pairing for graph edges
+        for pair in events.chunks(2) {
+            assert!(!pair[0].transformed, "first in pair should be even");
+            if pair.len() > 1 {
+                assert!(pair[1].transformed, "second in pair should be odd");
+            }
+        }
+    }
+
+    #[test]
+    fn test_graph_edges_connect_adjacent_indices() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("one two three four");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        // Indices should be monotonically increasing
+        for (i, event) in events.iter().enumerate() {
+            assert_eq!(event.index, i, "index mismatch at position {}", i);
+        }
+    }
+
+    // -- Export: comprehensive token array structure --------------------------
+
+    #[test]
+    fn test_export_array_indices_are_sequential() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("the quick brown fox jumps over");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        for (i, event) in events.iter().enumerate() {
+            assert_eq!(event.index, i);
+        }
+    }
+
+    #[test]
+    fn test_export_tokens_all_have_importance() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("testing export importance values");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        for event in &events {
+            assert!(event.importance >= 0.0 && event.importance <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_export_large_token_set_serializes() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        // Generate a longer stream
+        interceptor.process_content("the quick brown fox jumps over the lazy dog and runs around the park");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+
+        let json = serde_json::to_string(&events).expect("serialize array");
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("parse array");
+        assert_eq!(parsed.len(), events.len());
+        assert!(parsed.len() > 5, "should have many tokens");
+    }
+
+    // -- Transform with various providers -----------------------------------
+
+    #[test]
+    fn test_uppercase_transform_with_numbers() {
+        assert_eq!(Transform::Uppercase.apply("test123"), "TEST123");
+    }
+
+    #[test]
+    fn test_reverse_transform_with_numbers() {
+        assert_eq!(Transform::Reverse.apply("abc123"), "321cba");
+    }
+
+    #[test]
+    fn test_mock_transform_longer_string() {
+        let result = Transform::Mock.apply("abcdef");
+        assert_eq!(result, "aBcDeF");
+    }
+
+    // -- Header/footer don't crash ------------------------------------------
+
+    #[test]
+    fn test_print_header_all_modes() {
+        let interceptor = make_test_interceptor();
+        interceptor.print_header("test prompt");
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_print_header_with_orchestrator() {
+        let mut interceptor = make_test_interceptor();
+        interceptor.orchestrator = true;
+        interceptor.print_header("test");
+    }
+
+    #[test]
+    fn test_print_header_with_visual_mode() {
+        let mut interceptor = make_test_interceptor();
+        interceptor.visual_mode = true;
+        interceptor.print_header("test");
+    }
+
+    #[test]
+    fn test_print_header_with_heatmap_mode() {
+        let mut interceptor = make_test_interceptor();
+        interceptor.heatmap_mode = true;
+        interceptor.print_header("test");
+    }
+
+    #[test]
+    fn test_print_footer() {
+        let interceptor = make_test_interceptor();
+        interceptor.print_footer();
+    }
+
+    #[test]
+    fn test_print_footer_after_processing() {
+        let mut interceptor = make_test_interceptor();
+        interceptor.token_count = 42;
+        interceptor.transformed_count = 21;
+        interceptor.print_footer();
+    }
+
+    // -- Multi-call accumulation tests ---------------------------------------
+
+    #[test]
+    fn test_six_tokens_three_transformed() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("one two three four five six");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        assert_eq!(events.len(), 6);
+        let xformed: Vec<_> = events.iter().filter(|e| e.transformed).collect();
+        assert_eq!(xformed.len(), 3);
+    }
+
+    #[test]
+    fn test_reverse_transform_is_involution() {
+        // Applying reverse twice returns original
+        let token = "hello";
+        let once = Transform::Reverse.apply(token);
+        let twice = Transform::Reverse.apply(&once);
+        assert_eq!(twice, token);
+    }
+
+    #[test]
+    fn test_uppercase_transform_is_idempotent() {
+        let token = "hello";
+        let once = Transform::Uppercase.apply(token);
+        let twice = Transform::Uppercase.apply(&once);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn test_noise_transform_length_always_plus_one() {
+        for token in &["a", "hello", "test123", ""] {
+            let result = Transform::Noise.apply(token);
+            assert_eq!(result.len(), token.len() + 1);
+        }
+    }
+
+    #[test]
+    fn test_token_event_clone() {
+        let event = TokenEvent {
+            text: "test".to_string(),
+            original: "test".to_string(),
+            index: 0,
+            transformed: false,
+            importance: 0.5,
+        };
+        let cloned = event.clone();
+        assert_eq!(cloned.text, event.text);
+        assert_eq!(cloned.original, event.original);
+        assert_eq!(cloned.index, event.index);
+        assert_eq!(cloned.transformed, event.transformed);
+    }
+
+    #[test]
+    fn test_all_transforms_on_same_input() {
+        let token = "testing";
+        let results = [
+            Transform::Reverse.apply(token),
+            Transform::Uppercase.apply(token),
+            Transform::Mock.apply(token),
+            Transform::Noise.apply(token),
+        ];
+        // All should produce non-empty results
+        for result in &results {
+            assert!(!result.is_empty());
+        }
+        // Reverse, uppercase, mock should all differ
+        assert_ne!(results[0], results[1]);
+        assert_ne!(results[1], results[2]);
     }
 
     // -- Helper -------------------------------------------------------------

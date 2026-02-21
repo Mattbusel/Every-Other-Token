@@ -1,6 +1,6 @@
 [package]
 name = "every-other-token"
-version = "3.0.0"
+version = "4.0.0"
 edition = "2021"
 authors = ["AI Research Tools"]
 description = "A real-time LLM stream interceptor for token-level interaction research"

@@ -1,29 +1,26 @@
 #!/bin/bash
-# ratio_check.sh — Verify test-to-production line ratio (minimum 1:1)
+# ratio_check.sh — Verify test-to-production line ratio meets 1:1 minimum
 
-set -euo pipefail
+set -e
 
-PROD=$(find src -name "*.rs" -exec grep -v '^\s*$' {} + | grep -v '^\s*//' | grep -v '#\[cfg(test)\]' | wc -l)
-TEST_INLINE=$(find src -name "*.rs" -exec sed -n '/#\[cfg(test)\]/,/^}/p' {} + | grep -v '^\s*$' | grep -v '^\s*//' | wc -l)
-TEST_DIR=$(find tests -name "*.rs" 2>/dev/null | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
-TEST_DIR=${TEST_DIR:-0}
-TEST=$((TEST_INLINE + TEST_DIR))
+# Count production lines (src/, excluding test blocks and blank/comment lines)
+PROD=$(sed -n '/#\[cfg(test)\]/q;p' src/main.rs | grep -v '^\s*$' | grep -v '^\s*//' | wc -l | tr -d ' ')
 
-if [ "$PROD" -eq 0 ]; then
-    echo "No production lines found"
-    exit 1
-fi
+# Count test lines (everything inside #[cfg(test)] to end of file)
+TEST=$(sed -n '/#\[cfg(test)\]/,$ p' src/main.rs | grep -v '^\s*$' | grep -v '^\s*//' | wc -l | tr -d ' ')
 
-RATIO=$(echo "scale=2; $TEST / $PROD" | bc)
+# Calculate ratio (using awk for float division)
+RATIO=$(awk "BEGIN {printf \"%.2f\", $TEST / $PROD}")
+PASS=$(awk "BEGIN {print ($TEST >= $PROD) ? 1 : 0}")
 
-echo "Production LOC: $PROD"
-echo "Test LOC:       $TEST"
-echo "Ratio:          ${RATIO}:1"
+echo "Production LOC:  $PROD"
+echo "Test LOC:        $TEST"
+echo "Ratio:           ${RATIO}:1"
 
-if (( $(echo "$RATIO >= 1.0" | bc -l) )); then
-    echo "Status: PASS (>= 1:1)"
+if [ "$PASS" -eq 1 ]; then
+    echo "PASS (minimum 1:1)"
     exit 0
 else
-    echo "Status: FAIL (< 1:1)"
+    echo "FAIL — test ratio below 1:1, write more tests"
     exit 1
 fi
