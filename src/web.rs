@@ -359,10 +359,7 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
         "{}",
         format!("  Web UI running at http://localhost:{}", port).bright_green()
     );
-    eprintln!(
-        "{}",
-        "  Press Ctrl+C to stop.".bright_blue()
-    );
+    eprintln!("{}", "  Press Ctrl+C to stop.".bright_blue());
 
     // Try to open the browser
     #[cfg(target_os = "windows")]
@@ -436,8 +433,14 @@ async fn handle_connection(
         "/stream" => {
             let params = parse_query(query_str);
             let prompt = params.get("prompt").cloned().unwrap_or_default();
-            let transform_str = params.get("transform").cloned().unwrap_or_else(|| "reverse".to_string());
-            let provider_str = params.get("provider").cloned().unwrap_or_else(|| default_provider.to_string());
+            let transform_str = params
+                .get("transform")
+                .cloned()
+                .unwrap_or_else(|| "reverse".to_string());
+            let provider_str = params
+                .get("provider")
+                .cloned()
+                .unwrap_or_else(|| default_provider.to_string());
             let model_input = params.get("model").cloned().unwrap_or_default();
             let heatmap = params.get("heatmap").map_or(false, |v| v == "1");
 
@@ -455,8 +458,7 @@ async fn handle_connection(
                 model_input
             };
 
-            let transform = Transform::from_str_loose(&transform_str)
-                .unwrap_or(Transform::Reverse);
+            let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
 
             // SSE headers
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
@@ -469,7 +471,7 @@ async fn handle_connection(
                 provider,
                 transform,
                 model,
-                true,     // visual mode always on for web
+                true, // visual mode always on for web
                 heatmap,
                 orchestrator,
             );
@@ -514,7 +516,8 @@ async fn handle_connection(
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
         }
         _ => {
-            let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found";
+            let response =
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found";
             stream.write_all(response.as_bytes()).await?;
         }
     }
@@ -579,7 +582,10 @@ mod tests {
     #[test]
     fn test_parse_query_basic() {
         let params = parse_query("prompt=hello+world&transform=reverse&heatmap=1");
-        assert_eq!(params.get("prompt").map(|s| s.as_str()), Some("hello world"));
+        assert_eq!(
+            params.get("prompt").map(|s| s.as_str()),
+            Some("hello world")
+        );
         assert_eq!(params.get("transform").map(|s| s.as_str()), Some("reverse"));
         assert_eq!(params.get("heatmap").map(|s| s.as_str()), Some("1"));
     }
@@ -606,7 +612,10 @@ mod tests {
     #[test]
     fn test_parse_query_encoded_values() {
         let params = parse_query("prompt=hello+world%21&model=gpt-4");
-        assert_eq!(params.get("prompt").map(|s| s.as_str()), Some("hello world!"));
+        assert_eq!(
+            params.get("prompt").map(|s| s.as_str()),
+            Some("hello world!")
+        );
         assert_eq!(params.get("model").map(|s| s.as_str()), Some("gpt-4"));
     }
 

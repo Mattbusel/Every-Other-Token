@@ -1,5 +1,5 @@
-use clap::Parser;
 use crate::providers::Provider;
+use clap::Parser;
 
 #[derive(Parser)]
 #[command(name = "every-other-token")]
@@ -82,10 +82,7 @@ mod tests {
 
     #[test]
     fn test_resolve_model_openai_explicit_model_kept() {
-        assert_eq!(
-            resolve_model(&Provider::Openai, "gpt-4"),
-            "gpt-4"
-        );
+        assert_eq!(resolve_model(&Provider::Openai, "gpt-4"), "gpt-4");
     }
 
     #[test]
@@ -105,9 +102,18 @@ mod tests {
     #[test]
     fn test_args_parse_full() {
         let args = Args::parse_from([
-            "eot", "test prompt", "uppercase", "gpt-4",
-            "--provider", "anthropic", "--visual", "--heatmap",
-            "--orchestrator", "--web", "--port", "9000",
+            "eot",
+            "test prompt",
+            "uppercase",
+            "gpt-4",
+            "--provider",
+            "anthropic",
+            "--visual",
+            "--heatmap",
+            "--orchestrator",
+            "--web",
+            "--port",
+            "9000",
         ]);
         assert_eq!(args.prompt, "test prompt");
         assert_eq!(args.transform, "uppercase");
