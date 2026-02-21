@@ -1,13 +1,13 @@
 [package]
 name = "every-other-token"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["AI Research Tools"]
 description = "A real-time LLM stream interceptor for token-level interaction research"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/Mattbusel/Every-Other-Token"
-keywords = ["llm", "ai", "research", "token", "openai"]
+keywords = ["llm", "ai", "research", "token", "anthropic"]
 categories = ["command-line-utilities", "science"]
 
 [dependencies]
