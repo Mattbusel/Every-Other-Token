@@ -17,7 +17,6 @@ struct DiffTokenEvent<'a> {
     event: &'a TokenEvent,
 }
 
-
 /// Embedded single-page HTML application with side-by-side, multi-transform,
 /// dependency graph, and export features.
 pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
@@ -572,7 +571,7 @@ async fn handle_connection(
                 .cloned()
                 .unwrap_or_else(|| default_provider.to_string());
             let model_input = params.get("model").cloned().unwrap_or_default();
-            let heatmap = params.get("heatmap").map_or(false, |v| v == "1");
+            let heatmap = params.get("heatmap").is_some_and(|v| v == "1");
 
             let provider = match provider_str.as_str() {
                 "anthropic" => Provider::Anthropic,
@@ -653,7 +652,7 @@ async fn handle_connection(
                 .cloned()
                 .unwrap_or_else(|| "reverse".to_string());
             let model_input = params.get("model").cloned().unwrap_or_default();
-            let heatmap = params.get("heatmap").map_or(false, |v| v == "1");
+            let heatmap = params.get("heatmap").is_some_and(|v| v == "1");
 
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
 
@@ -673,7 +672,8 @@ async fn handle_connection(
             stream.write_all(headers.as_bytes()).await?;
 
             // Merged channel: (side, event)
-            let (merged_tx, mut merged_rx) = mpsc::unbounded_channel::<(&'static str, TokenEvent)>();
+            let (merged_tx, mut merged_rx) =
+                mpsc::unbounded_channel::<(&'static str, TokenEvent)>();
 
             // Spawn OpenAI side
             let openai_result = TokenInterceptor::new(
@@ -689,7 +689,9 @@ async fn handle_connection(
                 let (tx_oai, mut rx_oai) = mpsc::unbounded_channel::<TokenEvent>();
                 oai.web_tx = Some(tx_oai);
                 let prompt_o = prompt.clone();
-                tokio::spawn(async move { let _ = oai.intercept_stream(&prompt_o).await; });
+                tokio::spawn(async move {
+                    let _ = oai.intercept_stream(&prompt_o).await;
+                });
                 let mtx = merged_tx.clone();
                 tokio::spawn(async move {
                     while let Some(ev) = rx_oai.recv().await {
@@ -712,7 +714,9 @@ async fn handle_connection(
                 let (tx_ant, mut rx_ant) = mpsc::unbounded_channel::<TokenEvent>();
                 ant.web_tx = Some(tx_ant);
                 let prompt_a = prompt.clone();
-                tokio::spawn(async move { let _ = ant.intercept_stream(&prompt_a).await; });
+                tokio::spawn(async move {
+                    let _ = ant.intercept_stream(&prompt_a).await;
+                });
                 let mtx = merged_tx.clone();
                 tokio::spawn(async move {
                     while let Some(ev) = rx_ant.recv().await {
@@ -726,7 +730,10 @@ async fn handle_connection(
 
             // Forward merged events as SSE with side tag
             while let Some((side, event)) = merged_rx.recv().await {
-                let diff_event = DiffTokenEvent { side, event: &event };
+                let diff_event = DiffTokenEvent {
+                    side,
+                    event: &event,
+                };
                 if let Ok(json) = serde_json::to_string(&diff_event) {
                     let sse = format!("data: {}\n\n", json);
                     if stream.write_all(sse.as_bytes()).await.is_err() {
@@ -1112,7 +1119,10 @@ mod tests {
             chaos_label: None,
             provider: None,
         };
-        let diff = DiffTokenEvent { side: "openai", event: &event };
+        let diff = DiffTokenEvent {
+            side: "openai",
+            event: &event,
+        };
         let json = serde_json::to_string(&diff).expect("serialize");
         assert!(json.contains(r#""side":"openai""#));
         assert!(json.contains(r#""text":"hello""#));
@@ -1130,7 +1140,10 @@ mod tests {
             chaos_label: Some("reverse".to_string()),
             provider: None,
         };
-        let diff = DiffTokenEvent { side: "anthropic", event: &event };
+        let diff = DiffTokenEvent {
+            side: "anthropic",
+            event: &event,
+        };
         let json = serde_json::to_string(&diff).expect("serialize");
         assert!(json.contains(r#""side":"anthropic""#));
         assert!(json.contains(r#""transformed":true"#));
