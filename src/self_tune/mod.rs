@@ -16,3 +16,4 @@
 pub mod telemetry_bus;
 pub mod controller;
 pub mod experiment;
+pub mod anomaly;
