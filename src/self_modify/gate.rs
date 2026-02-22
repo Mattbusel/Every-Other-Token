@@ -21,7 +21,6 @@
 //! - Auditable: every run produces a `ValidationReport` with per-check results
 //! - Configurable: each check can be individually enabled / disabled
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------

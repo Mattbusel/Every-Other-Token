@@ -246,7 +246,7 @@ pub struct TelemetrySnapshot {
 }
 
 impl TelemetrySnapshot {
-    fn zero() -> Self {
+    pub fn zero() -> Self {
         Self {
             captured_at: Instant::now(),
             total_requests: 0,

@@ -19,3 +19,4 @@ pub mod experiment;
 pub mod anomaly;
 pub mod cost;
 pub mod snapshot;
+pub mod orchestrator;
