@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
+use tracing::{warn, error};
+
 use crate::self_tune::telemetry_bus::TelemetryBus;
 use super::converter::stats_to_snapshot;
 
@@ -252,11 +254,15 @@ impl HelixBridge {
         let mut ticker = tokio::time::interval(self.config.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+        let mut consecutive_failures: u32 = 0;
+
         loop {
             ticker.tick().await;
 
             match self.fetch_stats().await {
                 Ok(stats) => {
+                    consecutive_failures = 0;
+
                     let snap = stats_to_snapshot(&stats);
 
                     // Feed avg latency signal into the bus.
@@ -273,9 +279,23 @@ impl HelixBridge {
                         );
                     }
                 }
-                Err(_e) => {
-                    // Connection failures are soft — keep retrying.
-                    // A production binary would emit tracing::warn! here.
+                Err(e) => {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+
+                    if consecutive_failures >= 5 {
+                        error!(
+                            error = %e,
+                            url = %self.config.base_url,
+                            consecutive_failures,
+                            "HelixBridge poll failed repeatedly, will retry next tick"
+                        );
+                    } else {
+                        warn!(
+                            error = %e,
+                            url = %self.config.base_url,
+                            "HelixBridge poll failed, will retry next tick"
+                        );
+                    }
                 }
             }
         }

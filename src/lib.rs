@@ -11,6 +11,9 @@ pub mod self_tune;
 #[cfg(feature = "self-modify")]
 pub mod self_modify;
 
+#[cfg(feature = "self-modify")]
+pub mod semantic_dedup;
+
 #[cfg(feature = "helix-bridge")]
 pub mod helix_bridge;
 

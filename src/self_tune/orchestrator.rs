@@ -294,23 +294,55 @@ impl SelfImprovementOrchestrator {
             }
         }
 
-        // If we have a deployment pipeline and params were adjusted, validate and apply
+        // If we have a deployment pipeline and params were adjusted, validate and apply.
+        // Uses CargoCheckRunner (real cargo test/clippy) instead of PassAllCheckRunner
+        // to prevent unchecked auto-deploys from bypassing validation gates.
         #[cfg(feature = "self-modify")]
         if let Some(ref pipeline) = self.deployment_pipeline {
             if !new_tasks.is_empty() {
-                use crate::self_modify::deployment::{ParamChange, PassAllCheckRunner};
-                let runner = PassAllCheckRunner::new();
+                use crate::self_modify::deployment::{CargoCheckRunner, ParamChange};
+                let runner = CargoCheckRunner::new(".");
                 let changes: Vec<ParamChange> = new_tasks.iter().map(|name| ParamChange {
                     param_name: name.clone(),
                     old_value: 0.0,
                     new_value: 1.0,
                 }).collect();
-                let _outcome = pipeline.deploy(
+                let outcome = pipeline.deploy(
                     format!("auto-{}", new_tasks.len()),
                     &runner,
                     &changes,
                 );
-                // outcome is recorded; targets handle the actual application
+                // Log deployment outcome for observability.
+                match &outcome {
+                    crate::self_modify::deployment::DeploymentOutcome::Deployed { changes_applied, .. } => {
+                        tracing::info!(
+                            target: "self_tune::orchestrator",
+                            changes = changes_applied,
+                            "Auto-deployment succeeded"
+                        );
+                    }
+                    crate::self_modify::deployment::DeploymentOutcome::Rejected { failed_checks } => {
+                        tracing::warn!(
+                            target: "self_tune::orchestrator",
+                            checks = ?failed_checks,
+                            "Auto-deployment rejected by validation gate"
+                        );
+                    }
+                    crate::self_modify::deployment::DeploymentOutcome::AwaitingReview { change_id } => {
+                        tracing::info!(
+                            target: "self_tune::orchestrator",
+                            change_id = %change_id,
+                            "Auto-deployment awaiting human review"
+                        );
+                    }
+                    other => {
+                        tracing::debug!(
+                            target: "self_tune::orchestrator",
+                            outcome = ?other,
+                            "Auto-deployment outcome"
+                        );
+                    }
+                }
             }
         }
 
