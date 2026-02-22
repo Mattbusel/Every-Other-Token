@@ -1,0 +1,1 @@
+C:\Users\Matthew\Every-Other-Token\target\release\libevery_other_token.rlib: C:\Users\Matthew\Every-Other-Token\src\cli.rs C:\Users\Matthew\Every-Other-Token\src\lib.rs C:\Users\Matthew\Every-Other-Token\src\providers.rs C:\Users\Matthew\Every-Other-Token\src\transforms.rs C:\Users\Matthew\Every-Other-Token\src\web.rs

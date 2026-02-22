@@ -14,3 +14,5 @@
 //! - `snapshot` (task 1.6) — git-like configuration versioning
 
 pub mod telemetry_bus;
+pub mod controller;
+pub mod experiment;
