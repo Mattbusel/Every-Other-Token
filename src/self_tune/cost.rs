@@ -439,8 +439,7 @@ mod tests {
 
     fn b(name: &str) -> Backend { Backend::new(name) }
 
-    fn cheap_price()     -> TokenPrice { TokenPrice::new(0.000001, 0.000002) }
-    fn expensive_price() -> TokenPrice { TokenPrice::new(0.00003,  0.00006) }
+    fn cheap_price() -> TokenPrice { TokenPrice::new(0.000001, 0.000002) }
 
     fn req(backend: &str, cost: f64, quality: Option<f64>) -> RequestCost {
         RequestCost {

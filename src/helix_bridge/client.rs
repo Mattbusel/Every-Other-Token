@@ -33,15 +33,31 @@ impl std::fmt::Display for RoutingStrategy {
     }
 }
 
-/// Mirrors HelixRouter's RouterStats JSON shape.
+/// Per-strategy routing count row from HelixRouter's `/api/stats`.
+/// Mirrors `CountRow` in helixrouter::web.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutedStrategyCount {
+    pub strategy: RoutingStrategy,
+    pub count: u64,
+}
+
+/// Mirrors HelixRouter's `/api/stats` JSON response exactly.
+///
+/// Field names match HelixRouter's `StatsResponse`:
+/// - `routed_by_strategy` — per-strategy count vec (was previously a HashMap under `routed`)
+/// - `latency_by_strategy` — per-strategy latency breakdown
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouterStats {
     pub completed: u64,
     pub dropped: u64,
     pub adaptive_spawn_threshold: u64,
     pub pressure_score: f64,
-    /// strategy → count map
-    pub routed: std::collections::HashMap<RoutingStrategy, u64>,
+    /// Per-strategy routing counts. Matches HelixRouter's `routed_by_strategy` field.
+    #[serde(default)]
+    pub routed_by_strategy: Vec<RoutedStrategyCount>,
+    /// Per-strategy latency breakdown. Matches HelixRouter's `latency_by_strategy` field.
+    #[serde(default)]
+    pub latency_by_strategy: Vec<LatencySummary>,
 }
 
 /// Latency summary from HelixRouter (one entry per strategy).
@@ -72,6 +88,12 @@ pub struct RouterConfigPatch {
     pub batch_max_size: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ema_alpha: Option<f64>,
+    /// Override adaptive_step — how aggressively the spawn threshold adapts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adaptive_step: Option<f64>,
+    /// Override cpu_p95_budget_ms — p95 latency budget before CPU pool is considered overloaded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_p95_budget_ms: Option<u64>,
 }
 
 /// Errors that can occur during bridge operations.
@@ -221,7 +243,7 @@ impl HelixBridge {
         let url = format!("{}/api/config", self.config.base_url);
         let resp = self
             .client
-            .post(&url)
+            .patch(&url)
             .json(patch)
             .send()
             .await
@@ -266,10 +288,21 @@ impl HelixBridge {
                     let snap = stats_to_snapshot(&stats);
 
                     // Feed avg latency signal into the bus.
+                    // snap.avg_latency_us is derived from actual weighted latency data
+                    // (or pressure_score fallback when no latency rows are present).
                     self.bus.record_latency(
                         crate::self_tune::telemetry_bus::PipelineStage::Inference,
                         (snap.avg_latency_us as u64).max(1),
                     );
+
+                    // Feed p95 latency as a high-percentile signal on the Cache stage
+                    // (closest proxy for HelixRouter's spawn-threshold latency budget).
+                    if snap.p95_1m_us > 0.0 {
+                        self.bus.record_latency(
+                            crate::self_tune::telemetry_bus::PipelineStage::Cache,
+                            snap.p95_1m_us as u64,
+                        );
+                    }
 
                     // Feed drop pressure as an auxiliary signal on the Other stage.
                     if snap.drop_rate > 0.0 {
@@ -388,7 +421,6 @@ impl HelixBridgeBuilder {
 mod tests {
     use super::*;
     use crate::self_tune::telemetry_bus::{BusConfig, TelemetryBus};
-    use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -400,15 +432,19 @@ mod tests {
     }
 
     fn make_stats() -> RouterStats {
-        let mut routed = HashMap::new();
-        routed.insert(RoutingStrategy::Inline, 10);
-        routed.insert(RoutingStrategy::Spawn, 5);
         RouterStats {
             completed: 15,
             dropped: 0,
             adaptive_spawn_threshold: 100,
             pressure_score: 0.2,
-            routed,
+            routed_by_strategy: vec![
+                RoutedStrategyCount { strategy: RoutingStrategy::Inline, count: 10 },
+                RoutedStrategyCount { strategy: RoutingStrategy::Spawn, count: 5 },
+            ],
+            latency_by_strategy: vec![
+                LatencySummary { strategy: RoutingStrategy::Inline, count: 10, avg_ms: 1.2, ema_ms: 1.1, p95_ms: 4 },
+                LatencySummary { strategy: RoutingStrategy::Spawn, count: 5, avg_ms: 8.5, ema_ms: 8.0, p95_ms: 18 },
+            ],
         }
     }
 
@@ -586,7 +622,8 @@ mod tests {
             dropped: 0,
             adaptive_spawn_threshold: 0,
             pressure_score: 0.0,
-            routed: HashMap::new(),
+            routed_by_strategy: vec![],
+            latency_by_strategy: vec![],
         };
         let json = serde_json::to_string(&stats).unwrap();
         let back: RouterStats = serde_json::from_str(&json).unwrap();

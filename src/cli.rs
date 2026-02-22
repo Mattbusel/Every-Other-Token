@@ -60,6 +60,15 @@ pub struct Args {
     /// System prompt B for A/B experiment mode
     #[arg(long)]
     pub system_b: Option<String>,
+
+    /// HelixRouter base URL for cross-repo pressure feedback (e.g. http://127.0.0.1:8080).
+    ///
+    /// When set in --web mode, a HelixBridge background task polls HelixRouter's
+    /// /api/stats and feeds its pressure_score into the self-improvement loop,
+    /// letting EOT adapt token-stream parameters based on downstream load.
+    #[cfg(feature = "helix-bridge")]
+    #[arg(long)]
+    pub helix_url: Option<String>,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -277,5 +286,19 @@ mod tests {
     fn test_args_parse_system_b() {
         let args = Args::parse_from(["eot", "prompt", "--system-b", "Be verbose."]);
         assert_eq!(args.system_b, Some("Be verbose.".to_string()));
+    }
+
+    #[cfg(feature = "helix-bridge")]
+    #[test]
+    fn test_args_helix_url_default_none() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(args.helix_url.is_none());
+    }
+
+    #[cfg(feature = "helix-bridge")]
+    #[test]
+    fn test_args_helix_url_set() {
+        let args = Args::parse_from(["eot", "prompt", "--helix-url", "http://127.0.0.1:8080"]);
+        assert_eq!(args.helix_url.as_deref(), Some("http://127.0.0.1:8080"));
     }
 }

@@ -227,8 +227,8 @@ impl RollbackGuard {
         degradation > self.rollback_threshold
     }
 
-    fn is_expired(&self, window: Duration) -> bool {
-        self.applied_at.elapsed() > window
+    fn is_expired(&self) -> bool {
+        self.applied_at.elapsed() > self.rollback_window
     }
 }
 
@@ -426,7 +426,7 @@ impl Controller {
             return; // still in cooldown
         }
 
-        let pid_state = self.pid.entry(param).or_insert_with(PidState::default);
+        let pid_state = self.pid.entry(param).or_default();
         let raw_output = pid_state.update(error, &spec, dt);
 
         // Only apply if the adjustment is at least one step in magnitude
@@ -464,10 +464,9 @@ impl Controller {
 
     fn check_rollbacks(&mut self, snap: &TelemetrySnapshot, now: Instant) {
         let mut to_rollback: Vec<RollbackGuard> = Vec::new();
-        let window = self.cfg.rollback_window;
 
         self.rollback_guards.retain(|g| {
-            if g.is_expired(window) {
+            if g.is_expired() {
                 // Guard expired cleanly — no rollback needed
                 return false;
             }
@@ -848,7 +847,7 @@ mod tests {
             rollback_window: Duration::from_secs(30),
             rollback_threshold: 0.10,
         };
-        assert!(guard.is_expired(Duration::from_secs(30)));
+        assert!(guard.is_expired());
     }
 
     #[test]
@@ -861,7 +860,7 @@ mod tests {
             rollback_window: Duration::from_secs(30),
             rollback_threshold: 0.10,
         };
-        assert!(!guard.is_expired(Duration::from_secs(30)));
+        assert!(!guard.is_expired());
     }
 
     // ===== Controller construction =====
