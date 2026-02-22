@@ -19,3 +19,6 @@ pub mod memory;
 pub mod deployment;
 pub mod docs;
 pub mod discover;
+
+#[cfg(feature = "redis-backing")]
+pub mod redis_memory;
