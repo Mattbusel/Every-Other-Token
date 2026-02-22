@@ -8,6 +8,9 @@ pub mod collab;
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
 
+#[cfg(feature = "self-modify")]
+pub mod self_modify;
+
 use colored::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
