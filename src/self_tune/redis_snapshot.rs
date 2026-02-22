@@ -254,7 +254,8 @@ impl RedisSnapshotStore {
     }
 
     /// Construct with an injected `SnapshotRedisOps` implementation.
-    pub fn with_ops(ops: Box<dyn SnapshotRedisOps>, capacity: usize) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn with_ops(ops: Box<dyn SnapshotRedisOps>, capacity: usize) -> Self {
         Self {
             ops,
             registry: SnapshotRegistry::new(capacity),

@@ -400,11 +400,6 @@ mod tests {
         s
     }
 
-    fn snap_with_drop_rate(rate: f64) -> TelemetrySnapshot {
-        let mut s = TelemetrySnapshot::zero();
-        s.drop_rate = rate;
-        s
-    }
 
     // -------------------------------------------------------------------
     // Construction
@@ -492,7 +487,7 @@ mod tests {
             orc.process_snapshot(snap);
         }
         let s = orc.status_snapshot();
-        assert!(s.param_adjustments >= 0); // just ensure no panic
+        assert!(s.param_adjustments > 0); // PID should have fired at least once
     }
 
     #[test]

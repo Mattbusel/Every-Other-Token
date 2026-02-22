@@ -212,6 +212,7 @@ const KEY_DEADEND_DATA: &str = "helix:mem:deadend_data";
 
 /// Abstraction over the Redis operations needed by `RedisMemoryBackend`.
 /// Implemented by `redis::Connection` (blocking) and `MockRedisOps` in tests.
+#[allow(dead_code)]
 pub(crate) trait RedisOps: Send + Sync {
     fn lpush(&mut self, key: &str, value: &str) -> Result<(), String>;
     fn ltrim(&mut self, key: &str, start: isize, stop: isize) -> Result<(), String>;
@@ -337,7 +338,8 @@ impl RedisMemoryBackend {
     }
 
     /// Construct with an injected `RedisOps` implementation (for testing).
-    pub fn with_ops(ops: Box<dyn RedisOps>, config: MemoryConfig) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn with_ops(ops: Box<dyn RedisOps>, config: MemoryConfig) -> Self {
         let max_modifications = config.max_modifications;
         Self {
             ops,

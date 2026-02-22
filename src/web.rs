@@ -1053,6 +1053,32 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
 
     let room_store = crate::collab::new_room_store();
 
+    // If HelixRouter integration is configured, start the bridge + orchestrator.
+    // This closes the cross-repo feedback loop: HelixRouter pressure → TelemetryBus
+    // → SelfImprovementOrchestrator → parameter adjustments.
+    #[cfg(feature = "helix-bridge")]
+    if let Some(ref helix_url) = default_args.helix_url {
+        use std::sync::Arc;
+        use crate::helix_bridge::client::HelixBridge;
+        use crate::self_tune::telemetry_bus::{TelemetryBus, BusConfig};
+        use crate::self_tune::orchestrator::{SelfImprovementOrchestrator, OrchestratorConfig};
+
+        let bus = Arc::new(TelemetryBus::new(BusConfig::default()));
+        bus.start_emitter();
+
+        match HelixBridge::builder(helix_url.clone()).bus(Arc::clone(&bus)).build() {
+            Ok(bridge) => {
+                let orc = SelfImprovementOrchestrator::new(OrchestratorConfig::default(), Arc::clone(&bus));
+                tokio::spawn(async move { bridge.run().await });
+                tokio::spawn(async move { orc.run().await });
+                eprintln!("{}", format!("  HelixBridge active → {helix_url}").bright_cyan());
+            }
+            Err(e) => {
+                eprintln!("  HelixBridge init failed: {e}; continuing without it");
+            }
+        }
+    }
+
     loop {
         let (stream, _addr) = listener.accept().await?;
         let provider = default_provider.clone();

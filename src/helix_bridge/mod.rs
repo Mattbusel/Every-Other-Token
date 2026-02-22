@@ -23,5 +23,5 @@
 pub mod client;
 pub mod converter;
 
-pub use client::{HelixBridge, HelixBridgeBuilder, HelixBridgeError, RouterConfigPatch, RouterStats};
+pub use client::{HelixBridge, HelixBridgeBuilder, HelixBridgeError, RouterConfigPatch, RouterStats, RoutedStrategyCount};
 pub use converter::stats_to_snapshot;
