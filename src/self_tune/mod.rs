@@ -20,3 +20,6 @@ pub mod anomaly;
 pub mod cost;
 pub mod snapshot;
 pub mod orchestrator;
+
+#[cfg(feature = "redis-backing")]
+pub mod redis_snapshot;

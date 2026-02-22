@@ -37,6 +37,13 @@ evolution    = ["self-tune", "intelligence"]
 self-improving = ["self-tune", "self-modify", "intelligence", "evolution"]
 # HelixRouter HTTP bridge — polls /api/stats and pushes /api/config patches
 helix-bridge = ["self-tune"]
+# Redis-backed persistence for agent memory and snapshot registry
+redis-backing = ["self-modify", "dep:redis"]
+
+[dependencies.redis]
+# redis: synchronous client for write-through persistence of agent memory and snapshots
+version = "0.25"
+optional = true
 
 [dev-dependencies]
 tokio-test = "0.4"
