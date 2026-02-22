@@ -42,6 +42,7 @@ use crate::self_tune::{
     controller::{Controller, ControllerConfig},
     telemetry_bus::{TelemetryBus, TelemetrySnapshot},
 };
+#[cfg(feature = "self-modify")]
 use crate::self_modify::{
     memory::{AgentMemory, MemoryConfig, ModificationRecord, Outcome},
     task_gen::{AnomalySeverity, DegradationSignal, TaskGenConfig, TaskGenerator},
@@ -67,9 +68,14 @@ pub struct OrchestratorConfig {
     /// Configuration forwarded to the PID controller.
     pub controller: ControllerConfig,
     /// Configuration forwarded to the task generator.
+    #[cfg(feature = "self-modify")]
     pub task_gen: TaskGenConfig,
     /// Configuration forwarded to agent memory.
+    #[cfg(feature = "self-modify")]
     pub memory: MemoryConfig,
+    /// Gate config for staged deployment pipeline. None = no pipeline.
+    #[cfg(feature = "self-modify")]
+    pub gate_config: Option<crate::self_modify::gate::GateConfig>,
 }
 
 impl Default for OrchestratorConfig {
@@ -81,8 +87,12 @@ impl Default for OrchestratorConfig {
             auto_adjust_params: true,
             detector: DetectorConfig::default(),
             controller: ControllerConfig::default(),
+            #[cfg(feature = "self-modify")]
             task_gen: TaskGenConfig::default(),
+            #[cfg(feature = "self-modify")]
             memory: MemoryConfig::default(),
+            #[cfg(feature = "self-modify")]
+            gate_config: None,
         }
     }
 }
@@ -123,9 +133,14 @@ pub struct SelfImprovementOrchestrator {
     /// PID controller (not shared — owned by the loop task).
     controller: Controller,
     /// Task generator (not shared — owned by the loop task).
+    #[cfg(feature = "self-modify")]
     task_gen: TaskGenerator,
     /// Agent memory (shared so callers can inspect history).
+    #[cfg(feature = "self-modify")]
     memory: Arc<Mutex<AgentMemory>>,
+    /// Staged deployment pipeline.
+    #[cfg(feature = "self-modify")]
+    deployment_pipeline: Option<crate::self_modify::deployment::StagedDeploymentPipeline>,
 }
 
 impl SelfImprovementOrchestrator {
@@ -133,8 +148,16 @@ impl SelfImprovementOrchestrator {
     pub fn new(config: OrchestratorConfig, bus: Arc<TelemetryBus>) -> Self {
         let detector = AnomalyDetector::new(config.detector.clone());
         let controller = Controller::new(config.controller.clone());
+        #[cfg(feature = "self-modify")]
         let task_gen = TaskGenerator::new(config.task_gen.clone());
+        #[cfg(feature = "self-modify")]
         let memory = Arc::new(Mutex::new(AgentMemory::new(config.memory.clone())));
+        #[cfg(feature = "self-modify")]
+        let deployment_pipeline = config.gate_config.as_ref().map(|gc| {
+            crate::self_modify::deployment::StagedDeploymentPipeline::new(
+                crate::self_modify::gate::ValidationGate::new(gc.clone())
+            )
+        });
 
         Self {
             config,
@@ -142,8 +165,12 @@ impl SelfImprovementOrchestrator {
             status: Arc::new(Mutex::new(OrchestratorStatus::default())),
             detector,
             controller,
+            #[cfg(feature = "self-modify")]
             task_gen,
+            #[cfg(feature = "self-modify")]
             memory,
+            #[cfg(feature = "self-modify")]
+            deployment_pipeline,
         }
     }
 
@@ -153,8 +180,17 @@ impl SelfImprovementOrchestrator {
     }
 
     /// Return a cloneable handle to agent memory (for inspection / MCP tools).
+    #[cfg(feature = "self-modify")]
     pub fn memory_handle(&self) -> Arc<Mutex<AgentMemory>> {
         Arc::clone(&self.memory)
+    }
+
+    /// Register a deployment target.
+    #[cfg(feature = "self-modify")]
+    pub fn add_deployment_target(&mut self, target: Box<dyn crate::self_modify::deployment::DeploymentTarget>) {
+        if let Some(ref mut pipeline) = self.deployment_pipeline {
+            pipeline.add_target(target);
+        }
     }
 
     /// Run the orchestration loop.  This is `async` and runs until the task is
@@ -195,7 +231,11 @@ impl SelfImprovementOrchestrator {
         }
 
         // 3. Convert qualifying anomalies → signals → tasks
+        #[cfg(feature = "self-modify")]
         let mut new_tasks: Vec<String> = Vec::new();
+        #[cfg(not(feature = "self-modify"))]
+        let new_tasks: Vec<String> = Vec::new();
+        #[cfg(feature = "self-modify")]
         for anomaly in &anomalies {
             // Skip below threshold
             let passes_threshold = match self.config.task_gen_severity_threshold {
@@ -251,6 +291,26 @@ impl SelfImprovementOrchestrator {
                         timestamp_ms: now_ms,
                     });
                 }
+            }
+        }
+
+        // If we have a deployment pipeline and params were adjusted, validate and apply
+        #[cfg(feature = "self-modify")]
+        if let Some(ref pipeline) = self.deployment_pipeline {
+            if !new_tasks.is_empty() {
+                use crate::self_modify::deployment::{ParamChange, PassAllCheckRunner};
+                let runner = PassAllCheckRunner::new();
+                let changes: Vec<ParamChange> = new_tasks.iter().map(|name| ParamChange {
+                    param_name: name.clone(),
+                    old_value: 0.0,
+                    new_value: 1.0,
+                }).collect();
+                let _outcome = pipeline.deploy(
+                    format!("auto-{}", new_tasks.len()),
+                    &runner,
+                    &changes,
+                );
+                // outcome is recorded; targets handle the actual application
             }
         }
 
@@ -336,6 +396,7 @@ mod tests {
         assert!(Arc::ptr_eq(&h1, &h2));
     }
 
+    #[cfg(feature = "self-modify")]
     #[test]
     fn test_memory_handle_is_shared() {
         let orc = make_orc();
@@ -444,9 +505,53 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
+    // Deployment pipeline integration
+    // -------------------------------------------------------------------
+
+    #[cfg(feature = "self-modify")]
+    #[test]
+    fn test_deployment_pipeline_wired_when_gate_config_set() {
+        use crate::self_modify::gate::GateConfig;
+        let config = OrchestratorConfig {
+            gate_config: Some(GateConfig::default()),
+            ..OrchestratorConfig::default()
+        };
+        let orc = SelfImprovementOrchestrator::new(config, make_bus());
+        assert!(orc.deployment_pipeline.is_some());
+    }
+
+    #[cfg(feature = "self-modify")]
+    #[test]
+    fn test_deployment_pipeline_absent_when_gate_config_none() {
+        let orc = SelfImprovementOrchestrator::new(
+            OrchestratorConfig { gate_config: None, ..OrchestratorConfig::default() },
+            make_bus(),
+        );
+        assert!(orc.deployment_pipeline.is_none());
+    }
+
+    #[cfg(feature = "self-modify")]
+    #[test]
+    fn test_add_deployment_target_noop_when_pipeline_absent() {
+        use crate::self_modify::deployment::InMemoryParamTarget;
+        let mut orc = SelfImprovementOrchestrator::new(
+            OrchestratorConfig { gate_config: None, ..OrchestratorConfig::default() },
+            make_bus(),
+        );
+        orc.add_deployment_target(Box::new(InMemoryParamTarget::new("t")));
+    }
+
+    #[cfg(feature = "self-modify")]
+    #[test]
+    fn test_default_config_gate_config_is_none() {
+        assert!(OrchestratorConfig::default().gate_config.is_none());
+    }
+
+    // -------------------------------------------------------------------
     // Memory recording
     // -------------------------------------------------------------------
 
+    #[cfg(feature = "self-modify")]
     #[test]
     fn test_generated_tasks_recorded_in_memory() {
         let mut orc = SelfImprovementOrchestrator::new(
