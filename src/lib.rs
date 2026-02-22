@@ -5,6 +5,9 @@ pub mod web;
 pub mod research;
 pub mod collab;
 
+#[cfg(feature = "self-tune")]
+pub mod self_tune;
+
 use colored::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

@@ -1,0 +1,413 @@
+# tokio-prompt-orchestrator: Self-Improving System Task Coordinator
+#
+# CLAIMING: Set status = "in_progress", owner = "<your-agent-id>", claimed_at = "<timestamp>"
+# COMPLETING: Set status = "completed", completed_at = "<timestamp>"
+# FORMAT: git commit this file after every claim/completion so agents see each other's state.
+#
+# Phases: 1=Self-Tuning, 2=Self-Modifying, 3=Intelligence, 4=Evolution, 5=Observability
+
+# ===========================================================================
+# PHASE 1 — SELF-TUNING CORE
+# ===========================================================================
+
+[[task]]
+id = "1.1"
+name = "Telemetry Feedback Bus"
+file = "src/self_tune/telemetry_bus.rs"
+feature = "self-tune"
+status = "completed"
+owner = "claude-sonnet-4-6-primary"
+claimed_at = "2026-02-22"
+completed_at = "2026-02-22"
+depends_on = []
+description = """
+Bounded channel aggregating metrics from every pipeline stage.
+TelemetrySnapshot structs at configurable intervals (default 5s).
+Rolling windows: 1m, 5m, 15m, 1h in ring buffers.
+This is the nervous system — all other self-improving modules read from this bus.
+"""
+
+[[task]]
+id = "1.2"
+name = "Parameter Controller"
+file = "src/self_tune/controller.rs"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+PID controllers for 12 tunable parameters (channel buffers, backpressure thresholds,
+circuit breaker settings, dedup TTL, rate limiter, priority intervals).
+Reads TelemetrySnapshot, computes error signals, applies updates via configure_pipeline.
+Auto-rollback if change degrades target metric >10% within 30s.
+"""
+
+[[task]]
+id = "1.3"
+name = "Experiment Engine"
+file = "src/self_tune/experiment.rs"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+A/B testing framework for parameter changes. Routes configurable traffic % through
+experimental configs. Welch's t-test for statistical significance.
+TOML experiment definitions. Auto-promotes winners, kills losers.
+"""
+
+[[task]]
+id = "1.4"
+name = "Anomaly Detector"
+file = "src/self_tune/anomaly.rs"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Statistical anomaly detection: z-score on rolling windows, CUSUM drift detection,
+isolation forest for multivariate anomalies. Emits Anomaly events with severity
+(info/warn/critical). Critical anomalies trigger automatic parameter rollback.
+"""
+
+[[task]]
+id = "1.5"
+name = "Cost Optimizer"
+file = "src/self_tune/cost.rs"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Real-time cost tracking per model backend. Budget-aware routing: shift to cheaper
+backends when approaching ceiling. Cost-per-quality Pareto curves to dashboard.
+"""
+
+[[task]]
+id = "1.6"
+name = "Configuration Snapshotter"
+file = "src/self_tune/snapshot.rs"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Git-like versioning for pipeline config. Every parameter change creates a snapshot
+with timestamp, source, metrics, diff. rollback_to(), diff(), best_in_window().
+Expose as MCP tools config_history and config_rollback.
+"""
+
+# ===========================================================================
+# PHASE 2 — SELF-MODIFYING AGENT LOOP
+# ===========================================================================
+
+[[task]]
+id = "2.1"
+name = "Meta-Task Generator"
+file = "src/self_modify/task_gen.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "1.4"]
+description = """
+Reads anomaly events and telemetry degradation signals. Generates TOML task files
+for the agent coordinator. Rate-limited. Each generated task includes problem
+description, affected files, acceptance criteria, priority, complexity estimate.
+"""
+
+[[task]]
+id = "2.2"
+name = "Validation Gate"
+file = "src/self_modify/gate.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Immune system. Every proposed change runs: cargo test, cargo clippy, criterion
+benchmarks (<5% regression), integration smoke test, staging metric validation.
+Configurable trust level 0=always review, 1=auto-merge passing, 2=auto-deploy.
+"""
+
+[[task]]
+id = "2.3"
+name = "Agent Memory System"
+file = "src/self_modify/memory.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Redis-backed knowledge base: past modifications + outcomes, code patterns, module
+dependency graph, performance baselines, failed approaches (no retry dead ends).
+Agents query before starting. Meta-task generator consults before generating.
+"""
+
+[[task]]
+id = "2.4"
+name = "Staged Deployment Pipeline"
+file = "src/self_modify/deploy.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["2.2", "2.3"]
+description = """
+Blue-green deployment: canary → 5% → 25% → 50% → 100%.
+Monitor 5min per stage. Instant rollback on degradation. Integrates with experiment
+engine for statistical validation. Logs failures to agent memory.
+"""
+
+[[task]]
+id = "2.5"
+name = "Self-Documentation"
+file = "src/self_modify/docs.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["2.1"]
+description = """
+Auto-generate on every self-modification: changelog entry, mermaid architecture
+diagrams, performance delta reports, dependency impact analysis.
+Output to docs/self_modifications/ as markdown.
+"""
+
+[[task]]
+id = "2.6"
+name = "Capability Discovery"
+file = "src/self_modify/discover.rs"
+feature = "self-modify"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "2.1"]
+description = """
+Periodic analysis: dead code detection, dependency audit (cargo audit),
+test coverage gaps, performance profiling hotspots (flamegraph integration),
+API surface analysis. Generates lower-priority tasks for coordinator.
+"""
+
+# ===========================================================================
+# PHASE 3 — LEARNED INTELLIGENCE
+# ===========================================================================
+
+[[task]]
+id = "3.1"
+name = "Neural Router"
+file = "src/intelligence/router.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "1.5"]
+description = """
+Replace heuristic complexity scorer with learned model. Features: token count,
+embedding similarity, session history, queue depths, time patterns, error rates.
+Logistic regression → feedforward net. Retrain every N requests. Store in Redis.
+"""
+
+[[task]]
+id = "3.2"
+name = "Prompt Optimizer"
+file = "src/intelligence/prompt_opt.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.3", "3.1"]
+description = """
+Prompt transformations that improve output quality: system prompt compression,
+few-shot example selection, context window optimization, structure rewriting.
+A/B test via experiment engine. Winning strategies stored in prompt library.
+"""
+
+[[task]]
+id = "3.3"
+name = "Predictive Autoscaler"
+file = "src/intelligence/autoscale.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Time-series forecasting: exponential smoothing, seasonal decomposition (hour/day),
+trend detection. Predict load 5/15/60 minutes ahead. Pre-warm instances,
+pre-allocate buffers, adjust rate limits, signal cost optimizer.
+"""
+
+[[task]]
+id = "3.4"
+name = "Quality Estimator"
+file = "src/intelligence/quality.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "3.1"]
+description = """
+Estimate output quality without human feedback: coherence scoring, completeness
+checking, confidence calibration, regression detection. Use llama.cpp as judge.
+Cache scores, correlate with routing decisions for neural router training signal.
+"""
+
+[[task]]
+id = "3.5"
+name = "Semantic Dedup"
+file = "src/intelligence/semantic_dedup.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1"]
+description = """
+Upgrade hash-based dedup to semantic similarity via HNSW approximate nearest
+neighbor. Configurable threshold. Falls back to exact-match when embeddings
+unavailable. Auto-tighten threshold if hit quality degrades.
+"""
+
+[[task]]
+id = "3.6"
+name = "Feedback Ingestion"
+file = "src/intelligence/feedback.rs"
+feature = "intelligence"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "3.4"]
+description = """
+Unified feedback from all signals: explicit ratings, implicit (follow-up questions,
+abandonment, retries), system (errors, timeouts, circuit trips), model self-eval.
+Normalize to [-1, 1]. Feed neural router, prompt optimizer, quality estimator.
+"""
+
+# ===========================================================================
+# PHASE 4 — DISTRIBUTED EVOLUTION
+# ===========================================================================
+
+[[task]]
+id = "4.1"
+name = "Multi-Node Brain"
+file = "src/evolution/brain.rs"
+feature = "evolution"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "2.3"]
+description = """
+Distributed consensus on self-tuning decisions. Nodes share telemetry via NATS.
+Parameter changes proposed and voted (majority). Experiments coordinated cluster-wide.
+Leader coordinates meta-task generation to prevent duplicates.
+"""
+
+[[task]]
+id = "4.2"
+name = "Evolutionary Parameter Search"
+file = "src/evolution/search.rs"
+feature = "evolution"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.3", "4.1"]
+description = """
+Evolutionary strategies beyond PID: population of configs, evaluate via experiment
+engine, crossover + mutation, Pareto frontier fitness (throughput/latency/cost/errors).
+Elitism: always keep best-known as fallback. Publish Pareto to dashboard.
+"""
+
+[[task]]
+id = "4.3"
+name = "Plugin Architecture"
+file = "src/evolution/plugin.rs"
+feature = "evolution"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["2.2"]
+description = """
+Runtime plugin loading via libloading. Plugin trait: init/process/metrics/shutdown.
+Registry with hot-loading. Plugins can register new pipeline stages, metrics,
+MCP tools, routing strategies. Version management with rollback per plugin.
+"""
+
+[[task]]
+id = "4.4"
+name = "Cross-System Learning"
+file = "src/evolution/transfer.rs"
+feature = "evolution"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["3.1", "4.1"]
+description = """
+Opt-in anonymized telemetry sharing between orchestrator instances. Transfer learned
+routing models. Share winning prompt optimization strategies. Federated learning on
+quality estimation. No raw prompt data leaves instance — weights + aggregate stats only.
+"""
+
+# ===========================================================================
+# PHASE 5 — OBSERVABILITY & INTERFACE
+# ===========================================================================
+
+[[task]]
+id = "5.1"
+name = "Evolution Dashboard"
+file = "src/web.rs (extend)"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.1", "1.2", "1.3", "1.4"]
+description = """
+Extend web dashboard with: parameter adjustment sparklines, live experiment stats,
+anomaly timeline heatmap, agent activity feed, self-modification changelog,
+cost tracking, config version timeline, quality trends, neural router distribution,
+evolutionary Pareto animation. SSE streaming for live updates.
+"""
+
+[[task]]
+id = "5.2"
+name = "Self-Improvement MCP Tools"
+file = "src/mcp.rs (extend)"
+feature = "self-tune"
+status = "pending"
+owner = ""
+claimed_at = ""
+completed_at = ""
+depends_on = ["1.2", "1.6", "2.2", "2.3"]
+description = """
+New MCP tools: self_tune_status, propose_experiment, agent_fleet_status,
+approve_modification, set_trust_level, explain_decision, force_rollback,
+evolution_status, quality_report, cost_report.
+"""
