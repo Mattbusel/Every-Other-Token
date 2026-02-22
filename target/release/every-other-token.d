@@ -1,1 +1,0 @@
-C:\Users\Matthew\Every-Other-Token\target\release\every-other-token.exe: C:\Users\Matthew\Every-Other-Token\src\cli.rs C:\Users\Matthew\Every-Other-Token\src\lib.rs C:\Users\Matthew\Every-Other-Token\src\main.rs C:\Users\Matthew\Every-Other-Token\src\providers.rs C:\Users\Matthew\Every-Other-Token\src\transforms.rs C:\Users\Matthew\Every-Other-Token\src\web.rs
