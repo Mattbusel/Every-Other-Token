@@ -33,6 +33,8 @@ self-modify  = ["self-tune"]
 intelligence = ["self-tune"]
 evolution    = ["self-tune", "intelligence"]
 self-improving = ["self-tune", "self-modify", "intelligence", "evolution"]
+# HelixRouter HTTP bridge — polls /api/stats and pushes /api/config patches
+helix-bridge = ["self-tune"]
 
 [dev-dependencies]
 tokio-test = "0.4"

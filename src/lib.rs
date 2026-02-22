@@ -11,6 +11,9 @@ pub mod self_tune;
 #[cfg(feature = "self-modify")]
 pub mod self_modify;
 
+#[cfg(feature = "helix-bridge")]
+pub mod helix_bridge;
+
 use colored::*;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
