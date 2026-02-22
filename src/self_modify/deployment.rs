@@ -392,6 +392,135 @@ impl CheckRunner for FailAllCheckRunner {
 }
 
 // ---------------------------------------------------------------------------
+// CargoCheckRunner — real cargo-based validation for production use
+// ---------------------------------------------------------------------------
+
+/// A `CheckRunner` that shells out to `cargo test` and `cargo clippy`
+/// in the configured workspace directory.
+///
+/// This is the production check runner that should be used in the
+/// auto-deploy path. Unlike `PassAllCheckRunner` (which unconditionally
+/// passes), this runner executes real cargo commands and reports their
+/// true pass/fail status.
+///
+/// Benchmarks and staging metrics are not yet wired (they return empty),
+/// but the critical test and clippy gates are enforced.
+pub struct CargoCheckRunner {
+    workspace: String,
+}
+
+impl CargoCheckRunner {
+    /// Create a runner that runs cargo commands in `workspace`.
+    pub fn new(workspace: impl Into<String>) -> Self {
+        Self {
+            workspace: workspace.into(),
+        }
+    }
+}
+
+impl CheckRunner for CargoCheckRunner {
+    fn run_tests(&self, cmd: &str) -> CheckResult {
+        let start = std::time::Instant::now();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let (program, args) = if parts.is_empty() {
+            ("cargo", vec!["test", "--all-features"])
+        } else {
+            (parts[0], parts[1..].to_vec())
+        };
+
+        match std::process::Command::new(program)
+            .args(&args)
+            .current_dir(&self.workspace)
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                CheckResult::passed("tests", start.elapsed())
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let reason = if stderr.len() > 500 {
+                    format!("exit={}: {}...", output.status, &stderr[..500])
+                } else {
+                    format!("exit={}: {}", output.status, stderr)
+                };
+                CheckResult::failed("tests", reason, start.elapsed())
+            }
+            Err(e) => {
+                CheckResult::failed("tests", format!("spawn error: {e}"), start.elapsed())
+            }
+        }
+    }
+
+    fn run_clippy(&self, cmd: &str) -> CheckResult {
+        let start = std::time::Instant::now();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let (program, args) = if parts.is_empty() {
+            ("cargo", vec!["clippy", "--all-features", "--", "-D", "warnings"])
+        } else {
+            (parts[0], parts[1..].to_vec())
+        };
+
+        match std::process::Command::new(program)
+            .args(&args)
+            .current_dir(&self.workspace)
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                CheckResult::passed("clippy", start.elapsed())
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let reason = if stderr.len() > 500 {
+                    format!("exit={}: {}...", output.status, &stderr[..500])
+                } else {
+                    format!("exit={}: {}", output.status, stderr)
+                };
+                CheckResult::failed("clippy", reason, start.elapsed())
+            }
+            Err(e) => {
+                CheckResult::failed("clippy", format!("spawn error: {e}"), start.elapsed())
+            }
+        }
+    }
+
+    fn run_benchmarks(&self) -> Vec<BenchmarkSample> {
+        // Benchmark regression checking not yet wired — return empty.
+        // When wired, this would run `cargo bench` and parse criterion output.
+        vec![]
+    }
+
+    fn run_smoke(&self, cmd: &str) -> CheckResult {
+        let start = std::time::Instant::now();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return CheckResult::skipped("smoke", "no smoke command configured");
+        }
+
+        match std::process::Command::new(parts[0])
+            .args(&parts[1..])
+            .current_dir(&self.workspace)
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                CheckResult::passed("smoke", start.elapsed())
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                CheckResult::failed("smoke", format!("exit={}: {}", output.status, stderr), start.elapsed())
+            }
+            Err(e) => {
+                CheckResult::failed("smoke", format!("spawn error: {e}"), start.elapsed())
+            }
+        }
+    }
+
+    fn staging_metrics(&self) -> Vec<StagingMetric> {
+        // Staging metric validation not yet wired.
+        vec![]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

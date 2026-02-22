@@ -17,3 +17,5 @@ pub mod task_gen;
 pub mod gate;
 pub mod memory;
 pub mod deployment;
+pub mod docs;
+pub mod discover;
