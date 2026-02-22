@@ -84,6 +84,9 @@ pub struct TokenInterceptor {
     pub web_provider_label: Option<String>,
     /// Optional system prompt prepended to the conversation.
     pub system_prompt: Option<String>,
+    /// When set, token processing metrics are recorded into the self-improvement bus.
+    #[cfg(feature = "self-tune")]
+    pub telemetry_bus: Option<std::sync::Arc<crate::self_tune::telemetry_bus::TelemetryBus>>,
 }
 
 impl TokenInterceptor {
@@ -117,6 +120,8 @@ impl TokenInterceptor {
             web_tx: None,
             web_provider_label: None,
             system_prompt: None,
+            #[cfg(feature = "self-tune")]
+            telemetry_bus: None,
         })
     }
 
@@ -458,6 +463,19 @@ impl TokenInterceptor {
                 self.token_count += 1;
             }
         }
+
+        // Feed token-processing metrics into the self-improvement telemetry bus.
+        #[cfg(feature = "self-tune")]
+        if let Some(bus) = &self.telemetry_bus {
+            use crate::self_tune::telemetry_bus::PipelineStage;
+            // Record latency as synthetic 1ms per token (real timing requires instrumentation)
+            bus.record_latency(PipelineStage::Inference, 1_000);
+            // Record confidence as quality proxy (if available)
+            if let Some(lp) = log_prob {
+                let confidence_pct = (lp.exp().clamp(0.0, 1.0) * 100.0) as u64;
+                bus.record_latency(PipelineStage::Other, confidence_pct.max(1));
+            }
+        }
     }
 
     pub fn print_header(&self, prompt: &str) {
@@ -653,6 +671,8 @@ mod tests {
             web_tx: None,
             web_provider_label: None,
             system_prompt: None,
+            #[cfg(feature = "self-tune")]
+            telemetry_bus: None,
         }
     }
 
