@@ -2,14 +2,14 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-393%20passing-brightgreen.svg)](https://github.com/Mattbusel/Every-Other-Token)
+[![Tests](https://img.shields.io/badge/tests-1165%20passing-brightgreen.svg)](https://github.com/Mattbusel/Every-Other-Token)
 [![GitHub Stars](https://img.shields.io/github/stars/Mattbusel/Every-Other-Token?style=social)](https://github.com/Mattbusel/Every-Other-Token)
 
 **Token-level perturbation, probabilistic analysis, and real-time collaboration for live LLM streams.**
 
 LLMs produce tokens. Every Other Token intercepts them mid-stream, applies transforms, measures confidence and perplexity at each position, and surfaces the results — in the terminal, a zero-dependency web UI, or to multiple collaborators simultaneously. The core question: *how robust, confident, and reproducible is language model reasoning at the token level?*
 
-Built in Rust. Dual-provider. 393 tests. Ships as a single binary.
+Built in Rust. Dual-provider. 1,165 tests. Ships as a single binary.
 
 ---
 
@@ -173,7 +173,7 @@ SelfImprovementOrchestrator (background)
 - Sub-millisecond per-token transform + logprob overhead
 - 4 MB release binary (LTO + single codegen unit)
 - Zero-copy async streaming via Tokio
-- 393 tests — unit, integration, property-based
+- 1,165 tests — unit, integration, property-based
 
 ---
 
