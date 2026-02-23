@@ -93,6 +93,17 @@ pub struct TokenInterceptor {
     /// When set, token processing metrics are recorded into the self-improvement bus.
     #[cfg(feature = "self-tune")]
     pub telemetry_bus: Option<std::sync::Arc<crate::self_tune::telemetry_bus::TelemetryBus>>,
+    /// Optional in-session prompt deduplication cache.
+    ///
+    /// When set, `intercept_stream` checks whether the incoming prompt has been
+    /// seen recently (within the configured TTL).  If a live hit is found the
+    /// API call is skipped and a cache-hit notice is printed or sent to the web
+    /// channel, avoiding redundant spend on repeated prompts (common in
+    /// research mode).
+    ///
+    /// Enabled by setting `dedup` after construction (see [`TokenInterceptor::enable_dedup`]).
+    #[cfg(feature = "self-modify")]
+    pub dedup: Option<std::sync::Arc<std::sync::Mutex<crate::semantic_dedup::SemanticDedup>>>,
 }
 
 impl TokenInterceptor {
@@ -128,7 +139,23 @@ impl TokenInterceptor {
             system_prompt: None,
             #[cfg(feature = "self-tune")]
             telemetry_bus: None,
+            #[cfg(feature = "self-modify")]
+            dedup: None,
         })
+    }
+
+    /// Enable in-session prompt deduplication with the given TTL and capacity.
+    ///
+    /// After calling this, `intercept_stream` will check whether an incoming
+    /// prompt has been seen recently and skip the API call on a cache hit.
+    ///
+    /// # Panics
+    /// This function never panics.
+    #[cfg(feature = "self-modify")]
+    pub fn enable_dedup(&mut self, ttl_ms: u64, capacity: usize) {
+        use crate::semantic_dedup::{DedupConfig, SemanticDedup};
+        let sd = SemanticDedup::new(DedupConfig { ttl_ms, capacity });
+        self.dedup = Some(std::sync::Arc::new(std::sync::Mutex::new(sd)));
     }
 
     // -----------------------------------------------------------------------
@@ -139,6 +166,54 @@ impl TokenInterceptor {
         &mut self,
         prompt: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // ── Prompt deduplication gate ─────────────────────────────────────────
+        // Check before printing the header so skipped prompts are silent.
+        #[cfg(feature = "self-modify")]
+        {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+
+            if let Some(dedup_arc) = &self.dedup {
+                if let Ok(mut guard) = dedup_arc.lock() {
+                    if let Some(entry) = guard.check(prompt, now_ms) {
+                        let hits = entry.hit_count;
+                        drop(guard); // release lock before any I/O
+
+                        let msg = format!(
+                            "[dedup] Skipping duplicate prompt (seen {} time{} recently, TTL active)",
+                            hits,
+                            if hits == 1 { "" } else { "s" },
+                        );
+                        if let Some(tx) = &self.web_tx {
+                            let evt = TokenEvent {
+                                text: msg.clone(),
+                                original: prompt.to_string(),
+                                index: 0,
+                                transformed: false,
+                                importance: 0.0,
+                                chaos_label: None,
+                                provider: self.web_provider_label.clone(),
+                                confidence: None,
+                                perplexity: None,
+                                alternatives: vec![],
+                            };
+                            let _ = tx.send(evt);
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return Ok(());
+                    } else {
+                        // Register prompt so the next identical call is caught.
+                        // Value is empty — we use this purely as a seen-prompt gate.
+                        guard.register(prompt, String::new(), now_ms);
+                    }
+                }
+            }
+        }
+
         if self.web_tx.is_none() {
             self.print_header(prompt);
         }
@@ -679,6 +754,8 @@ mod tests {
             system_prompt: None,
             #[cfg(feature = "self-tune")]
             telemetry_bus: None,
+            #[cfg(feature = "self-modify")]
+            dedup: None,
         }
     }
 

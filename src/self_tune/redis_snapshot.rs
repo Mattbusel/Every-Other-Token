@@ -16,8 +16,6 @@
 //! - Applying restored params to the live pipeline (caller reads `registry()`)
 //! - Cross-node synchronisation
 
-#![cfg(feature = "redis-backing")]
-
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

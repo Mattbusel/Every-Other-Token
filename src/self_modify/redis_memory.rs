@@ -18,8 +18,6 @@
 //! - Redis authentication / TLS (configure via the URL)
 //! - Eviction beyond the `max_modifications` cap
 
-#![cfg(feature = "redis-backing")]
-
 use std::collections::HashMap;
 use std::time::Duration;
 
