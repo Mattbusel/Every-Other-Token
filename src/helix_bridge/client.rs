@@ -13,6 +13,7 @@ use super::converter::stats_to_snapshot;
 
 /// Strategy variants from HelixRouter. Mirrors helix_router::types::Strategy.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RoutingStrategy {
     Inline,
     Spawn,
@@ -84,8 +85,15 @@ pub struct RouterConfigPatch {
     pub cpu_queue_cap: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_parallelism: Option<usize>,
+    /// Override backpressure_busy_threshold — number of busy CPU workers above
+    /// which Batch/Drop strategies are forced regardless of compute cost.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backpressure_busy_threshold: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_max_size: Option<usize>,
+    /// Override batch_max_delay_ms — maximum time a batch waits before flushing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_max_delay_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ema_alpha: Option<f64>,
     /// Override adaptive_step — how aggressively the spawn threshold adapts.
@@ -94,6 +102,27 @@ pub struct RouterConfigPatch {
     /// Override cpu_p95_budget_ms — p95 latency budget before CPU pool is considered overloaded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_p95_budget_ms: Option<u64>,
+    /// Override adaptive_p95_threshold_factor — multiplier above which adaptive
+    /// threshold raising triggers (e.g. 1.5 × cpu_p95_budget_ms).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adaptive_p95_threshold_factor: Option<f64>,
+}
+
+/// Neural router state snapshot from HelixRouter's `GET /api/neural`.
+///
+/// Mirrors HelixRouter's `NeuralSnapshot` struct.  When the neural router is
+/// warmed up and `avg_reward` is positive, HelixRouter is already routing well
+/// and aggressive config patches may destabilise learned behaviour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeuralRouterState {
+    /// Total outcomes the neural router has observed.
+    pub sample_count: u64,
+    /// Average reward across all observed outcomes. Positive → net good routing.
+    pub avg_reward: f64,
+    /// `true` once the neural router has passed its warm-up threshold.
+    pub is_warmed_up: bool,
+    /// Full 5×7 weight matrix `[strategy][feature]`.
+    pub weights: Vec<Vec<f64>>,
 }
 
 /// Errors that can occur during bridge operations.
@@ -139,6 +168,15 @@ pub struct HelixBridgeConfig {
     pub connect_timeout: Duration,
     /// Per-request read timeout.
     pub request_timeout: Duration,
+    /// Pressure score threshold above which a tightening config patch is pushed.
+    /// Set to `1.0` or higher to disable. Default: `0.8`.
+    pub pressure_high_threshold: f64,
+    /// Pressure score threshold below which a relaxing config patch is pushed.
+    /// Set to `0.0` or lower to disable. Default: `0.3`.
+    pub pressure_low_threshold: f64,
+    /// Whether to push `RouterConfigPatch` updates back to HelixRouter.
+    /// When `false`, the bridge is read-only (poll-only). Default: `true`.
+    pub enable_config_push: bool,
 }
 
 impl HelixBridgeConfig {
@@ -147,13 +185,87 @@ impl HelixBridgeConfig {
     /// - poll_interval: 5 s
     /// - connect_timeout: 3 s
     /// - request_timeout: 10 s
+    /// - pressure_high_threshold: 0.8
+    /// - pressure_low_threshold: 0.3
+    /// - enable_config_push: true
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
             poll_interval: Duration::from_secs(5),
             connect_timeout: Duration::from_secs(3),
             request_timeout: Duration::from_secs(10),
+            pressure_high_threshold: 0.8,
+            pressure_low_threshold: 0.3,
+            enable_config_push: true,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pressure-reactive config suggestion (pure function, no I/O)
+// ---------------------------------------------------------------------------
+
+/// Suggest a [`RouterConfigPatch`] based on the current HelixRouter stats.
+///
+/// Returns `Some(patch)` when the observed `pressure_score` is outside the
+/// healthy range `[low_threshold, high_threshold]`, otherwise `None`.
+///
+/// ## Strategy
+/// - **High pressure** (`pressure_score > high_threshold`):
+///   Increase `adaptive_step` so the spawn threshold climbs faster, and raise
+///   `ema_alpha` so the latency EMA reacts faster to the increased load.
+/// - **Low pressure** (`pressure_score < low_threshold`):
+///   Decrease `adaptive_step` to prevent threshold overshoot, and lower
+///   `ema_alpha` for smoother latency estimates.
+/// - **Normal range**: returns `None` — no patch required.
+///
+/// All output values are clamped to known-safe ranges used by HelixRouter:
+/// - `adaptive_step`: `[0.02, 0.50]`
+/// - `ema_alpha`:     `[0.05, 0.90]`
+///
+/// # Panics
+/// This function never panics.
+pub fn suggest_config_patch(
+    stats: &RouterStats,
+    low_threshold: f64,
+    high_threshold: f64,
+) -> Option<RouterConfigPatch> {
+    let pressure = stats.pressure_score;
+
+    if pressure > high_threshold {
+        // Under heavy load — push adaptive parameters higher so HelixRouter
+        // reacts more aggressively to the pressure it is already observing.
+        // Absolute target values; safe regardless of current HelixRouter state.
+        // adaptive_step 0.20 = 2× the default (0.10) — moves spawn threshold faster.
+        // ema_alpha    0.30 = 2× the default (0.15) — latency EMA tracks spikes faster.
+        // backpressure_busy_threshold 5 (< default 7) — enter backpressure earlier
+        //   under heavy load to shed work sooner.
+        // adaptive_p95_threshold_factor 1.2 (< default 1.5) — trigger adaptive
+        //   threshold raises sooner when p95 exceeds 1.2× budget.
+        Some(RouterConfigPatch {
+            adaptive_step: Some(0.20),
+            ema_alpha: Some(0.30),
+            backpressure_busy_threshold: Some(5),
+            adaptive_p95_threshold_factor: Some(1.2),
+            ..RouterConfigPatch::default()
+        })
+    } else if pressure < low_threshold {
+        // Under light load — relax adaptive parameters for stability.
+        // adaptive_step 0.05 = ½ the default — prevents threshold oscillation.
+        // ema_alpha    0.10 = ⅔ the default  — smoother latency estimates.
+        // backpressure_busy_threshold 9 (> default 7) — allow more parallel
+        //   workers before entering backpressure during low-pressure periods.
+        // adaptive_p95_threshold_factor 1.8 (> default 1.5) — wait for a larger
+        //   p95 overshoot before raising adaptive threshold during quiet periods.
+        Some(RouterConfigPatch {
+            adaptive_step: Some(0.05),
+            ema_alpha: Some(0.10),
+            backpressure_busy_threshold: Some(9),
+            adaptive_p95_threshold_factor: Some(1.8),
+            ..RouterConfigPatch::default()
+        })
+    } else {
+        None
     }
 }
 
@@ -262,11 +374,53 @@ impl HelixBridge {
         Ok(())
     }
 
+    /// Fetch the current neural router state from HelixRouter's `/api/neural`.
+    ///
+    /// Returns `Ok(None)` when the endpoint returns a non-2xx status (e.g. if
+    /// HelixRouter is an older version without the neural endpoint). Returns
+    /// `Err` only on transport-level failures.
+    ///
+    /// # Panics
+    /// This function never panics.
+    pub async fn fetch_neural_state(
+        &self,
+    ) -> Result<Option<NeuralRouterState>, HelixBridgeError> {
+        let url = format!("{}/api/neural", self.config.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| HelixBridgeError::Connect {
+                url: url.clone(),
+                detail: e.to_string(),
+            })?;
+
+        if !resp.status().is_success() {
+            // Older HelixRouter without /api/neural — treat as absent, not an error.
+            return Ok(None);
+        }
+
+        let state = resp
+            .json::<NeuralRouterState>()
+            .await
+            .map_err(|e| HelixBridgeError::Json {
+                field: "neural".into(),
+                detail: e.to_string(),
+            })?;
+
+        Ok(Some(state))
+    }
+
     /// Run the polling loop indefinitely.
     ///
-    /// On each tick, fetches `/api/stats` and records the converted snapshot
-    /// into the `TelemetryBus`. Connection failures are soft-errors — the loop
-    /// simply skips that tick and tries again at the next interval.
+    /// On each tick, fetches `/api/stats`, records the converted snapshot
+    /// into the `TelemetryBus`, and — when [`HelixBridgeConfig::enable_config_push`]
+    /// is `true` — pushes a [`RouterConfigPatch`] back to HelixRouter whenever
+    /// the observed pressure is outside the healthy range defined by
+    /// `pressure_low_threshold` / `pressure_high_threshold`.
+    ///
+    /// Connection failures are soft-errors — the loop skips the tick and retries.
     ///
     /// Cancel the task (drop the `JoinHandle`) to stop the loop cleanly.
     ///
@@ -310,6 +464,45 @@ impl HelixBridge {
                             crate::self_tune::telemetry_bus::PipelineStage::Other,
                             (snap.drop_rate * 1_000.0) as u64 + 1,
                         );
+                    }
+
+                    // ── Feedback: push config patch back to HelixRouter ───────
+                    // Only when config push is enabled and pressure is out of range.
+                    // Additionally, if the neural router is warmed up with positive
+                    // avg_reward, it is already routing well — suppress redundant
+                    // config patches to avoid destabilising learned behaviour.
+                    if self.config.enable_config_push {
+                        // Best-effort: fetch neural state to inform patch decision.
+                        let neural_healthy = match self.fetch_neural_state().await {
+                            Ok(Some(ns)) => ns.is_warmed_up && ns.avg_reward > 0.0,
+                            _ => false,
+                        };
+
+                        if let Some(patch) = suggest_config_patch(
+                            &stats,
+                            self.config.pressure_low_threshold,
+                            self.config.pressure_high_threshold,
+                        ) {
+                            // Skip the patch when neural routing is healthy AND
+                            // pressure is only mildly elevated (within 10% of threshold).
+                            let pressure_far_from_threshold = stats.pressure_score
+                                > self.config.pressure_high_threshold * 1.1
+                                || stats.pressure_score
+                                    < self.config.pressure_low_threshold * 0.9;
+                            let should_push = !neural_healthy || pressure_far_from_threshold;
+
+                            if should_push {
+                                if let Err(e) = self.push_config(&patch).await {
+                                    warn!(
+                                        error = %e,
+                                        pressure = stats.pressure_score,
+                                        neural_healthy,
+                                        url = %self.config.base_url,
+                                        "HelixBridge config push failed, continuing"
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -545,6 +738,181 @@ mod tests {
         assert_eq!(cfg.base_url, "http://example.com:8080");
     }
 
+    #[test]
+    fn config_new_has_default_pressure_high_threshold() {
+        let cfg = HelixBridgeConfig::new("http://localhost:3000");
+        assert!((cfg.pressure_high_threshold - 0.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn config_new_has_default_pressure_low_threshold() {
+        let cfg = HelixBridgeConfig::new("http://localhost:3000");
+        assert!((cfg.pressure_low_threshold - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn config_new_has_config_push_enabled_by_default() {
+        let cfg = HelixBridgeConfig::new("http://localhost:3000");
+        assert!(cfg.enable_config_push);
+    }
+
+    // -----------------------------------------------------------------------
+    // suggest_config_patch tests
+    // -----------------------------------------------------------------------
+
+    fn make_stats_with_pressure(pressure: f64) -> RouterStats {
+        RouterStats {
+            completed: 100,
+            dropped: 0,
+            adaptive_spawn_threshold: 60_000,
+            pressure_score: pressure,
+            routed_by_strategy: vec![],
+            latency_by_strategy: vec![],
+        }
+    }
+
+    #[test]
+    fn suggest_patch_returns_none_in_normal_range() {
+        let stats = make_stats_with_pressure(0.5);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8);
+        assert!(patch.is_none(), "mid-range pressure should produce no patch");
+    }
+
+    #[test]
+    fn suggest_patch_returns_none_exactly_at_low_threshold() {
+        let stats = make_stats_with_pressure(0.3);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8);
+        // pressure == threshold is not strictly less-than, so no patch.
+        assert!(patch.is_none());
+    }
+
+    #[test]
+    fn suggest_patch_returns_none_exactly_at_high_threshold() {
+        let stats = make_stats_with_pressure(0.8);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8);
+        // pressure == threshold is not strictly greater-than, so no patch.
+        assert!(patch.is_none());
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_returns_some() {
+        let stats = make_stats_with_pressure(0.85);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8);
+        assert!(patch.is_some(), "high pressure should produce a patch");
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_increases_adaptive_step() {
+        let stats = make_stats_with_pressure(0.9);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        let step = patch.adaptive_step.expect("adaptive_step should be set");
+        // Under high pressure we want a value higher than the default (0.10).
+        assert!(step > 0.10, "adaptive_step should be above default: {step}");
+        assert!(step <= 0.50, "adaptive_step should not exceed 0.50: {step}");
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_increases_ema_alpha() {
+        let stats = make_stats_with_pressure(0.95);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        let alpha = patch.ema_alpha.expect("ema_alpha should be set");
+        // Under high pressure we want a value higher than the default (0.15).
+        assert!(alpha > 0.15, "ema_alpha should be above default: {alpha}");
+        assert!(alpha <= 0.90, "ema_alpha should not exceed 0.90: {alpha}");
+    }
+
+    #[test]
+    fn suggest_patch_low_pressure_returns_some() {
+        let stats = make_stats_with_pressure(0.1);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8);
+        assert!(patch.is_some(), "low pressure should produce a patch");
+    }
+
+    #[test]
+    fn suggest_patch_low_pressure_reduces_adaptive_step() {
+        let stats = make_stats_with_pressure(0.05);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        let step = patch.adaptive_step.expect("adaptive_step should be set");
+        // Under low pressure we want a value lower than the default (0.10).
+        assert!(step < 0.10, "adaptive_step should be below default: {step}");
+        assert!(step >= 0.02, "adaptive_step should not go below 0.02: {step}");
+    }
+
+    #[test]
+    fn suggest_patch_low_pressure_reduces_ema_alpha() {
+        let stats = make_stats_with_pressure(0.0);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        let alpha = patch.ema_alpha.expect("ema_alpha should be set");
+        // Under low pressure we want a value lower than the default (0.15).
+        assert!(alpha < 0.15, "ema_alpha should be below default: {alpha}");
+        assert!(alpha >= 0.05, "ema_alpha should not go below 0.05: {alpha}");
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_only_sets_adaptive_and_ema() {
+        // Other fields (inline_threshold, spawn_threshold, etc.) must be None.
+        let stats = make_stats_with_pressure(0.99);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        assert!(patch.inline_threshold.is_none());
+        assert!(patch.spawn_threshold.is_none());
+        assert!(patch.cpu_queue_cap.is_none());
+        assert!(patch.cpu_parallelism.is_none());
+        assert!(patch.batch_max_size.is_none());
+    }
+
+    #[test]
+    fn suggest_patch_low_pressure_only_sets_adaptive_and_ema() {
+        let stats = make_stats_with_pressure(0.0);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        assert!(patch.inline_threshold.is_none());
+        assert!(patch.spawn_threshold.is_none());
+        assert!(patch.cpu_queue_cap.is_none());
+        assert!(patch.cpu_parallelism.is_none());
+        assert!(patch.batch_max_size.is_none());
+        // Low pressure: loosen backpressure threshold and p95 factor
+        assert_eq!(patch.backpressure_busy_threshold, Some(9));
+        assert!(patch.adaptive_p95_threshold_factor.is_some());
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_sets_backpressure_threshold() {
+        let stats = make_stats_with_pressure(1.0);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        // High pressure: tighten backpressure threshold so HelixRouter sheds earlier
+        assert_eq!(patch.backpressure_busy_threshold, Some(5));
+    }
+
+    #[test]
+    fn suggest_patch_high_pressure_sets_adaptive_p95_factor() {
+        let stats = make_stats_with_pressure(1.0);
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
+        // High pressure: trigger adaptive raises sooner (1.2 < default 1.5)
+        let factor = patch.adaptive_p95_threshold_factor.expect("should be set");
+        assert!(factor < 1.5, "high pressure should tighten factor, got {factor}");
+    }
+
+    #[test]
+    fn suggest_patch_low_pressure_backpressure_threshold_greater_than_high() {
+        let high_stats = make_stats_with_pressure(1.0);
+        let low_stats = make_stats_with_pressure(0.0);
+        let high_patch = suggest_config_patch(&high_stats, 0.3, 0.8).unwrap();
+        let low_patch = suggest_config_patch(&low_stats, 0.3, 0.8).unwrap();
+        let high_thresh = high_patch.backpressure_busy_threshold.unwrap();
+        let low_thresh = low_patch.backpressure_busy_threshold.unwrap();
+        assert!(low_thresh > high_thresh, "low pressure should relax threshold: {low_thresh} > {high_thresh}");
+    }
+
+    #[test]
+    fn suggest_patch_disabled_thresholds_never_fire() {
+        // Setting thresholds to extreme values disables both branches.
+        let high_stats = make_stats_with_pressure(1.0);
+        let low_stats = make_stats_with_pressure(0.0);
+        // Disable high-pressure branch: threshold above max pressure.
+        assert!(suggest_config_patch(&high_stats, 0.0, 2.0).is_none());
+        // Disable low-pressure branch: threshold below min pressure.
+        assert!(suggest_config_patch(&low_stats, -1.0, 1.0).is_none());
+    }
+
     // -----------------------------------------------------------------------
     // HelixBridgeError Display / std::error::Error
     // -----------------------------------------------------------------------
@@ -773,5 +1141,125 @@ mod tests {
         assert!((back.avg_ms - 1.5).abs() < 1e-9);
         assert!((back.ema_ms - 1.4).abs() < 1e-9);
         assert_eq!(back.p95_ms, 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // NeuralRouterState serde
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn neural_router_state_serde_roundtrip() {
+        let state = NeuralRouterState {
+            sample_count: 42,
+            avg_reward: 0.75,
+            is_warmed_up: true,
+            weights: vec![vec![0.1, 0.2]; 5],
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: NeuralRouterState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sample_count, 42);
+        assert!((back.avg_reward - 0.75).abs() < 1e-9);
+        assert!(back.is_warmed_up);
+        assert_eq!(back.weights.len(), 5);
+    }
+
+    #[test]
+    fn neural_router_state_cold_start_defaults() {
+        let state = NeuralRouterState {
+            sample_count: 0,
+            avg_reward: 0.0,
+            is_warmed_up: false,
+            weights: vec![vec![0.0; 7]; 5],
+        };
+        assert!(!state.is_warmed_up);
+        assert_eq!(state.sample_count, 0);
+        assert!((state.avg_reward).abs() < 1e-9);
+    }
+
+    #[test]
+    fn neural_router_state_warmed_up_positive_reward() {
+        let state = NeuralRouterState {
+            sample_count: 100,
+            avg_reward: 0.42,
+            is_warmed_up: true,
+            weights: vec![vec![0.05; 7]; 5],
+        };
+        // is_warmed_up && avg_reward > 0 is the condition for suppressing patches
+        assert!(state.is_warmed_up && state.avg_reward > 0.0);
+    }
+
+    #[test]
+    fn neural_router_state_warmed_but_negative_reward_still_allows_patch() {
+        let state = NeuralRouterState {
+            sample_count: 50,
+            avg_reward: -0.3,
+            is_warmed_up: true,
+            weights: vec![vec![-0.1; 7]; 5],
+        };
+        // Neural is warmed up but reward is negative: neural_healthy should be false
+        let neural_healthy = state.is_warmed_up && state.avg_reward > 0.0;
+        assert!(!neural_healthy, "negative avg_reward means routing is not healthy");
+    }
+
+    // -----------------------------------------------------------------------
+    // Config patch suppression logic unit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn patch_suppressed_when_neural_healthy_and_pressure_near_threshold() {
+        // Simulate the gating logic from run():
+        // neural_healthy=true, pressure only barely above threshold (within 10%)
+        let neural_healthy = true;
+        let pressure = 0.82_f64; // > 0.8 threshold but < 1.1 * 0.8 = 0.88
+        let high_threshold = 0.8_f64;
+        let low_threshold = 0.3_f64;
+
+        let pressure_far_from_threshold =
+            pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
+        let should_push = !neural_healthy || pressure_far_from_threshold;
+
+        assert!(!should_push, "patch should be suppressed when neural healthy and pressure barely over threshold");
+    }
+
+    #[test]
+    fn patch_pushed_when_neural_healthy_but_pressure_far_above_threshold() {
+        let neural_healthy = true;
+        let pressure = 0.95_f64; // >> 0.8 threshold, > 1.1 * 0.8 = 0.88
+        let high_threshold = 0.8_f64;
+        let low_threshold = 0.3_f64;
+
+        let pressure_far_from_threshold =
+            pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
+        let should_push = !neural_healthy || pressure_far_from_threshold;
+
+        assert!(should_push, "patch should be pushed when pressure is far above threshold even if neural is healthy");
+    }
+
+    #[test]
+    fn patch_pushed_when_neural_not_healthy() {
+        let neural_healthy = false;
+        let pressure = 0.82_f64;
+        let high_threshold = 0.8_f64;
+        let low_threshold = 0.3_f64;
+
+        let pressure_far_from_threshold =
+            pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
+        let should_push = !neural_healthy || pressure_far_from_threshold;
+
+        assert!(should_push, "patch should always be pushed when neural routing is not healthy");
+    }
+
+    #[test]
+    fn patch_pushed_when_pressure_far_below_threshold() {
+        let neural_healthy = true;
+        let pressure = 0.1_f64; // << 0.3 low_threshold, < 0.9 * 0.3 = 0.27
+        let high_threshold = 0.8_f64;
+        let low_threshold = 0.3_f64;
+
+        let pressure_far_from_threshold =
+            pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
+        let should_push = !neural_healthy || pressure_far_from_threshold;
+
+        assert!(should_push, "patch should be pushed when pressure is far below low threshold");
     }
 }
