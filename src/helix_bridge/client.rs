@@ -1262,4 +1262,231 @@ mod tests {
 
         assert!(should_push, "patch should be pushed when pressure is far below low threshold");
     }
+
+    // -----------------------------------------------------------------------
+    // Mock-HTTP integration tests for push_config and fetch_neural_state
+    // -----------------------------------------------------------------------
+    //
+    // These spin up a minimal tokio TCP listener that speaks just enough HTTP/1.1
+    // to satisfy reqwest, exercising the actual network paths of push_config()
+    // and fetch_neural_state().
+
+    async fn bind_mock() -> (u16, tokio::net::TcpListener) {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = l.local_addr().expect("addr").port();
+        (port, l)
+    }
+
+    async fn serve_once(listener: tokio::net::TcpListener, status: u16, body: &'static str) {
+        use tokio::io::AsyncWriteExt;
+        let (mut s, _) = listener.accept().await.expect("accept");
+        let mut buf = [0u8; 4096];
+        let _ = tokio::time::timeout(
+            Duration::from_millis(200),
+            tokio::io::AsyncReadExt::read(&mut s, &mut buf),
+        ).await;
+        let resp = format!(
+            "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = s.write_all(resp.as_bytes()).await;
+        let _ = s.flush().await;
+    }
+
+    fn make_bridge_at(port: u16) -> HelixBridge {
+        HelixBridge::builder(format!("http://127.0.0.1:{port}"))
+            .bus(make_bus())
+            .connect_timeout(Duration::from_secs(2))
+            .request_timeout(Duration::from_secs(5))
+            .build()
+            .expect("build bridge")
+    }
+
+    // -- push_config mock-HTTP tests --
+
+    #[tokio::test]
+    async fn push_config_succeeds_on_http_200() {
+        let (port, listener) = bind_mock().await;
+        let body = r#"{"inline_threshold":8000,"spawn_threshold":54000,"cpu_queue_cap":512,"cpu_parallelism":8,"backpressure_busy_threshold":5,"batch_max_size":8,"batch_max_delay_ms":10,"ema_alpha":0.30,"adaptive_step":0.20,"cpu_p95_budget_ms":200,"adaptive_p95_threshold_factor":1.2}"#;
+        tokio::spawn(serve_once(listener, 200, body));
+
+        let bridge = make_bridge_at(port);
+        let patch = RouterConfigPatch { adaptive_step: Some(0.20), ema_alpha: Some(0.30), ..Default::default() };
+        let result = bridge.push_config(&patch).await;
+        assert!(result.is_ok(), "push_config should succeed on HTTP 200: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn push_config_fails_on_http_400() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 400, r#"{"error":"bad request"}"#));
+
+        let bridge = make_bridge_at(port);
+        let patch = RouterConfigPatch::default();
+        let result = bridge.push_config(&patch).await;
+        assert!(result.is_err(), "push_config should fail on HTTP 400");
+        let err = result.unwrap_err();
+        assert!(matches!(err, HelixBridgeError::Http { status: 400, .. }), "expected Http 400 error: {err}");
+    }
+
+    #[tokio::test]
+    async fn push_config_fails_on_http_500() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 500, r#"{"error":"internal"}"#));
+
+        let bridge = make_bridge_at(port);
+        let patch = RouterConfigPatch { spawn_threshold: Some(54_000), ..Default::default() };
+        let result = bridge.push_config(&patch).await;
+        assert!(result.is_err(), "push_config should fail on HTTP 500");
+        let err = result.unwrap_err();
+        assert!(matches!(err, HelixBridgeError::Http { status: 500, .. }), "expected Http 500 error: {err}");
+    }
+
+    #[tokio::test]
+    async fn push_config_connection_refused_returns_connect_error() {
+        // Port 1 is privileged and will connection-refuse immediately.
+        let bridge = HelixBridge::builder("http://127.0.0.1:1")
+            .bus(make_bus())
+            .connect_timeout(Duration::from_millis(200))
+            .request_timeout(Duration::from_millis(400))
+            .build()
+            .expect("build bridge");
+
+        let patch = RouterConfigPatch::default();
+        let result = bridge.push_config(&patch).await;
+        assert!(result.is_err(), "should fail on connection refused");
+        assert!(matches!(result.unwrap_err(), HelixBridgeError::Connect { .. }), "expected Connect error");
+    }
+
+    #[tokio::test]
+    async fn push_config_high_pressure_patch_has_expected_fields() {
+        // Verify the patch produced by suggest_config_patch for high pressure
+        // contains all the fields we actually want HelixRouter to apply.
+        let stats = RouterStats {
+            completed: 100,
+            dropped: 10,
+            adaptive_spawn_threshold: 60_000,
+            pressure_score: 0.95,
+            routed_by_strategy: vec![],
+            latency_by_strategy: vec![],
+        };
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for high pressure");
+        assert!(patch.adaptive_step.is_some(), "high-pressure patch must set adaptive_step");
+        assert!(patch.ema_alpha.is_some(), "high-pressure patch must set ema_alpha");
+        assert!(patch.backpressure_busy_threshold.is_some(), "high-pressure patch must set backpressure_busy_threshold");
+        // High-pressure adaptive_step should be larger than low-pressure
+        assert!(patch.adaptive_step.unwrap() > 0.05, "high-pressure adaptive_step should be elevated");
+    }
+
+    #[tokio::test]
+    async fn push_config_low_pressure_patch_relaxes_params() {
+        let stats = RouterStats {
+            completed: 100,
+            dropped: 0,
+            adaptive_spawn_threshold: 60_000,
+            pressure_score: 0.1,
+            routed_by_strategy: vec![],
+            latency_by_strategy: vec![],
+        };
+        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for low pressure");
+        assert!(patch.adaptive_step.is_some());
+        assert!(patch.ema_alpha.is_some());
+        // Low-pressure adaptive_step should be smaller than default (0.10)
+        assert!(patch.adaptive_step.unwrap() < 0.10, "low-pressure adaptive_step should be reduced");
+    }
+
+    // -- fetch_neural_state mock-HTTP tests --
+
+    #[tokio::test]
+    async fn fetch_neural_state_returns_some_on_200() {
+        let (port, listener) = bind_mock().await;
+        let body = r#"{"is_warmed_up":true,"avg_reward":0.82,"strategy_weights":{},"total_decisions":150}"#;
+        tokio::spawn(serve_once(listener, 200, body));
+
+        let bridge = make_bridge_at(port);
+        let result = bridge.fetch_neural_state().await;
+        assert!(result.is_ok(), "fetch_neural_state should succeed: {result:?}");
+        let state = result.unwrap().expect("should return Some on 200");
+        assert!(state.is_warmed_up);
+        assert!((state.avg_reward - 0.82).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn fetch_neural_state_returns_none_on_404() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 404, r#"{"error":"not found"}"#));
+
+        let bridge = make_bridge_at(port);
+        let result = bridge.fetch_neural_state().await;
+        assert!(result.is_ok(), "404 should not be an error, just None");
+        assert!(result.unwrap().is_none(), "404 should return None");
+    }
+
+    #[tokio::test]
+    async fn fetch_neural_state_returns_none_on_501() {
+        // 501 = older HelixRouter without /api/neural
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 501, ""));
+
+        let bridge = make_bridge_at(port);
+        let result = bridge.fetch_neural_state().await;
+        assert!(result.is_ok(), "non-2xx on neural should return Ok(None)");
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn fetch_neural_state_error_on_bad_json() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 200, r#"not valid json"#));
+
+        let bridge = make_bridge_at(port);
+        let result = bridge.fetch_neural_state().await;
+        assert!(result.is_err(), "malformed JSON should return Err");
+        assert!(matches!(result.unwrap_err(), HelixBridgeError::Json { .. }));
+    }
+
+    #[tokio::test]
+    async fn fetch_stats_then_push_config_round_trip() {
+        // Serve /api/stats on first connection, /api/config on second.
+        // Verifies the stats → suggest → push pipeline end-to-end.
+        use tokio::io::AsyncWriteExt;
+
+        let (port, listener) = bind_mock().await;
+        let stats_body = r#"{"completed":50,"dropped":5,"adaptive_spawn_threshold":60000,"pressure_score":0.9,"routed_by_strategy":[],"latency_by_strategy":[]}"#;
+        let config_body = r#"{"inline_threshold":8000,"spawn_threshold":54000,"cpu_queue_cap":512,"cpu_parallelism":8,"backpressure_busy_threshold":5,"batch_max_size":8,"batch_max_delay_ms":10,"ema_alpha":0.30,"adaptive_step":0.20,"cpu_p95_budget_ms":200,"adaptive_p95_threshold_factor":1.2}"#;
+
+        // Spawn handler that serves two sequential connections.
+        tokio::spawn(async move {
+            for body in [stats_body, config_body] {
+                if let Ok((mut s, _)) = listener.accept().await {
+                    let mut buf = [0u8; 4096];
+                    let _ = tokio::time::timeout(
+                        Duration::from_millis(200),
+                        tokio::io::AsyncReadExt::read(&mut s, &mut buf),
+                    ).await;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = s.write_all(resp.as_bytes()).await;
+                    let _ = s.flush().await;
+                }
+            }
+        });
+
+        let bridge = make_bridge_at(port);
+
+        // Step 1: fetch stats
+        let stats = bridge.fetch_stats().await.expect("fetch_stats");
+        assert!((stats.pressure_score - 0.9).abs() < 1e-6);
+
+        // Step 2: derive patch
+        let patch = suggest_config_patch(&stats, 0.3, 0.8)
+            .expect("high pressure should produce a patch");
+        assert!(patch.adaptive_step.is_some());
+
+        // Step 3: push patch
+        let push_result = bridge.push_config(&patch).await;
+        assert!(push_result.is_ok(), "push_config should succeed: {push_result:?}");
+    }
 }
