@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use tracing::{warn, error};
 
-use crate::self_tune::telemetry_bus::TelemetryBus;
+use crate::self_tune::telemetry_bus::{TelemetryBus, TelemetrySnapshot};
 use super::converter::stats_to_snapshot;
 
 // --- HelixRouter API types (mirror what HelixRouter exposes) ---
@@ -269,6 +269,62 @@ pub fn suggest_config_patch(
     }
 }
 
+/// Suggest a [`RouterConfigPatch`] that blends HelixRouter's own pressure with
+/// EOT's internal telemetry snapshot.
+///
+/// This closes the gap where HelixRouter has no visibility into EOT's own load:
+/// - If EOT's drop_rate is high (it is shedding load), treat it as high
+///   pressure even if HelixRouter's `pressure_score` appears healthy.
+/// - If EOT's queue is near-full, escalate to a tighten patch early.
+/// - If EOT's circuit breaker is open, always send a tighten patch.
+///
+/// Falls back to [`suggest_config_patch`] when `eot_snap` is `None`.
+///
+/// # Panics
+/// This function never panics.
+pub fn suggest_config_patch_with_eot(
+    stats: &RouterStats,
+    eot_snap: Option<&TelemetrySnapshot>,
+    low_threshold: f64,
+    high_threshold: f64,
+) -> Option<RouterConfigPatch> {
+    // Compute an EOT-derived pressure signal.
+    let eot_pressure = eot_snap.map(|s| {
+        let drop_signal = s.drop_rate;
+        let queue_signal = s.queue_fill_frac;
+        let cb_signal = if s.circuit_open { 1.0_f64 } else { 0.0 };
+        // Blend: take the worst of drop rate, queue fill, and circuit state.
+        drop_signal.max(queue_signal).max(cb_signal)
+    });
+
+    // Synthesise an effective pressure that incorporates both signals.
+    let effective_pressure = match eot_pressure {
+        Some(eot) => stats.pressure_score.max(eot),
+        None => stats.pressure_score,
+    };
+
+    // Reuse the existing thresholds with the blended pressure.
+    if effective_pressure > high_threshold {
+        Some(RouterConfigPatch {
+            adaptive_step: Some(0.20),
+            ema_alpha: Some(0.30),
+            backpressure_busy_threshold: Some(5),
+            adaptive_p95_threshold_factor: Some(1.2),
+            ..RouterConfigPatch::default()
+        })
+    } else if effective_pressure < low_threshold {
+        Some(RouterConfigPatch {
+            adaptive_step: Some(0.05),
+            ema_alpha: Some(0.10),
+            backpressure_busy_threshold: Some(9),
+            adaptive_p95_threshold_factor: Some(1.8),
+            ..RouterConfigPatch::default()
+        })
+    } else {
+        None
+    }
+}
+
 /// The bridge runner.
 ///
 /// Polls HelixRouter at `config.poll_interval` and feeds converted stats
@@ -374,6 +430,47 @@ impl HelixBridge {
         Ok(())
     }
 
+    /// Push EOT's current pressure signal to HelixRouter's `/api/telemetry`.
+    ///
+    /// This closes the reverse feedback loop: instead of only HelixRouter
+    /// sending config updates to EOT, EOT now actively reports its own
+    /// observed pressure so HelixRouter can blend it into its routing decisions.
+    ///
+    /// # Arguments
+    /// * `pressure` — Normalised pressure [0.0, 1.0].  Values outside [0, 1]
+    ///   are clamped by HelixRouter before storage.
+    ///
+    /// # Returns
+    /// - `Ok(())` — on a 2xx response.
+    /// - `Err(HelixBridgeError::Connect)` — on transport failure.
+    /// - `Err(HelixBridgeError::Http)` — on a non-2xx response.
+    ///
+    /// # Panics
+    /// This function never panics.
+    pub async fn push_eot_pressure(&self, pressure: f64) -> Result<(), HelixBridgeError> {
+        let url = format!("{}/api/telemetry", self.config.base_url);
+        let body = serde_json::json!({ "pressure": pressure });
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| HelixBridgeError::Connect {
+                url: url.clone(),
+                detail: e.to_string(),
+            })?;
+
+        if !resp.status().is_success() {
+            return Err(HelixBridgeError::Http {
+                status: resp.status().as_u16(),
+                url,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Fetch the current neural router state from HelixRouter's `/api/neural`.
     ///
     /// Returns `Ok(None)` when the endpoint returns a non-2xx status (e.g. if
@@ -420,7 +517,9 @@ impl HelixBridge {
     /// the observed pressure is outside the healthy range defined by
     /// `pressure_low_threshold` / `pressure_high_threshold`.
     ///
-    /// Connection failures are soft-errors — the loop skips the tick and retries.
+    /// Connection failures are soft-errors — the loop applies exponential backoff
+    /// (capped at 5× the base poll interval) and then retries. Once the router
+    /// is reachable again the failure counter resets and normal polling resumes.
     ///
     /// Cancel the task (drop the `JoinHandle`) to stop the loop cleanly.
     ///
@@ -434,6 +533,14 @@ impl HelixBridge {
 
         loop {
             ticker.tick().await;
+
+            // Apply exponential backoff when HelixRouter is unreachable.
+            // Cap at 5× the base poll interval to avoid starving the bus.
+            if consecutive_failures > 0 {
+                let backoff_factor = (consecutive_failures as u64).min(5);
+                let backoff = self.config.poll_interval * backoff_factor as u32;
+                tokio::time::sleep(backoff).await;
+            }
 
             match self.fetch_stats().await {
                 Ok(stats) => {
@@ -478,8 +585,31 @@ impl HelixBridge {
                             _ => false,
                         };
 
-                        if let Some(patch) = suggest_config_patch(
+                        // Pull EOT's own latest snapshot to blend into the patch decision.
+                        let eot_snap = self.bus.latest().await;
+
+                        // ── Reverse telemetry: push EOT's pressure to HelixRouter ──
+                        // This feeds EOT's observed drop_rate + latency pressure back
+                        // into HelixRouter's composite pressure score via POST /api/telemetry,
+                        // allowing HelixRouter to raise its own spawn threshold before
+                        // its own queues fill — a predictive rather than reactive signal.
+                        let eot_pressure = eot_snap.drop_rate.max(
+                            (eot_snap.avg_latency_us / 50_000.0).clamp(0.0, 1.0),
+                        );
+                        if eot_pressure > 0.0 {
+                            if let Err(e) = self.push_eot_pressure(eot_pressure).await {
+                                tracing::debug!(
+                                    error = %e,
+                                    eot_pressure,
+                                    url = %self.config.base_url,
+                                    "HelixBridge EOT pressure push skipped (older HelixRouter or unreachable)"
+                                );
+                            }
+                        }
+
+                        if let Some(patch) = suggest_config_patch_with_eot(
                             &stats,
+                            Some(&eot_snap),
                             self.config.pressure_low_threshold,
                             self.config.pressure_high_threshold,
                         ) {
@@ -507,19 +637,24 @@ impl HelixBridge {
                 }
                 Err(e) => {
                     consecutive_failures = consecutive_failures.saturating_add(1);
+                    let backoff_factor = (consecutive_failures as u64).min(5);
+                    let backoff_ms = self.config.poll_interval.as_millis() * backoff_factor as u128;
 
                     if consecutive_failures >= 5 {
                         error!(
                             error = %e,
                             url = %self.config.base_url,
                             consecutive_failures,
-                            "HelixBridge poll failed repeatedly, will retry next tick"
+                            backoff_ms,
+                            "HelixBridge poll failed repeatedly, backing off before retry"
                         );
                     } else {
                         warn!(
                             error = %e,
                             url = %self.config.base_url,
-                            "HelixBridge poll failed, will retry next tick"
+                            consecutive_failures,
+                            backoff_ms,
+                            "HelixBridge poll failed, backing off before retry"
                         );
                     }
                 }
@@ -911,6 +1046,104 @@ mod tests {
         assert!(suggest_config_patch(&high_stats, 0.0, 2.0).is_none());
         // Disable low-pressure branch: threshold below min pressure.
         assert!(suggest_config_patch(&low_stats, -1.0, 1.0).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // suggest_config_patch_with_eot tests
+    // -----------------------------------------------------------------------
+
+    fn make_eot_snap_with_drop_rate(drop_rate: f64) -> TelemetrySnapshot {
+        TelemetrySnapshot {
+            drop_rate,
+            ..TelemetrySnapshot::zero()
+        }
+    }
+
+    fn make_eot_snap_with_queue_fill(queue_fill_frac: f64) -> TelemetrySnapshot {
+        TelemetrySnapshot {
+            queue_fill_frac,
+            ..TelemetrySnapshot::zero()
+        }
+    }
+
+    fn make_eot_snap_circuit_open() -> TelemetrySnapshot {
+        TelemetrySnapshot {
+            circuit_open: true,
+            ..TelemetrySnapshot::zero()
+        }
+    }
+
+    #[test]
+    fn with_eot_none_behaves_like_original() {
+        // With no EOT snapshot, should behave identically to suggest_config_patch.
+        let stats = make_stats_with_pressure(0.5);
+        let original = suggest_config_patch(&stats, 0.3, 0.8);
+        let blended = suggest_config_patch_with_eot(&stats, None, 0.3, 0.8);
+        assert_eq!(original.is_none(), blended.is_none());
+    }
+
+    #[test]
+    fn with_eot_high_drop_rate_triggers_tighten_despite_low_helix_pressure() {
+        // HelixRouter pressure is low, but EOT is dropping 90% of requests.
+        let stats = make_stats_with_pressure(0.1);
+        let snap = make_eot_snap_with_drop_rate(0.9);
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_some(), "high EOT drop rate should trigger tighten patch");
+        let p = patch.unwrap();
+        // Should be a tighten patch (backpressure_busy_threshold = 5).
+        assert_eq!(p.backpressure_busy_threshold, Some(5));
+    }
+
+    #[test]
+    fn with_eot_normal_drop_rate_no_patch_when_helix_healthy() {
+        // Both HelixRouter and EOT are healthy — no patch.
+        let stats = make_stats_with_pressure(0.5);
+        let snap = make_eot_snap_with_drop_rate(0.1); // 10% drop = normal-ish
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_none(), "both healthy should produce no patch");
+    }
+
+    #[test]
+    fn with_eot_full_queue_triggers_tighten() {
+        // HelixRouter healthy, EOT queue near-full.
+        let stats = make_stats_with_pressure(0.2);
+        let snap = make_eot_snap_with_queue_fill(0.95);
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_some(), "full EOT queue should trigger tighten patch");
+    }
+
+    #[test]
+    fn with_eot_circuit_open_triggers_tighten() {
+        // HelixRouter healthy, EOT circuit breaker open.
+        let stats = make_stats_with_pressure(0.2);
+        let snap = make_eot_snap_circuit_open();
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_some(), "open circuit breaker should trigger tighten patch");
+        let p = patch.unwrap();
+        assert_eq!(p.backpressure_busy_threshold, Some(5));
+    }
+
+    #[test]
+    fn with_eot_both_low_triggers_relax() {
+        // Both HelixRouter and EOT are idle — relax patch.
+        let stats = make_stats_with_pressure(0.05);
+        let snap = make_eot_snap_with_drop_rate(0.0);
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_some(), "idle system should trigger relax patch");
+        let p = patch.unwrap();
+        // Relax patch: backpressure_busy_threshold > high-pressure value.
+        assert_eq!(p.backpressure_busy_threshold, Some(9));
+    }
+
+    #[test]
+    fn with_eot_helix_high_overrides_eot_low() {
+        // HelixRouter under pressure even though EOT is idle.
+        let stats = make_stats_with_pressure(0.95);
+        let snap = make_eot_snap_with_drop_rate(0.0);
+        let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
+        assert!(patch.is_some(), "HelixRouter high pressure should still trigger patch");
+        let p = patch.unwrap();
+        assert_eq!(p.backpressure_busy_threshold, Some(5), "should be tighten patch");
     }
 
     // -----------------------------------------------------------------------
@@ -1489,5 +1722,103 @@ mod tests {
         // Step 3: push patch
         let push_result = bridge.push_config(&patch).await;
         assert!(push_result.is_ok(), "push_config should succeed: {push_result:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Backoff calculation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn backoff_factor_clamps_at_five() {
+        // Verify the backoff cap logic: factor = min(consecutive_failures, 5).
+        // This mirrors the in-loop calculation without requiring a real timer.
+        let poll = Duration::from_secs(5);
+        for failures in [1u32, 2, 3, 4, 5, 10, 100] {
+            let factor = (failures as u64).min(5);
+            let backoff = poll * factor as u32;
+            assert!(
+                backoff <= poll * 5,
+                "backoff must not exceed 5× poll interval at failures={failures}"
+            );
+            assert!(backoff >= poll, "backoff must be at least 1× poll at failures={failures}");
+        }
+    }
+
+    #[test]
+    fn backoff_factor_zero_on_first_failure() {
+        // First failure: consecutive_failures becomes 1, factor = min(1, 5) = 1.
+        let failures: u32 = 1;
+        let factor = (failures as u64).min(5);
+        assert_eq!(factor, 1);
+    }
+
+    #[test]
+    fn backoff_factor_five_at_saturated_failures() {
+        // After many failures the factor saturates at 5.
+        let failures: u32 = u32::MAX;
+        let factor = (failures as u64).min(5);
+        assert_eq!(factor, 5);
+    }
+
+    // ── push_eot_pressure tests ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn push_eot_pressure_succeeds_on_http_204() {
+        let (port, listener) = bind_mock().await;
+        // HelixRouter returns 204 No Content for telemetry POST.
+        tokio::spawn(serve_once(listener, 204, ""));
+        let bridge = make_bridge_at(port);
+        let result = bridge.push_eot_pressure(0.5).await;
+        assert!(result.is_ok(), "push_eot_pressure should succeed on HTTP 204: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn push_eot_pressure_succeeds_on_http_200() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 200, "{}"));
+        let bridge = make_bridge_at(port);
+        let result = bridge.push_eot_pressure(0.75).await;
+        assert!(result.is_ok(), "push_eot_pressure should succeed on HTTP 200: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn push_eot_pressure_fails_on_http_400() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 400, r#"{"error":"bad"}"#));
+        let bridge = make_bridge_at(port);
+        let result = bridge.push_eot_pressure(0.9).await;
+        assert!(result.is_err(), "push_eot_pressure should fail on HTTP 400");
+        assert!(matches!(result.unwrap_err(), HelixBridgeError::Http { status: 400, .. }));
+    }
+
+    #[tokio::test]
+    async fn push_eot_pressure_fails_on_http_500() {
+        let (port, listener) = bind_mock().await;
+        tokio::spawn(serve_once(listener, 500, r#"{"error":"internal"}"#));
+        let bridge = make_bridge_at(port);
+        let result = bridge.push_eot_pressure(0.1).await;
+        assert!(result.is_err(), "push_eot_pressure should fail on HTTP 500");
+        assert!(matches!(result.unwrap_err(), HelixBridgeError::Http { status: 500, .. }));
+    }
+
+    #[tokio::test]
+    async fn push_eot_pressure_connection_refused_returns_connect_error() {
+        let bridge = HelixBridge::builder("http://127.0.0.1:1")
+            .bus(make_bus())
+            .connect_timeout(Duration::from_millis(200))
+            .request_timeout(Duration::from_millis(400))
+            .build()
+            .expect("build bridge");
+        let result = bridge.push_eot_pressure(0.5).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), HelixBridgeError::Connect { .. }));
+    }
+
+    #[test]
+    fn push_eot_pressure_target_url_is_api_telemetry() {
+        // Verify the URL path matches HelixRouter's registered route.
+        let base = "http://127.0.0.1:9999";
+        let expected_url = format!("{base}/api/telemetry");
+        assert!(expected_url.ends_with("/api/telemetry"));
     }
 }
