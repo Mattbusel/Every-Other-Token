@@ -1400,7 +1400,8 @@ mod tests {
     #[tokio::test]
     async fn fetch_neural_state_returns_some_on_200() {
         let (port, listener) = bind_mock().await;
-        let body = r#"{"is_warmed_up":true,"avg_reward":0.82,"strategy_weights":{},"total_decisions":150}"#;
+        // JSON matches NeuralRouterState: sample_count, avg_reward, is_warmed_up, weights.
+        let body = r#"{"sample_count":150,"avg_reward":0.82,"is_warmed_up":true,"weights":[[0.1,0.2,0.3,0.4,0.5,0.6,0.7],[0.1,0.2,0.3,0.4,0.5,0.6,0.7],[0.1,0.2,0.3,0.4,0.5,0.6,0.7],[0.1,0.2,0.3,0.4,0.5,0.6,0.7],[0.1,0.2,0.3,0.4,0.5,0.6,0.7]]}"#;
         tokio::spawn(serve_once(listener, 200, body));
 
         let bridge = make_bridge_at(port);
