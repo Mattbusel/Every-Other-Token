@@ -1,5 +1,8 @@
 # Every Other Token
 
+[![Star History Chart](https://api.star-history.com/svg?repos=Mattbusel/Every-Other-Token&type=Date)](https://star-history.com/#Mattbusel/Every-Other-Token)
+
+
 [![CI](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml) [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/) [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Tests](https://img.shields.io/badge/tests-1165%20passing-brightgreen.svg)](https://github.com/Mattbusel/Every-Other-Token) [![GitHub Stars](https://img.shields.io/github/stars/Mattbusel/Every-Other-Token?style=social)](https://github.com/Mattbusel/Every-Other-Token)
 
 > What if you intercept every other token from a live LLM stream and measure what breaks?
