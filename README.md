@@ -126,3 +126,11 @@ MIT
 ---
 
 *Open an issue if you're working on LLM evaluation, interpretability, or inference infrastructure.*
+
+---
+
+## Ecosystem
+
+- [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- the orchestration layer that uses Every-Other-Token telemetry to drive HelixRouter adaptation
+- [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- companion tool for output-level reliability analysis
+- [llm-cpp](https://github.com/Mattbusel/llm-cpp) -- C++ streaming primitive that inspired the Rust token pipeline here
