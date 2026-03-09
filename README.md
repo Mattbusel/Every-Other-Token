@@ -7,7 +7,7 @@
 
 > What if you intercept every other token from a live LLM stream and measure what breaks?
 
-That question led to this: a Rust tool that sits between you and the model, mutates tokens mid-generation, scores the model's confidence at each position, and visualizes the result in real time. It turns out LLMs are surprisingly fragile — and surprisingly resilient — in ways that aggregate benchmarks completely miss.
+That question led to this: a Rust tool that sits between you and the model, mutates tokens mid-generation, scores the model's confidence at each position, and visualizes the result in real time. It turns out LLMs are surprisingly fragile, and surprisingly resilient, in ways that aggregate benchmarks completely miss.
 
 **What it does:** intercept → perturb → score → visualize → compare across providers, simultaneously, in a zero-dependency web UI or terminal. Multiple researchers can watch the same stream live.
 
@@ -17,14 +17,14 @@ Built in Rust. Dual-provider (OpenAI + Anthropic). 1,165 tests. Ships as a singl
 
 ## Why This Matters
 
-Token-level analysis is an underexplored axis of LLM evaluation. Aggregate benchmarks measure outputs. This tool measures what happens *during* generation — token by token, position by position — with confidence scores, perplexity signals, and cross-provider structural comparison running simultaneously.
+Token-level analysis is an underexplored axis of LLM evaluation. Aggregate benchmarks measure outputs. This tool measures what happens *during* generation -- token by token, position by position -- with confidence scores, perplexity signals, and cross-provider structural comparison running simultaneously.
 
 **Four open research questions this directly enables:**
 
-1. **Semantic fragility** — At what perturbation rate does coherent reasoning collapse?
-2. **Cross-provider divergence** — Do OpenAI and Anthropic produce structurally different token sequences for identical prompts?
-3. **System prompt sensitivity** — How much does framing shift per-token confidence distributions?
-4. **Chaos resilience** — Do models self-correct when every other token is randomly mutated?
+1. **Semantic fragility** -- At what perturbation rate does coherent reasoning collapse?
+2. **Cross-provider divergence** -- Do OpenAI and Anthropic produce structurally different token sequences for identical prompts?
+3. **System prompt sensitivity** -- How much does framing shift per-token confidence distributions?
+4. **Chaos resilience** -- Do models self-correct when every other token is randomly mutated?
 
 ---
 
@@ -59,9 +59,9 @@ cargo run -- "Explain recursion" --research --runs 20 --output results.json
 | **Single** | Live token stream with per-token confidence bars and perplexity pulse |
 | **Split** | Original vs transformed side by side |
 | **Quad** | All four transforms applied simultaneously in a 2x2 grid |
-| **Diff** | OpenAI and Anthropic streaming the same prompt in parallel — diverging positions highlighted red |
+| **Diff** | OpenAI and Anthropic streaming the same prompt in parallel, diverging positions highlighted red |
 | **Experiment** | A/B mode: two system prompts, same user prompt, live divergence map |
-| **Research** | Aggregate stats dashboard — perplexity, confidence histogram, vocab diversity, cost |
+| **Research** | Aggregate stats dashboard: perplexity, confidence histogram, vocab diversity, cost |
 
 ---
 
