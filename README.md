@@ -137,3 +137,9 @@ MIT
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- the orchestration layer that uses Every-Other-Token telemetry to drive HelixRouter adaptation
 - [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- companion tool for output-level reliability analysis
 - [llm-cpp](https://github.com/Mattbusel/llm-cpp) -- C++ streaming primitive that inspired the Rust token pipeline here
+
+---
+## Related Projects by @Mattbusel
+- [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- Hallucination detection for LLM outputs using OpenAI and Anthropic
+- [Token-Visualizer](https://github.com/Mattbusel/Token-Visualizer) -- Interactive tokenizer and prompt-engineering visualization tool
+- [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- Production Rust LLM orchestrator with circuit breakers and self-improving loop
