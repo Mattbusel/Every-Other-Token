@@ -61,6 +61,22 @@ pub struct Args {
     #[arg(long)]
     pub system_b: Option<String>,
 
+    /// Fraction of tokens to intercept and transform (0.0–1.0, default 0.5).
+    /// At 0.5 every other token is transformed; at 0.3 roughly one in three.
+    /// Uses a deterministic Bresenham spread so results are reproducible when
+    /// combined with --seed.
+    #[arg(long, default_value = "0.5")]
+    pub rate: f64,
+
+    /// Fixed RNG seed for reproducible Noise/Chaos transforms.
+    /// Omit to use entropy-seeded randomness (default behaviour).
+    #[arg(long)]
+    pub seed: Option<u64>,
+
+    /// Path to SQLite experiment log database (requires sqlite-log feature)
+    #[arg(long)]
+    pub log_db: Option<String>,
+
     /// HelixRouter base URL for cross-repo pressure feedback (e.g. http://127.0.0.1:8080).
     ///
     /// When set in --web mode, a HelixBridge background task polls HelixRouter's
@@ -74,10 +90,10 @@ pub struct Args {
 /// Select the appropriate default model for the given provider when the user
 /// hasn't explicitly chosen one (i.e. the model is still the OpenAI default).
 pub fn resolve_model(provider: &Provider, model: &str) -> String {
-    if *provider == Provider::Anthropic && model == "gpt-3.5-turbo" {
-        "claude-sonnet-4-20250514".to_string()
-    } else {
-        model.to_string()
+    match provider {
+        Provider::Anthropic if model == "gpt-3.5-turbo" => "claude-sonnet-4-20250514".to_string(),
+        Provider::Mock => "mock-fixture-v1".to_string(),
+        _ => model.to_string(),
     }
 }
 

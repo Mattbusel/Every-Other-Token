@@ -1,6 +1,8 @@
 use colored::*;
 use rand::Rng;
 
+const NOISE_CHARS: [char; 7] = ['*', '+', '~', '@', '#', '$', '%'];
+
 #[derive(Debug, Clone)]
 pub enum Transform {
     Reverse,
@@ -22,65 +24,60 @@ impl Transform {
         }
     }
 
-    /// Apply the transform and return `(result, label)` where `label` names the
-    /// sub-transform actually applied.  For Chaos, the sub-transform is chosen
-    /// randomly at call time; for others the label equals the transform name.
-    pub fn apply_with_label(&self, token: &str) -> (String, &'static str) {
+    /// Apply the transform using the provided RNG and return `(result, label)`.
+    /// For Chaos, the sub-transform is chosen via `rng`; for others the label
+    /// equals the transform name.  Prefer this over `apply_with_label` in hot
+    /// paths to avoid per-call `thread_rng()` TLS lookups.
+    pub fn apply_with_label_rng<R: Rng>(&self, token: &str, rng: &mut R) -> (String, &'static str) {
         match self {
             Transform::Reverse => (token.chars().rev().collect(), "reverse"),
             Transform::Uppercase => (token.to_uppercase(), "uppercase"),
-            Transform::Mock => {
-                let result = token
-                    .chars()
-                    .enumerate()
-                    .map(|(i, c)| {
-                        if i % 2 == 0 {
-                            c.to_lowercase().next().unwrap_or(c)
-                        } else {
-                            c.to_uppercase().next().unwrap_or(c)
-                        }
-                    })
-                    .collect();
-                (result, "mock")
-            }
+            Transform::Mock => (apply_mock(token), "mock"),
             Transform::Noise => {
-                let mut rng = rand::thread_rng();
-                let noise_chars = ['*', '+', '~', '@', '#', '$', '%'];
-                let noise_char = noise_chars[rng.gen_range(0..noise_chars.len())];
+                let noise_char = NOISE_CHARS[rng.gen_range(0..NOISE_CHARS.len())];
                 (format!("{}{}", token, noise_char), "noise")
             }
-            Transform::Chaos => {
-                let mut rng = rand::thread_rng();
-                match rng.gen_range(0u8..4) {
-                    0 => (token.chars().rev().collect(), "reverse"),
-                    1 => (token.to_uppercase(), "uppercase"),
-                    2 => {
-                        let result = token
-                            .chars()
-                            .enumerate()
-                            .map(|(i, c)| {
-                                if i % 2 == 0 {
-                                    c.to_lowercase().next().unwrap_or(c)
-                                } else {
-                                    c.to_uppercase().next().unwrap_or(c)
-                                }
-                            })
-                            .collect();
-                        (result, "mock")
-                    }
-                    _ => {
-                        let noise_chars = ['*', '+', '~', '@', '#', '$', '%'];
-                        let noise_char = noise_chars[rng.gen_range(0..noise_chars.len())];
-                        (format!("{}{}", token, noise_char), "noise")
-                    }
+            Transform::Chaos => match rng.gen_range(0u8..4) {
+                0 => (token.chars().rev().collect(), "reverse"),
+                1 => (token.to_uppercase(), "uppercase"),
+                2 => (apply_mock(token), "mock"),
+                _ => {
+                    let noise_char = NOISE_CHARS[rng.gen_range(0..NOISE_CHARS.len())];
+                    (format!("{}{}", token, noise_char), "noise")
                 }
-            }
+            },
         }
+    }
+
+    /// Apply the transform using the provided RNG.
+    pub fn apply_rng<R: Rng>(&self, token: &str, rng: &mut R) -> String {
+        self.apply_with_label_rng(token, rng).0
+    }
+
+    /// Apply the transform and return `(result, label)`.  Creates a one-shot
+    /// `thread_rng()`; use `apply_with_label_rng` in hot paths.
+    pub fn apply_with_label(&self, token: &str) -> (String, &'static str) {
+        self.apply_with_label_rng(token, &mut rand::thread_rng())
     }
 
     pub fn apply(&self, token: &str) -> String {
         self.apply_with_label(token).0
     }
+}
+
+/// Shared mock-case logic: alternate lower/upper per character.
+fn apply_mock(token: &str) -> String {
+    token
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if i % 2 == 0 {
+                c.to_lowercase().next().unwrap_or(c)
+            } else {
+                c.to_uppercase().next().unwrap_or(c)
+            }
+        })
+        .collect()
 }
 
 /// Split text into tokens (words, punctuation, whitespace).

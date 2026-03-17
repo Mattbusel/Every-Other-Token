@@ -1182,6 +1182,7 @@ async fn handle_connection(
                 match provider {
                     Provider::Openai => "gpt-3.5-turbo".to_string(),
                     Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
+                    Provider::Mock => "mock-fixture-v1".to_string(),
                 }
             } else {
                 model_input
@@ -1382,6 +1383,7 @@ async fn handle_connection(
                 match ab_provider {
                     Provider::Openai => "gpt-3.5-turbo".to_string(),
                     Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
+                    Provider::Mock => "mock-fixture-v1".to_string(),
                 }
             } else {
                 model_input
