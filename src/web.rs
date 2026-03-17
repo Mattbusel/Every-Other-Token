@@ -552,7 +552,7 @@ async fn handle_connection(
             stream.write_all(response.as_bytes()).await?;
         }
         path if path.starts_with("/replay/") => {
-            let code = &path["/replay/".len()..];
+            let code = path.strip_prefix("/replay/").unwrap_or("");
             let body = if let Ok(guard) = store.lock() {
                 if let Some(room) = guard.get(code) {
                     serde_json::to_string(&room.recorded_events).unwrap_or_else(|_| "[]".to_string())

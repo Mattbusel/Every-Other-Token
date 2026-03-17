@@ -347,7 +347,7 @@ impl TokenInterceptor {
                                             .iter()
                                             .map(|t| TokenAlternative {
                                                 token: t.token.clone(),
-                                                probability: t.logprob.exp(),
+                                                probability: t.logprob.exp().clamp(0.0, 1.0),
                                             })
                                             .collect::<Vec<_>>();
                                         (Some(lc.logprob), alts)
@@ -459,7 +459,7 @@ impl TokenInterceptor {
 
         for (idx, (token_text, logprob)) in fixture.iter().enumerate() {
             let token_text = token_text.to_string();
-            let confidence = logprob.exp();
+            let confidence = logprob.exp().clamp(0.0_f32, 1.0_f32);
             let perplexity = (-logprob).exp();
             let importance = calculate_token_importance(&token_text, idx);
             let should_transform = idx % 2 == 1;
@@ -572,10 +572,10 @@ impl TokenInterceptor {
                 .iter()
                 .map(|t| TokenAlternative {
                     token: t.token.clone(),
-                    probability: t.logprob.exp(),
+                    probability: t.logprob.exp().clamp(0.0, 1.0),
                 })
                 .collect();
-            (Some(entry.logprob.exp()), alts)
+            (Some(entry.logprob.exp().clamp(0.0, 1.0)), alts)
         } else {
             (None, vec![])
         };
