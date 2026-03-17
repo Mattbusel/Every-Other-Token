@@ -115,9 +115,13 @@ pub struct TokenInterceptor {
     /// Fraction of tokens to transform (0.0–1.0).  Bresenham-spread so the
     /// distribution is deterministic and uniform rather than probabilistic.
     pub rate: f64,
+    /// Number of top alternative tokens to request per position (OpenAI only, 0–20).
+    pub top_logprobs: u8,
     /// Per-session RNG used for Noise/Chaos transforms.  Seeded from entropy
     /// unless a fixed seed is provided via `with_seed()`.
     rng: StdRng,
+    /// Optional replay recorder — records each emitted TokenEvent.
+    pub recorder: Option<crate::replay::Recorder>,
 }
 
 impl TokenInterceptor {
@@ -157,7 +161,9 @@ impl TokenInterceptor {
             #[cfg(feature = "self-modify")]
             dedup: None,
             rate: 0.5,
+            top_logprobs: 5,
             rng: StdRng::from_entropy(),
+            recorder: None,
         })
     }
 
@@ -296,7 +302,7 @@ impl TokenInterceptor {
             stream: true,
             temperature: 0.7,
             logprobs: true,
-            top_logprobs: 5,
+            top_logprobs: self.top_logprobs,
         };
 
         let response = self
@@ -647,6 +653,9 @@ impl TokenInterceptor {
                         perplexity: token_perplexity,
                         alternatives: token_alts,
                     };
+                    if let Some(rec) = &mut self.recorder {
+                        rec.record(&event);
+                    }
                     let _ = tx.send(event);
                 } else {
                     // Terminal mode: print with colors

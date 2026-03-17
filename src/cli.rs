@@ -57,9 +57,33 @@ pub struct Args {
     #[arg(long)]
     pub system_a: Option<String>,
 
+    /// Number of top alternative tokens to return per position (OpenAI only, 0–20)
+    #[arg(long, default_value = "5")]
+    pub top_logprobs: u8,
+
     /// System prompt B for A/B experiment mode
     #[arg(long)]
     pub system_b: Option<String>,
+
+    /// Path to SQLite database for persisting experiment results (optional)
+    #[arg(long)]
+    pub db: Option<String>,
+
+    /// Compute statistical significance (two-sample t-test) when ≥2 A/B runs available
+    #[arg(long)]
+    pub significance: bool,
+
+    /// Export per-position token confidence heatmap to CSV at this path
+    #[arg(long)]
+    pub heatmap_export: Option<String>,
+
+    /// Record token events to a JSON replay file at this path
+    #[arg(long)]
+    pub record: Option<String>,
+
+    /// Replay token events from a JSON file (bypasses live LLM call)
+    #[arg(long)]
+    pub replay: Option<String>,
 
     /// Fraction of tokens to intercept and transform (0.0–1.0, default 0.5).
     /// At 0.5 every other token is transformed; at 0.3 roughly one in three.
@@ -91,7 +115,7 @@ pub struct Args {
 /// hasn't explicitly chosen one (i.e. the model is still the OpenAI default).
 pub fn resolve_model(provider: &Provider, model: &str) -> String {
     match provider {
-        Provider::Anthropic if model == "gpt-3.5-turbo" => "claude-sonnet-4-20250514".to_string(),
+        Provider::Anthropic if model == "gpt-3.5-turbo" => "claude-sonnet-4-6".to_string(),
         Provider::Mock => "mock-fixture-v1".to_string(),
         _ => model.to_string(),
     }
@@ -105,7 +129,7 @@ mod tests {
     fn test_resolve_model_anthropic_default_swap() {
         assert_eq!(
             resolve_model(&Provider::Anthropic, "gpt-3.5-turbo"),
-            "claude-sonnet-4-20250514"
+            "claude-sonnet-4-6"
         );
     }
 
@@ -142,6 +166,7 @@ mod tests {
         assert!(!args.orchestrator);
         assert!(!args.web);
         assert_eq!(args.port, 8888);
+        assert_eq!(args.top_logprobs, 5);
     }
 
     #[test]

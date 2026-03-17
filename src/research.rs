@@ -127,6 +127,30 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     std::fs::write(&args.output, &json)?;
     eprintln!("[research] wrote {} bytes to {}", json.len(), args.output);
 
+    // Append to SQLite experiment log if --log-db was provided
+    #[cfg(feature = "sqlite-log")]
+    if let Some(db_path) = &args.log_db {
+        use crate::experiment_log::ExperimentLog;
+        match ExperimentLog::open(std::path::Path::new(db_path)) {
+            Ok(log) => {
+                let _ = log.append(
+                    &args.prompt,
+                    &provider.to_string(),
+                    &transform_str,
+                    &model,
+                    args.runs,
+                    output.aggregate.mean_token_count,
+                    output.aggregate.mean_confidence,
+                    output.aggregate.mean_perplexity,
+                    output.aggregate.mean_vocab_diversity,
+                    &args.output,
+                );
+                eprintln!("[research] appended experiment to {}", db_path);
+            }
+            Err(e) => eprintln!("[research] sqlite-log error: {}", e),
+        }
+    }
+
     Ok(())
 }
 
