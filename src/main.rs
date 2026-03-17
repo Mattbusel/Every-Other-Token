@@ -9,13 +9,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Web UI mode
     if args.web {
-        every_other_token::web::serve(args.port, &args).await?;
+        tokio::select! {
+            result = every_other_token::web::serve(args.port, &args) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n[eot] shutting down gracefully");
+            }
+        }
         return Ok(());
     }
 
     // Research mode: run N iterations, collect aggregate stats, write JSON
     if args.research {
-        every_other_token::research::run_research(&args).await?;
+        tokio::select! {
+            result = every_other_token::research::run_research(&args) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n[eot] interrupted — partial results may not have been written");
+            }
+        }
         return Ok(());
     }
 
@@ -42,7 +56,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     interceptor.top_logprobs = args.top_logprobs;
-    interceptor.intercept_stream(&args.prompt).await?;
+
+    tokio::select! {
+        result = interceptor.intercept_stream(&args.prompt) => {
+            result?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\n[eot] shutting down gracefully");
+        }
+    }
 
     Ok(())
 }

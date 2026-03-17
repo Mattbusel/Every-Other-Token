@@ -1,6 +1,65 @@
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
+// ---------------------------------------------------------------------------
+// Provider plugin trait
+// ---------------------------------------------------------------------------
+
+pub trait ProviderPlugin: Send + Sync {
+    fn name(&self) -> &str;
+    fn default_model(&self) -> &str;
+    fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value;
+}
+
+pub struct OpenAiPlugin;
+pub struct AnthropicPlugin;
+
+impl ProviderPlugin for OpenAiPlugin {
+    fn name(&self) -> &str {
+        "openai"
+    }
+    fn default_model(&self) -> &str {
+        "gpt-3.5-turbo"
+    }
+    fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value {
+        let mut messages = Vec::new();
+        if let Some(sys) = system {
+            messages.push(serde_json::json!({ "role": "system", "content": sys }));
+        }
+        messages.push(serde_json::json!({ "role": "user", "content": prompt }));
+        serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": true,
+            "temperature": 0.7,
+            "logprobs": true,
+            "top_logprobs": 5,
+        })
+    }
+}
+
+impl ProviderPlugin for AnthropicPlugin {
+    fn name(&self) -> &str {
+        "anthropic"
+    }
+    fn default_model(&self) -> &str {
+        "claude-sonnet-4-20250514"
+    }
+    fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value {
+        let mut req = serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": prompt }],
+            "max_tokens": 1024,
+            "stream": true,
+            "temperature": 0.7,
+        });
+        if let Some(sys) = system {
+            req["system"] = serde_json::Value::String(sys.to_string());
+        }
+        req
+    }
+}
+
 // -- Token probability / logprob types --------------------------------------
 
 /// One alternative token returned alongside a logprob entry.
