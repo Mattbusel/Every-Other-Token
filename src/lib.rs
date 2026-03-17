@@ -888,6 +888,8 @@ mod tests {
             dedup: None,
             rate: 0.5,
             rng: StdRng::seed_from_u64(42),
+            top_logprobs: 5,
+            recorder: None,
         }
     }
 
@@ -1830,3 +1832,20 @@ mod research_tests {
         assert_eq!(s.transform, "Reverse");
     }
 }
+
+// ---------------------------------------------------------------------------
+// WASM stub
+// ---------------------------------------------------------------------------
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+mod wasm_support {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    pub fn wasm_run() -> JsValue {
+        JsValue::from_str("wasm not yet fully implemented")
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+pub use wasm_support::wasm_run;
