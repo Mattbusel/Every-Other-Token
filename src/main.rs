@@ -1,6 +1,5 @@
 use clap::Parser;
 use every_other_token::cli::Args;
-use every_other_token::providers::Provider;
 use every_other_token::transforms::Transform;
 use every_other_token::TokenInterceptor;
 
@@ -24,20 +23,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Invalid transform: {}", e))?;
 
     // Auto-select a sensible default model when switching providers
-    let model = if args.provider == Provider::Anthropic && args.model == "gpt-3.5-turbo" {
-        "claude-sonnet-4-20250514".to_string()
-    } else {
-        args.model.clone()
-    };
+    let model = every_other_token::cli::resolve_model(&args.provider, &args.model);
 
-    let mut interceptor = TokenInterceptor::new(
-        args.provider,
-        transform,
-        model,
-        args.visual,
-        args.heatmap,
-        args.orchestrator,
-    )?;
+    let mut interceptor = {
+        let mut i = TokenInterceptor::new(
+            args.provider,
+            transform,
+            model,
+            args.visual,
+            args.heatmap,
+            args.orchestrator,
+        )?
+        .with_rate(args.rate);
+        if let Some(seed) = args.seed {
+            i = i.with_seed(seed);
+        }
+        i
+    };
 
     interceptor.intercept_stream(&args.prompt).await?;
 

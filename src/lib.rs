@@ -4,6 +4,9 @@ pub mod transforms;
 pub mod web;
 pub mod research;
 pub mod collab;
+pub mod store;
+pub mod heatmap;
+pub mod replay;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
@@ -17,7 +20,12 @@ pub mod semantic_dedup;
 #[cfg(feature = "helix-bridge")]
 pub mod helix_bridge;
 
+#[cfg(feature = "sqlite-log")]
+pub mod experiment_log;
+
 use colored::*;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -104,6 +112,12 @@ pub struct TokenInterceptor {
     /// Enabled by setting `dedup` after construction (see [`TokenInterceptor::enable_dedup`]).
     #[cfg(feature = "self-modify")]
     pub dedup: Option<std::sync::Arc<std::sync::Mutex<crate::semantic_dedup::SemanticDedup>>>,
+    /// Fraction of tokens to transform (0.0–1.0).  Bresenham-spread so the
+    /// distribution is deterministic and uniform rather than probabilistic.
+    pub rate: f64,
+    /// Per-session RNG used for Noise/Chaos transforms.  Seeded from entropy
+    /// unless a fixed seed is provided via `with_seed()`.
+    rng: StdRng,
 }
 
 impl TokenInterceptor {
@@ -120,6 +134,7 @@ impl TokenInterceptor {
                 .map_err(|_| "OPENAI_API_KEY not set. Export it or pass via environment.")?,
             Provider::Anthropic => env::var("ANTHROPIC_API_KEY")
                 .map_err(|_| "ANTHROPIC_API_KEY not set. Export it or pass via environment.")?,
+            Provider::Mock => String::new(),
         };
 
         Ok(TokenInterceptor {
@@ -141,7 +156,21 @@ impl TokenInterceptor {
             telemetry_bus: None,
             #[cfg(feature = "self-modify")]
             dedup: None,
+            rate: 0.5,
+            rng: StdRng::from_entropy(),
         })
+    }
+
+    /// Set the intercept rate (0.0–1.0).  Clamped to [0.0, 1.0].
+    pub fn with_rate(mut self, rate: f64) -> Self {
+        self.rate = rate.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Seed the internal RNG for reproducible Noise/Chaos output.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng = StdRng::seed_from_u64(seed);
+        self
     }
 
     /// Enable in-session prompt deduplication with the given TTL and capacity.
@@ -242,6 +271,7 @@ impl TokenInterceptor {
         match self.provider {
             Provider::Openai => self.stream_openai(&effective_prompt).await?,
             Provider::Anthropic => self.stream_anthropic(&effective_prompt).await?,
+            Provider::Mock => self.stream_mock(&effective_prompt).await?,
         }
 
         if self.web_tx.is_none() {
@@ -392,6 +422,84 @@ impl TokenInterceptor {
     }
 
     // -----------------------------------------------------------------------
+    // Mock streaming (no network call — replays a canned fixture)
+    // -----------------------------------------------------------------------
+
+    async fn stream_mock(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Canned fixture: realistic token stream with logprob data.
+        // Simulates a response to any prompt without hitting any API.
+        let fixture: &[(&str, f32)] = &[
+            ("The", -0.12),
+            (" quick", -0.45),
+            (" brown", -0.78),
+            (" fox", -0.23),
+            (" jumps", -0.56),
+            (" over", -0.34),
+            (" the", -0.11),
+            (" lazy", -0.89),
+            (" dog", -0.19),
+            (".", -0.07),
+            (" This", -0.62),
+            (" is", -0.15),
+            (" a", -0.08),
+            (" mock", -0.31),
+            (" response", -0.44),
+            (" for", -0.27),
+            (" prompt", -0.53),
+            (":", -0.18),
+            (" \"", -0.39),
+            (&prompt[..prompt.len().min(20)], -0.71),
+        ];
+
+        for (idx, (token_text, logprob)) in fixture.iter().enumerate() {
+            let token_text = token_text.to_string();
+            let confidence = logprob.exp();
+            let perplexity = (-logprob).exp();
+            let importance = calculate_token_importance(&token_text, idx);
+            let should_transform = idx % 2 == 1;
+
+            let (display_text, chaos_label) = if should_transform {
+                let (t, label) = self.transform.apply_with_label(&token_text);
+                let cl = if matches!(self.transform, Transform::Chaos) {
+                    Some(label.to_string())
+                } else {
+                    None
+                };
+                (t, cl)
+            } else {
+                (token_text.clone(), None)
+            };
+
+            if should_transform {
+                self.transformed_count += 1;
+            }
+            self.token_count += 1;
+
+            if let Some(tx) = &self.web_tx {
+                let evt = TokenEvent {
+                    text: display_text.clone(),
+                    original: token_text.clone(),
+                    index: idx,
+                    transformed: should_transform,
+                    importance,
+                    chaos_label,
+                    provider: self.web_provider_label.clone(),
+                    confidence: Some(confidence),
+                    perplexity: Some(perplexity),
+                    alternatives: vec![
+                        TokenAlternative { token: "a".to_string(), probability: 0.15 },
+                        TokenAlternative { token: "the".to_string(), probability: 0.10 },
+                    ],
+                };
+                let _ = tx.send(evt);
+            } else {
+                self.process_content_logprob(&token_text, Some(*logprob), vec![]);
+            }
+        }
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
     // Orchestrator MCP infer call
     // -----------------------------------------------------------------------
 
@@ -486,12 +594,35 @@ impl TokenInterceptor {
 
         for token in tokens {
             if !token.trim().is_empty() {
-                let is_odd = !self.token_count.is_multiple_of(2);
-                let importance = calculate_token_importance(&token, self.token_count);
+                let i = self.token_count;
 
-                let (display_text, chaos_label) = if is_odd {
+                // Bresenham-style spread: transform token i when
+                // floor((i+1)*rate) > floor(i*rate), giving a uniform
+                // distribution at any rate without probabilistic sampling.
+                let rate = self.rate;
+                let should_transform =
+                    ((i + 1) as f64 * rate).floor() > (i as f64 * rate).floor();
+
+                // Logprob data only goes on the first real token of each API chunk.
+                // Compute before the transform so confidence can drive importance.
+                let (token_confidence, token_perplexity, token_alts) = if first_real {
+                    first_real = false;
+                    let conf = log_prob.map(|lp| lp.exp().clamp(0.0, 1.0));
+                    let perp = log_prob.map(|lp| (-lp).exp());
+                    (conf, perp, top_alts.clone())
+                } else {
+                    (None, None, vec![])
+                };
+
+                // Use real API confidence as importance when available; fall back
+                // to the heuristic scorer for tokens without logprob data.
+                let importance = token_confidence
+                    .map(|c| c as f64)
+                    .unwrap_or_else(|| calculate_token_importance(&token, i));
+
+                let (display_text, chaos_label) = if should_transform {
                     self.transformed_count += 1;
-                    let (text, label) = self.transform.apply_with_label(&token);
+                    let (text, label) = self.transform.apply_with_label_rng(&token, &mut self.rng);
                     let cl = if matches!(self.transform, Transform::Chaos) {
                         Some(label.to_string())
                     } else {
@@ -502,23 +633,13 @@ impl TokenInterceptor {
                     (token.clone(), None)
                 };
 
-                // Logprob data only goes on the first real token of each API chunk
-                let (token_confidence, token_perplexity, token_alts) = if first_real {
-                    first_real = false;
-                    let conf = log_prob.map(|lp| lp.exp().clamp(0.0, 1.0));
-                    let perp = log_prob.map(|lp| (-lp).exp());
-                    (conf, perp, top_alts.clone())
-                } else {
-                    (None, None, vec![])
-                };
-
                 // Web mode: send event through channel
                 if let Some(tx) = &self.web_tx {
                     let event = TokenEvent {
                         text: display_text,
                         original: token.clone(),
-                        index: self.token_count,
-                        transformed: is_odd,
+                        index: i,
+                        transformed: should_transform,
                         importance,
                         chaos_label,
                         provider: self.web_provider_label.clone(),
@@ -531,7 +652,7 @@ impl TokenInterceptor {
                     // Terminal mode: print with colors
                     if self.heatmap_mode {
                         print!("{}", apply_heatmap_color(&display_text, importance));
-                    } else if self.visual_mode && is_odd {
+                    } else if self.visual_mode && should_transform {
                         print!("{}", display_text.bright_cyan().bold());
                     } else if self.visual_mode {
                         print!("{}", display_text.normal());
@@ -756,6 +877,8 @@ mod tests {
             telemetry_bus: None,
             #[cfg(feature = "self-modify")]
             dedup: None,
+            rate: 0.5,
+            rng: StdRng::seed_from_u64(42),
         }
     }
 
