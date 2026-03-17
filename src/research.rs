@@ -114,7 +114,20 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             false,
         )?;
         interceptor.web_tx = Some(tx);
-        interceptor.system_prompt = args.system_a.clone();
+        // A/B mode: alternate system prompts on even/odd runs so --significance
+        // actually compares two different conditions.
+        interceptor.system_prompt = if i % 2 == 1 {
+            args.system_b.clone().or_else(|| args.system_a.clone())
+        } else {
+            args.system_a.clone()
+        };
+        interceptor.top_logprobs = args.top_logprobs;
+        if args.rate != 0.5 {
+            interceptor = interceptor.with_rate(args.rate);
+        }
+        if let Some(seed) = args.seed {
+            interceptor = interceptor.with_seed(seed);
+        }
 
         interceptor.intercept_stream(&args.prompt).await?;
         drop(interceptor);
@@ -157,15 +170,14 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
         // Persist run to DB if store is open
         if let (Some(ref s), Some(eid)) = (&store, exp_id) {
-            s.insert_run(
-                eid,
-                i,
+            s.insert_run(eid, &crate::store::RunRecord {
+                run_index: i,
                 token_count,
                 transformed_count,
                 avg_confidence,
                 avg_perplexity,
                 vocab_diversity,
-            )?;
+            })?;
         }
 
         // Record events for heatmap

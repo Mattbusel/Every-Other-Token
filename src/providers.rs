@@ -43,7 +43,7 @@ impl ProviderPlugin for AnthropicPlugin {
         "anthropic"
     }
     fn default_model(&self) -> &str {
-        "claude-sonnet-4-20250514"
+        "claude-sonnet-4-6"
     }
     fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value {
         let mut req = serde_json::json!({
