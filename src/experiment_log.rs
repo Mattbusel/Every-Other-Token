@@ -182,13 +182,9 @@ mod inner {
 
         #[test]
         fn test_days_to_ymd_known_date() {
-            // 2026-03-17: days since epoch
-            // 1970..2026 = 56 years
-            // Manual: just check it doesn't panic and returns plausible values
+            // 1970-01-01 + 20530 days = 2026-03-18
             let (y, m, d) = days_to_ymd(20530);
-            assert!(y >= 2026);
-            assert!(m >= 1 && m <= 12);
-            assert!(d >= 1 && d <= 31);
+            assert_eq!((y, m, d), (2026, 3, 18));
         }
 
         #[test]
