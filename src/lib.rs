@@ -646,10 +646,15 @@ impl TokenInterceptor {
                     (token.clone(), None)
                 };
 
-                // Delay transform: sleep before emitting the token
+                // Delay transform: sleep before emitting the token.
+                // tokio::task::block_in_place is used so the blocking sleep
+                // yields the scheduler to other tasks rather than starving the
+                // tokio thread pool.
                 if should_transform {
                     if let Transform::Delay(ms) = self.transform {
-                        std::thread::sleep(std::time::Duration::from_millis(ms));
+                        tokio::task::block_in_place(|| {
+                            std::thread::sleep(std::time::Duration::from_millis(ms));
+                        });
                     }
                 }
 
