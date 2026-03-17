@@ -26,9 +26,13 @@ base64 = "0.21"
 uuid = { version = "1.0", features = ["v4"] }
 # tracing: structured logging for diagnostics — used by helix_bridge polling loop
 tracing = "0.1"
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [features]
 default = []
+sqlite-log = []
+# WASM support
+wasm = ["dep:wasm-bindgen", "dep:js-sys"]
 # Self-improving system — all phases behind feature flags
 self-tune    = []
 self-modify  = ["self-tune"]
@@ -45,12 +49,17 @@ redis-backing = ["self-modify", "dep:redis"]
 version = "0.25"
 optional = true
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 
 [lib]
 name = "every_other_token"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "every-other-token"

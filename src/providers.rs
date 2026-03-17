@@ -30,6 +30,7 @@ pub struct OpenAIChunkLogprobs {
 pub enum Provider {
     Openai,
     Anthropic,
+    Mock,
 }
 
 impl std::fmt::Display for Provider {
@@ -37,6 +38,7 @@ impl std::fmt::Display for Provider {
         match self {
             Provider::Openai => write!(f, "openai"),
             Provider::Anthropic => write!(f, "anthropic"),
+            Provider::Mock => write!(f, "mock"),
         }
     }
 }
@@ -164,13 +166,17 @@ mod tests {
     fn test_provider_display() {
         assert_eq!(Provider::Openai.to_string(), "openai");
         assert_eq!(Provider::Anthropic.to_string(), "anthropic");
+        assert_eq!(Provider::Mock.to_string(), "mock");
     }
 
     #[test]
     fn test_provider_equality() {
         assert_eq!(Provider::Openai, Provider::Openai);
         assert_eq!(Provider::Anthropic, Provider::Anthropic);
+        assert_eq!(Provider::Mock, Provider::Mock);
         assert_ne!(Provider::Openai, Provider::Anthropic);
+        assert_ne!(Provider::Openai, Provider::Mock);
+        assert_ne!(Provider::Anthropic, Provider::Mock);
     }
 
     #[test]

@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         i
     };
 
+    interceptor.top_logprobs = args.top_logprobs;
     interceptor.intercept_stream(&args.prompt).await?;
 
     Ok(())
