@@ -1,6 +1,16 @@
 use rusqlite::{Connection, params};
 use serde_json::json;
 
+/// Flat data record for a single research run, passed to `insert_run`.
+pub struct RunRecord {
+    pub run_index: u32,
+    pub token_count: usize,
+    pub transformed_count: usize,
+    pub avg_confidence: Option<f64>,
+    pub avg_perplexity: Option<f64>,
+    pub vocab_diversity: f64,
+}
+
 pub struct ExperimentStore {
     conn: Connection,
 }
@@ -50,24 +60,19 @@ impl ExperimentStore {
     pub fn insert_run(
         &self,
         experiment_id: i64,
-        run_index: u32,
-        token_count: usize,
-        transformed_count: usize,
-        avg_confidence: Option<f64>,
-        avg_perplexity: Option<f64>,
-        vocab_diversity: f64,
+        run: &RunRecord,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute(
             "INSERT INTO runs (experiment_id, run_index, token_count, transformed_count, avg_confidence, avg_perplexity, vocab_diversity)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 experiment_id,
-                run_index,
-                token_count as i64,
-                transformed_count as i64,
-                avg_confidence,
-                avg_perplexity,
-                vocab_diversity,
+                run.run_index,
+                run.token_count as i64,
+                run.transformed_count as i64,
+                run.avg_confidence,
+                run.avg_perplexity,
+                run.vocab_diversity,
             ],
         )?;
         Ok(())
@@ -132,7 +137,14 @@ mod tests {
             .insert_experiment("2026-01-01T00:00:00Z", "test", "openai", "reverse", "gpt-4")
             .expect("insert exp");
         store
-            .insert_run(exp_id, 0, 42, 21, Some(0.9), Some(1.1), 0.8)
+            .insert_run(exp_id, &RunRecord {
+                run_index: 0,
+                token_count: 42,
+                transformed_count: 21,
+                avg_confidence: Some(0.9),
+                avg_perplexity: Some(1.1),
+                vocab_diversity: 0.8,
+            })
             .expect("insert run");
     }
 }
