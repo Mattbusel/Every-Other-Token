@@ -1,7 +1,44 @@
 use colored::*;
+use once_cell::sync::Lazy;
 use rand::Rng;
+use std::collections::HashMap;
 
 const NOISE_CHARS: [char; 7] = ['*', '+', '~', '@', '#', '$', '%'];
+
+static SYNONYM_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    m.insert("good", "great");
+    m.insert("bad", "poor");
+    m.insert("fast", "quick");
+    m.insert("slow", "gradual");
+    m.insert("big", "large");
+    m.insert("small", "tiny");
+    m.insert("happy", "glad");
+    m.insert("sad", "unhappy");
+    m.insert("smart", "clever");
+    m.insert("old", "aged");
+    m.insert("new", "fresh");
+    m.insert("hot", "warm");
+    m.insert("cold", "cool");
+    m.insert("hard", "tough");
+    m.insert("easy", "simple");
+    m.insert("start", "begin");
+    m.insert("end", "finish");
+    m.insert("make", "create");
+    m.insert("get", "obtain");
+    m.insert("use", "employ");
+    m.insert("say", "state");
+    m.insert("go", "proceed");
+    m.insert("see", "observe");
+    m.insert("know", "understand");
+    m.insert("think", "believe");
+    m.insert("come", "arrive");
+    m.insert("take", "acquire");
+    m.insert("give", "provide");
+    m.insert("find", "locate");
+    m.insert("tell", "inform");
+    m
+});
 
 #[derive(Debug, Clone)]
 pub enum Transform {
@@ -10,16 +47,33 @@ pub enum Transform {
     Mock,
     Noise,
     Chaos,
+    Scramble,
+    Delete,
+    Synonym,
+    Delay(u64),
 }
 
 impl Transform {
     pub fn from_str_loose(s: &str) -> Result<Self, String> {
-        match s.to_lowercase().as_str() {
+        let lower = s.to_lowercase();
+        // Handle "delay:NNN" or "delay" forms
+        if lower.starts_with("delay:") {
+            let ms: u64 = lower
+                .strip_prefix("delay:")
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(100);
+            return Ok(Transform::Delay(ms));
+        }
+        match lower.as_str() {
             "reverse" => Ok(Transform::Reverse),
             "uppercase" => Ok(Transform::Uppercase),
             "mock" => Ok(Transform::Mock),
             "noise" => Ok(Transform::Noise),
             "chaos" => Ok(Transform::Chaos),
+            "scramble" => Ok(Transform::Scramble),
+            "delete" => Ok(Transform::Delete),
+            "synonym" => Ok(Transform::Synonym),
+            "delay" => Ok(Transform::Delay(100)),
             _ => Err(format!("Unknown transform: {}", s)),
         }
     }
@@ -37,6 +91,26 @@ impl Transform {
                 let noise_char = NOISE_CHARS[rng.gen_range(0..NOISE_CHARS.len())];
                 (format!("{}{}", token, noise_char), "noise")
             }
+            Transform::Scramble => {
+                let mut chars: Vec<char> = token.chars().collect();
+                // Fisher-Yates shuffle
+                let n = chars.len();
+                for i in (1..n).rev() {
+                    let j = rng.gen_range(0..=i);
+                    chars.swap(i, j);
+                }
+                (chars.into_iter().collect(), "scramble")
+            }
+            Transform::Delete => (String::new(), "delete"),
+            Transform::Synonym => {
+                let lower = token.to_lowercase();
+                let result = SYNONYM_MAP
+                    .get(lower.as_str())
+                    .copied()
+                    .unwrap_or(token);
+                (result.to_string(), "synonym")
+            }
+            Transform::Delay(_) => (token.to_string(), "delay"),
             Transform::Chaos => match rng.gen_range(0u8..4) {
                 0 => (token.chars().rev().collect(), "reverse"),
                 1 => (token.to_uppercase(), "uppercase"),
@@ -632,5 +706,100 @@ mod tests {
             results.insert(Transform::Chaos.apply("hello"));
         }
         assert!(results.len() >= 2, "Chaos should produce varied results");
+    }
+
+    #[test]
+    fn test_transform_scramble_same_chars() {
+        let input = "hello";
+        for _ in 0..20 {
+            let result = Transform::Scramble.apply(input);
+            let mut orig_sorted: Vec<char> = input.chars().collect();
+            let mut res_sorted: Vec<char> = result.chars().collect();
+            orig_sorted.sort();
+            res_sorted.sort();
+            assert_eq!(orig_sorted, res_sorted, "Scramble should produce same chars");
+        }
+    }
+
+    #[test]
+    fn test_transform_scramble_label() {
+        let (_, label) = Transform::Scramble.apply_with_label("hi");
+        assert_eq!(label, "scramble");
+    }
+
+    #[test]
+    fn test_transform_delete_empty() {
+        assert_eq!(Transform::Delete.apply("hello"), "");
+        assert_eq!(Transform::Delete.apply(""), "");
+    }
+
+    #[test]
+    fn test_transform_delete_label() {
+        let (text, label) = Transform::Delete.apply_with_label("foo");
+        assert_eq!(text, "");
+        assert_eq!(label, "delete");
+    }
+
+    #[test]
+    fn test_transform_synonym_known() {
+        assert_eq!(Transform::Synonym.apply("good"), "great");
+        assert_eq!(Transform::Synonym.apply("bad"), "poor");
+        assert_eq!(Transform::Synonym.apply("fast"), "quick");
+    }
+
+    #[test]
+    fn test_transform_synonym_unknown_passthrough() {
+        assert_eq!(Transform::Synonym.apply("xyzzy"), "xyzzy");
+    }
+
+    #[test]
+    fn test_transform_synonym_label() {
+        let (_, label) = Transform::Synonym.apply_with_label("good");
+        assert_eq!(label, "synonym");
+    }
+
+    #[test]
+    fn test_transform_from_str_delay_colon() {
+        assert!(matches!(
+            Transform::from_str_loose("delay:200"),
+            Ok(Transform::Delay(200))
+        ));
+    }
+
+    #[test]
+    fn test_transform_from_str_delay_default() {
+        assert!(matches!(
+            Transform::from_str_loose("delay"),
+            Ok(Transform::Delay(100))
+        ));
+    }
+
+    #[test]
+    fn test_transform_delay_passthrough() {
+        assert_eq!(Transform::Delay(50).apply("hello"), "hello");
+    }
+
+    #[test]
+    fn test_transform_from_str_scramble() {
+        assert!(matches!(
+            Transform::from_str_loose("scramble"),
+            Ok(Transform::Scramble)
+        ));
+    }
+
+    #[test]
+    fn test_transform_from_str_delete() {
+        assert!(matches!(
+            Transform::from_str_loose("delete"),
+            Ok(Transform::Delete)
+        ));
+    }
+
+    #[test]
+    fn test_transform_from_str_synonym() {
+        assert!(matches!(
+            Transform::from_str_loose("synonym"),
+            Ok(Transform::Synonym)
+        ));
     }
 }
