@@ -122,6 +122,8 @@ pub struct TokenInterceptor {
     rng: StdRng,
     /// Optional replay recorder — records each emitted TokenEvent.
     pub recorder: Option<crate::replay::Recorder>,
+    /// When true, print one JSON line per token instead of colored text.
+    pub json_stream: bool,
 }
 
 impl TokenInterceptor {
@@ -164,6 +166,7 @@ impl TokenInterceptor {
             top_logprobs: 5,
             rng: StdRng::from_entropy(),
             recorder: None,
+            json_stream: false,
         })
     }
 
@@ -575,7 +578,11 @@ impl TokenInterceptor {
                     probability: t.logprob.exp().clamp(0.0, 1.0),
                 })
                 .collect();
-            (Some(entry.logprob.exp().clamp(0.0, 1.0)), alts)
+            // Pass the raw log-prob so process_content_logprob can derive
+            // confidence and perplexity via exp(lp) and exp(-lp) respectively.
+            // Previously this incorrectly passed exp(entry.logprob), causing
+            // process_content_logprob to double-exponentiate.
+            (Some(entry.logprob), alts)
         } else {
             (None, vec![])
         };
@@ -639,36 +646,65 @@ impl TokenInterceptor {
                     (token.clone(), None)
                 };
 
+                // Delay transform: sleep before emitting the token
+                if should_transform {
+                    if let Transform::Delay(ms) = self.transform {
+                        std::thread::sleep(std::time::Duration::from_millis(ms));
+                    }
+                }
+
+                // Delete transform: skip printing/emitting if the result is empty
+                let is_deleted = should_transform && display_text.is_empty();
+
                 // Web mode: send event through channel
-                if let Some(tx) = &self.web_tx {
-                    let event = TokenEvent {
-                        text: display_text,
-                        original: token.clone(),
-                        index: i,
-                        transformed: should_transform,
-                        importance,
-                        chaos_label,
-                        provider: self.web_provider_label.clone(),
-                        confidence: token_confidence,
-                        perplexity: token_perplexity,
-                        alternatives: token_alts,
-                    };
-                    if let Some(rec) = &mut self.recorder {
-                        rec.record(&event);
-                    }
-                    let _ = tx.send(event);
-                } else {
-                    // Terminal mode: print with colors
-                    if self.heatmap_mode {
-                        print!("{}", apply_heatmap_color(&display_text, importance));
-                    } else if self.visual_mode && should_transform {
-                        print!("{}", display_text.bright_cyan().bold());
-                    } else if self.visual_mode {
-                        print!("{}", display_text.normal());
+                if !is_deleted {
+                    if let Some(tx) = &self.web_tx {
+                        let event = TokenEvent {
+                            text: display_text.clone(),
+                            original: token.clone(),
+                            index: i,
+                            transformed: should_transform,
+                            importance,
+                            chaos_label,
+                            provider: self.web_provider_label.clone(),
+                            confidence: token_confidence,
+                            perplexity: token_perplexity,
+                            alternatives: token_alts,
+                        };
+                        if let Some(rec) = &mut self.recorder {
+                            rec.record(&event);
+                        }
+                        let _ = tx.send(event);
+                    } else if self.json_stream {
+                        // JSON stream mode: one line per token
+                        let event = TokenEvent {
+                            text: display_text.clone(),
+                            original: token.clone(),
+                            index: i,
+                            transformed: should_transform,
+                            importance,
+                            chaos_label: chaos_label.clone(),
+                            provider: self.web_provider_label.clone(),
+                            confidence: token_confidence,
+                            perplexity: token_perplexity,
+                            alternatives: token_alts.clone(),
+                        };
+                        if let Ok(line) = serde_json::to_string(&event) {
+                            println!("{}", line);
+                        }
                     } else {
-                        print!("{}", display_text);
+                        // Terminal mode: print with colors
+                        if self.heatmap_mode {
+                            print!("{}", apply_heatmap_color(&display_text, importance));
+                        } else if self.visual_mode && should_transform {
+                            print!("{}", display_text.bright_cyan().bold());
+                        } else if self.visual_mode {
+                            print!("{}", display_text.normal());
+                        } else {
+                            print!("{}", display_text);
+                        }
+                        let _ = io::stdout().flush();
                     }
-                    let _ = io::stdout().flush();
                 }
 
                 self.token_count += 1;
@@ -890,6 +926,7 @@ mod tests {
             rng: StdRng::seed_from_u64(42),
             top_logprobs: 5,
             recorder: None,
+            json_stream: false,
         }
     }
 

@@ -78,6 +78,31 @@ impl ExperimentStore {
         Ok(())
     }
 
+    /// Load runs for a given prompt + transform (for baseline comparison).
+    pub fn load_runs_by_transform(
+        &self,
+        prompt: &str,
+        transform: &str,
+    ) -> Result<Vec<RunRecord>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT r.run_index, r.token_count, r.transformed_count, r.avg_confidence, r.avg_perplexity, r.vocab_diversity
+             FROM runs r
+             JOIN experiments e ON r.experiment_id = e.id
+             WHERE e.prompt = ?1 AND e.transform = ?2",
+        )?;
+        let rows = stmt.query_map(params![prompt, transform], |row| {
+            Ok(RunRecord {
+                run_index: row.get::<_, i64>(0)? as u32,
+                token_count: row.get::<_, i64>(1)? as usize,
+                transformed_count: row.get::<_, i64>(2)? as usize,
+                avg_confidence: row.get(3)?,
+                avg_perplexity: row.get(4)?,
+                vocab_diversity: row.get(5)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     pub fn query_experiments(&self) -> Vec<serde_json::Value> {
         let mut stmt = match self.conn.prepare(
             "SELECT id, created_at, prompt, provider, transform, model FROM experiments",

@@ -6,7 +6,9 @@
 <title>Every Other Token</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0d1117;color:#c9d1d9;font-family:'Cascadia Code','Fira Code',monospace;min-height:100vh;display:flex;flex-direction:column}
+:root{--bg:#0d1117;--fg:#c9d1d9;--card-bg:#161b22;--border:#21262d}
+body{background:var(--bg);color:var(--fg);font-family:'Cascadia Code','Fira Code',monospace;min-height:100vh;display:flex;flex-direction:column}
+body[data-theme=light]{--bg:#ffffff;--fg:#24292f;--card-bg:#f6f8fa;--border:#d0d7de}
 header{padding:16px 24px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between}
 header h1{font-size:1.2rem;color:#58a6ff}
 .hdr-right{display:flex;gap:8px}
@@ -163,6 +165,8 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt">Experiment</button>
     <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence">Research</button>
     <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
+    <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" style="background:#4a7c59">Export CSV</button>
+    <button class="btn btn-mode" id="btn-theme" title="Toggle dark/light theme" style="font-size:1rem;padding:4px 10px">🌙</button>
     <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session">Host Session</button>
     <input type="text" id="join-code" placeholder="Room code" maxlength="6" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px">
     <button class="btn" style="background:#1f6feb;font-size:.78rem;padding:5px 12px" id="btn-join">Join</button>
@@ -230,6 +234,10 @@ canvas#depgraph{width:100%;height:200px;display:block}
 </div>
 <div id="graph-wrap"><canvas id="depgraph"></canvas></div>
 <div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none"><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
+<div id="conf-spark-wrap" style="padding:4px 24px;background:#0a0e14;border-top:1px solid #21262d;display:none">
+  <div style="font-size:.65rem;color:#8b949e;margin-bottom:2px">Confidence (last 60 tokens)</div>
+  <canvas id="sparkline" width="600" height="60" style="display:block;background:#1a1a2e;border-radius:4px;width:100%;max-width:600px"></canvas>
+</div>
 <div id="stats"></div>
 <div id="research-dash"></div>
 
@@ -585,6 +593,7 @@ $('#start').onclick=()=>{
     try{
       const tk=JSON.parse(e.data);
       allTokens.push(tk);
+      window.tokenLog.push(tk);
       graphNodes.push(tk);
       count++;if(tk.transformed)xformed++;
 
@@ -593,6 +602,7 @@ $('#start').onclick=()=>{
       singleSp.dataset.idx=tk.index;
       $('#v-single').appendChild(singleSp);
       updatePerpSparkline(tk.perplexity);
+      updateConfSparkline(tk.confidence);
 
       /* Side-by-side: left=original, right=transformed */
       const origSp=mkSpan(tk.original,false,tk.importance,null,null,tk.confidence,tk.perplexity);origSp.dataset.idx=tk.index;
@@ -688,7 +698,42 @@ function applyDiffHighlights(){
   $('#stats').textContent='Match: '+pct+'% ('+matches+'/'+total+') | OpenAI: '+oSpans.length+' tokens | Anthropic: '+aSpans.length+' tokens';
 }
 
+/* ---- Confidence sparkline ---- */
+let confWindow=[];
+function updateConfSparkline(confidence){
+  confWindow.push(confidence!=null?confidence:0.5);
+  if(confWindow.length>60)confWindow.shift();
+  const wrap=$('#conf-spark-wrap');if(wrap)wrap.style.display='';
+  const canvas=$('#sparkline');if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  const w=canvas.width,h=canvas.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,w,h);
+  if(confWindow.length<2)return;
+  const avg=confWindow.reduce((a,b)=>a+b,0)/confWindow.length;
+  const color=avg>=0.7?'#3fb950':avg>=0.4?'#e3b341':'#f85149';
+  ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;
+  confWindow.forEach((v,i)=>{
+    const x=Math.round(i/(confWindow.length-1)*w);
+    const y=Math.round((1-v)*h);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+}
+
+/* ---- Dark/light theme toggle ---- */
+(function(){
+  const saved=localStorage.getItem('eot-theme');
+  if(saved==='light'){document.body.setAttribute('data-theme','light');if($('#btn-theme'))$('#btn-theme').textContent='☀️';}
+})();
+$('#btn-theme').onclick=function(){
+  const isLight=document.body.getAttribute('data-theme')==='light';
+  if(isLight){document.body.removeAttribute('data-theme');this.textContent='🌙';localStorage.setItem('eot-theme','dark');}
+  else{document.body.setAttribute('data-theme','light');this.textContent='☀️';localStorage.setItem('eot-theme','light');}
+};
+
 /* ---- Export JSON ---- */
+window.tokenLog=[];
 $('#btn-export').onclick=()=>{
   if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return}
   const data={
@@ -706,6 +751,19 @@ $('#btn-export').onclick=()=>{
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;a.download='every-other-token-'+Date.now()+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(url);
+};
+
+/* ---- Export CSV ---- */
+$('#btn-export-csv').onclick=()=>{
+  if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return;}
+  const header='index,original,text,transformed,confidence,perplexity\n';
+  const rows=allTokens.map(t=>[t.index,JSON.stringify(t.original),JSON.stringify(t.text),t.transformed,t.confidence!=null?t.confidence:'',t.perplexity!=null?t.perplexity:''].join(',')).join('\n');
+  const blob=new Blob([header+rows],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='eot_session_'+Date.now()+'.csv';
   document.body.appendChild(a);a.click();a.remove();
   URL.revokeObjectURL(url);
 };

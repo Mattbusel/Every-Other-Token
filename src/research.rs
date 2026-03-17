@@ -12,6 +12,8 @@ pub struct ResearchRun {
     pub avg_confidence: Option<f64>,
     pub avg_perplexity: Option<f64>,
     pub vocab_diversity: f64,
+    /// Starting positions of runs of 5+ consecutive tokens with confidence < 0.4
+    pub collapse_positions: Vec<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +38,8 @@ pub struct ResearchAggregate {
     pub std_dev_token_count: f64,
     pub confidence_interval_95_confidence: Option<(f64, f64)>,
     pub confidence_interval_95_perplexity: Option<(f64, f64)>,
+    /// Minimum token count across all runs (truncation-based alignment length)
+    pub aligned_length: usize,
 }
 
 fn std_dev(values: &[f64]) -> f64 {
@@ -168,6 +172,13 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             unique_tokens.len() as f64 / token_count as f64
         };
 
+        // Detect confidence collapse: runs of 5+ consecutive tokens with confidence < 0.4
+        let per_token_confidences: Vec<f64> = events
+            .iter()
+            .map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0))
+            .collect();
+        let collapse_positions = detect_collapse_positions(&per_token_confidences, 5, 0.4);
+
         // Persist run to DB if store is open
         if let (Some(ref s), Some(eid)) = (&store, exp_id) {
             s.insert_run(eid, &crate::store::RunRecord {
@@ -192,10 +203,35 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             avg_confidence,
             avg_perplexity,
             vocab_diversity,
+            collapse_positions,
         });
     }
 
     let aggregate = build_aggregate(args.runs, &runs);
+
+    // Baseline comparison: if --baseline and there's a "none" transform in the DB
+    if args.baseline {
+        if let (Some(ref s), Some(eid)) = (&store, exp_id) {
+            let baseline_runs = s.load_runs_by_transform(&args.prompt, "none").unwrap_or_default();
+            if !baseline_runs.is_empty() {
+                let baseline_confs: Vec<f64> =
+                    baseline_runs.iter().filter_map(|r| r.avg_confidence).collect();
+                let current_confs: Vec<f64> =
+                    runs.iter().filter_map(|r| r.avg_confidence).collect();
+                if !baseline_confs.is_empty() && !current_confs.is_empty() {
+                    let baseline_mean =
+                        baseline_confs.iter().sum::<f64>() / baseline_confs.len() as f64;
+                    let current_mean =
+                        current_confs.iter().sum::<f64>() / current_confs.len() as f64;
+                    let delta = current_mean - baseline_mean;
+                    eprintln!(
+                        "[baseline] mean_confidence={:.4} vs current={:.4} delta={:+.4} (exp_id={})",
+                        baseline_mean, current_mean, delta, eid
+                    );
+                }
+            }
+        }
+    }
 
     // A/B significance test
     if args.significance && args.system_b.is_some() {
@@ -262,6 +298,7 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
             std_dev_token_count: 0.0,
             confidence_interval_95_confidence: None,
             confidence_interval_95_perplexity: None,
+            aligned_length: 0,
         };
     }
 
@@ -302,6 +339,8 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
     let mean_vocab_diversity =
         runs.iter().map(|r| r.vocab_diversity).sum::<f64>() / runs.len() as f64;
 
+    let aligned_length = runs.iter().map(|r| r.token_count).min().unwrap_or(0);
+
     ResearchAggregate {
         total_runs,
         mean_token_count,
@@ -313,7 +352,209 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
         std_dev_token_count,
         confidence_interval_95_confidence,
         confidence_interval_95_perplexity,
+        aligned_length,
     }
+}
+
+/// Detect positions where confidence drops below `threshold` for `min_run` consecutive tokens.
+fn detect_collapse_positions(confidences: &[f64], min_run: usize, threshold: f64) -> Vec<usize> {
+    let mut positions = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut run_len = 0usize;
+    for (i, &conf) in confidences.iter().enumerate() {
+        if conf < threshold {
+            if run_start.is_none() {
+                run_start = Some(i);
+                run_len = 0;
+            }
+            run_len += 1;
+            if run_len == min_run {
+                positions.push(run_start.unwrap());
+            }
+        } else {
+            run_start = None;
+            run_len = 0;
+        }
+    }
+    positions
+}
+
+/// Run research for each prompt in args.prompt_file, one by one.
+pub async fn run_research_suite(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    let path = args.prompt_file.as_ref().ok_or("No prompt_file set")?;
+    let content = std::fs::read_to_string(path)?;
+    let prompts: Vec<String> = content
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+
+    if prompts.is_empty() {
+        eprintln!("[suite] No prompts found in {}", path);
+        return Ok(());
+    }
+
+    eprintln!("[suite] Running {} prompts from {}", prompts.len(), path);
+    for (idx, prompt) in prompts.iter().enumerate() {
+        eprintln!("[suite] Prompt {}/{}: {}", idx + 1, prompts.len(), prompt);
+        run_research_for_prompt(args, prompt, idx).await?;
+    }
+    Ok(())
+}
+
+/// Run research for a single prompt override (used by the suite runner).
+async fn run_research_for_prompt(
+    args: &Args,
+    prompt: &str,
+    idx: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let provider = args.provider.clone();
+    let transform_str = args.transform.clone();
+    let transform =
+        Transform::from_str_loose(&transform_str).map_err(|e| format!("Invalid transform: {e}"))?;
+    let model = crate::cli::resolve_model(&provider, &args.model);
+
+    let store = if let Some(db_path) = &args.db {
+        Some(crate::store::ExperimentStore::open(db_path)?)
+    } else {
+        None
+    };
+
+    let exp_id: Option<i64> = if let Some(ref s) = store {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let id = s.insert_experiment(
+            &format!("{}", now),
+            prompt,
+            &provider.to_string(),
+            &transform_str,
+            &model,
+        )?;
+        Some(id)
+    } else {
+        None
+    };
+    let _ = exp_id;
+
+    let mut runs: Vec<ResearchRun> = Vec::with_capacity(args.runs as usize);
+    for i in 0..args.runs {
+        eprintln!("[suite] run {}/{} for prompt {}", i + 1, args.runs, idx);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut interceptor = crate::TokenInterceptor::new(
+            provider.clone(),
+            transform.clone(),
+            model.clone(),
+            false,
+            false,
+            false,
+        )?;
+        interceptor.web_tx = Some(tx);
+        if args.rate != 0.5 {
+            interceptor = interceptor.with_rate(args.rate);
+        }
+        if let Some(seed) = args.seed {
+            interceptor = interceptor.with_seed(seed);
+        }
+        interceptor.intercept_stream(prompt).await?;
+        drop(interceptor);
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() { events.push(e); }
+
+        let token_count = events.len();
+        let transformed_count = events.iter().filter(|e| e.transformed).count();
+        let confidences: Vec<f64> = events.iter().filter_map(|e| e.confidence.map(|v| v as f64)).collect();
+        let avg_confidence = if confidences.is_empty() { None } else { Some(confidences.iter().sum::<f64>() / confidences.len() as f64) };
+        let perplexities: Vec<f64> = events.iter().filter_map(|e| e.perplexity.map(|v| v as f64)).collect();
+        let avg_perplexity = if perplexities.is_empty() { None } else { Some(perplexities.iter().sum::<f64>() / perplexities.len() as f64) };
+        let unique: std::collections::HashSet<&str> = events.iter().map(|e| e.original.as_str()).collect();
+        let vocab_diversity = if token_count == 0 { 0.0 } else { unique.len() as f64 / token_count as f64 };
+        let per_token_confidences: Vec<f64> = events.iter().map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0)).collect();
+        let collapse_positions = detect_collapse_positions(&per_token_confidences, 5, 0.4);
+
+        runs.push(ResearchRun {
+            run_index: i,
+            token_count,
+            transformed_count,
+            avg_confidence,
+            avg_perplexity,
+            vocab_diversity,
+            collapse_positions,
+        });
+    }
+
+    let aggregate = build_aggregate(args.runs, &runs);
+    let output_path = {
+        let base = args.output.trim_end_matches(".json");
+        format!("{}_{}.json", base, idx)
+    };
+    let output = ResearchOutput {
+        schema_version: 2,
+        prompt: prompt.to_string(),
+        provider: provider.to_string(),
+        transform: transform_str,
+        runs,
+        aggregate,
+    };
+    let json = serde_json::to_string_pretty(&output)?;
+    std::fs::write(&output_path, &json)?;
+    eprintln!("[suite] wrote {} bytes to {}", json.len(), output_path);
+    Ok(())
+}
+
+/// Run two parallel TokenInterceptor streams and print side-by-side diff.
+pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::providers::Provider;
+    use crate::TokenInterceptor;
+    use colored::*;
+    use tokio::sync::mpsc;
+
+    let transform_openai = crate::transforms::Transform::from_str_loose(&args.transform)
+        .map_err(|e| format!("Invalid transform: {e}"))?;
+    let transform_anthropic = transform_openai.clone();
+
+    let model_openai = crate::cli::resolve_model(&Provider::Openai, &args.model);
+    let model_anthropic = crate::cli::resolve_model(&Provider::Anthropic, &args.model);
+
+    let (tx_a, mut rx_a) = mpsc::unbounded_channel();
+    let (tx_b, mut rx_b) = mpsc::unbounded_channel();
+
+    let mut ia = TokenInterceptor::new(Provider::Openai, transform_openai, model_openai, false, false, false)?;
+    ia.web_tx = Some(tx_a);
+    let mut ib = TokenInterceptor::new(Provider::Anthropic, transform_anthropic, model_anthropic, false, false, false)?;
+    ib.web_tx = Some(tx_b);
+
+    let prompt = args.prompt.clone();
+    let prompt_b = prompt.clone();
+    let (res_a, res_b) = tokio::join!(
+        async move { ia.intercept_stream(&prompt).await },
+        async move { ib.intercept_stream(&prompt_b).await }
+    );
+    res_a?;
+    res_b?;
+
+    let mut events_a = Vec::new();
+    let mut events_b = Vec::new();
+    while let Ok(e) = rx_a.try_recv() { events_a.push(e); }
+    while let Ok(e) = rx_b.try_recv() { events_b.push(e); }
+
+    let max_len = events_a.len().max(events_b.len());
+    println!("{:<30}  {}", "OpenAI".bright_cyan().bold(), "Anthropic".bright_magenta().bold());
+    println!("{}", "-".repeat(65));
+    for i in 0..max_len {
+        let a_text = events_a.get(i).map(|e| e.text.as_str()).unwrap_or("");
+        let b_text = events_b.get(i).map(|e| e.text.as_str()).unwrap_or("");
+        let diverge = a_text != b_text;
+        if diverge {
+            println!("{:<30}  {}", a_text.red(), b_text.red());
+        } else {
+            println!("{:<30}  {}", a_text, b_text);
+        }
+    }
+    Ok(())
 }
 
 /// Simple two-sample Welch's t-test. Returns approximate p-value (two-tailed).
@@ -368,6 +609,7 @@ mod tests {
                 avg_confidence: conf,
                 avg_perplexity: perp,
                 vocab_diversity: vd,
+                collapse_positions: vec![],
             })
             .collect()
     }
@@ -442,6 +684,7 @@ mod tests {
                 std_dev_token_count: 0.0,
                 confidence_interval_95_confidence: None,
                 confidence_interval_95_perplexity: None,
+                aligned_length: 0,
             },
         };
         let json = serde_json::to_string(&output).expect("serialize");
@@ -459,6 +702,7 @@ mod tests {
             avg_confidence: Some(0.95),
             avg_perplexity: Some(1.05),
             vocab_diversity: 0.7,
+            collapse_positions: vec![],
         };
         let json = serde_json::to_string(&run).expect("serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -502,5 +746,39 @@ mod tests {
         let b = vec![1.0, 1.0, 1.0, 1.0];
         // Zero variance — should return None
         assert!(two_sample_t_test(&a, &b).is_none());
+    }
+
+    #[test]
+    fn test_collapse_positions_detected() {
+        // 6-token dip starting at position 3
+        let confs = vec![0.8, 0.9, 0.7, 0.2, 0.1, 0.3, 0.2, 0.1, 0.3, 0.9];
+        let positions = detect_collapse_positions(&confs, 5, 0.4);
+        assert!(!positions.is_empty(), "should detect at least one collapse");
+        assert_eq!(positions[0], 3);
+    }
+
+    #[test]
+    fn test_collapse_positions_none_when_run_too_short() {
+        // Only 4 consecutive low tokens — not enough
+        let confs = vec![0.8, 0.1, 0.1, 0.1, 0.1, 0.9];
+        let positions = detect_collapse_positions(&confs, 5, 0.4);
+        assert!(positions.is_empty());
+    }
+
+    #[test]
+    fn test_aligned_length_is_min_token_count() {
+        let runs = make_runs(&[
+            (10, 5, None, None, 1.0),
+            (20, 10, None, None, 1.0),
+            (15, 7, None, None, 1.0),
+        ]);
+        let agg = build_aggregate(3, &runs);
+        assert_eq!(agg.aligned_length, 10);
+    }
+
+    #[test]
+    fn test_aligned_length_empty() {
+        let agg = build_aggregate(0, &[]);
+        assert_eq!(agg.aligned_length, 0);
     }
 }

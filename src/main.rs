@@ -1,3 +1,4 @@
+use clap::CommandFactory;
 use clap::Parser;
 use every_other_token::cli::Args;
 use every_other_token::transforms::Transform;
@@ -6,6 +7,17 @@ use every_other_token::TokenInterceptor;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // Shell completion generation
+    if let Some(shell) = args.completions {
+        clap_complete::generate(
+            shell,
+            &mut Args::command(),
+            "every-other-token",
+            &mut std::io::stdout(),
+        );
+        return Ok(());
+    }
 
     // Web UI mode
     if args.web {
@@ -22,14 +34,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Research mode: run N iterations, collect aggregate stats, write JSON
     if args.research {
-        tokio::select! {
-            result = every_other_token::research::run_research(&args) => {
-                result?;
+        if args.prompt_file.is_some() {
+            tokio::select! {
+                result = every_other_token::research::run_research_suite(&args) => {
+                    result?;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!("\n[eot] interrupted");
+                }
             }
-            _ = tokio::signal::ctrl_c() => {
-                eprintln!("\n[eot] interrupted — partial results may not have been written");
+        } else {
+            tokio::select! {
+                result = every_other_token::research::run_research(&args) => {
+                    result?;
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    eprintln!("\n[eot] interrupted — partial results may not have been written");
+                }
             }
         }
+        return Ok(());
+    }
+
+    // Diff terminal mode
+    if args.diff_terminal {
+        every_other_token::research::run_diff_terminal(&args).await?;
         return Ok(());
     }
 
@@ -56,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     interceptor.top_logprobs = args.top_logprobs;
+    interceptor.json_stream = args.json_stream;
 
     tokio::select! {
         result = interceptor.intercept_stream(&args.prompt) => {

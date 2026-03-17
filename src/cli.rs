@@ -101,6 +101,26 @@ pub struct Args {
     #[arg(long)]
     pub log_db: Option<String>,
 
+    /// Enable per-position confidence baseline comparison (research mode)
+    #[arg(long)]
+    pub baseline: bool,
+
+    /// Path to a file with one prompt per line for batch research
+    #[arg(long)]
+    pub prompt_file: Option<String>,
+
+    /// Run two parallel streams (OpenAI + Anthropic) and print side-by-side diff in terminal
+    #[arg(long)]
+    pub diff_terminal: bool,
+
+    /// Print one JSON line per token to stdout instead of colored text
+    #[arg(long)]
+    pub json_stream: bool,
+
+    /// Generate shell completions for the given shell and exit
+    #[arg(long, value_name = "SHELL")]
+    pub completions: Option<clap_complete::Shell>,
+
     /// HelixRouter base URL for cross-repo pressure feedback (e.g. http://127.0.0.1:8080).
     ///
     /// When set in --web mode, a HelixBridge background task polls HelixRouter's

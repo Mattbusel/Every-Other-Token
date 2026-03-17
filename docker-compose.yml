@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  eot:
+    build: .
+    ports:
+      - "8888:8888"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./data:/data
+    command: ["--web", "--port", "8888", "What is consciousness?"]
