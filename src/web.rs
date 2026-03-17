@@ -185,11 +185,13 @@ async fn handle_connection(
             .to_string();
         if let Some(code) = ws_path.strip_prefix("/ws/") {
             let code = code.to_string();
-            let room_exists = store
+            // is_host = true only for the first connection (host_id not yet assigned).
+            // room_exists=true after /room/create, so "!room_exists" was always false,
+            // meaning every client was treated as a guest.  Check host_id instead.
+            let is_host = store
                 .lock()
-                .map(|s| s.contains_key(&code))
+                .map(|s| s.get(&code).map(|r| r.host_id.is_empty()).unwrap_or(false))
                 .unwrap_or(false);
-            let is_host = !room_exists;
 
             match tokio_tungstenite::accept_async(stream).await {
                 Ok(ws_stream) => {
