@@ -43,6 +43,7 @@ mod inner {
         }
 
         /// Append one experiment summary row.
+        #[allow(clippy::too_many_arguments)]
         pub fn append(
             &self,
             prompt: &str,
