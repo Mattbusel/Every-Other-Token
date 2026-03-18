@@ -79,7 +79,10 @@ fn test_parse_query_empty_string() {
 #[test]
 fn test_parse_query_url_decoded_values() {
     let params = parse_query("prompt=hello+world");
-    assert_eq!(params.get("prompt").map(|s| s.as_str()), Some("hello world"));
+    assert_eq!(
+        params.get("prompt").map(|s| s.as_str()),
+        Some("hello world")
+    );
 }
 
 #[test]

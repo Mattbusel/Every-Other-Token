@@ -15,7 +15,9 @@ fn test_generate_code_length() {
 #[test]
 fn test_generate_code_uppercase_alphanumeric() {
     let code = generate_code();
-    assert!(code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
+    assert!(code
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
 }
 
 #[test]
@@ -488,7 +490,11 @@ fn test_maybe_record_appends_when_recording() {
     let store = new_room_store();
     let code = create_room(&store);
     start_recording(&store, &code);
-    maybe_record(&store, &code, serde_json::json!({"type": "token", "text": "hello"}));
+    maybe_record(
+        &store,
+        &code,
+        serde_json::json!({"type": "token", "text": "hello"}),
+    );
     let guard = store.lock().unwrap();
     let room = guard.get(&code).unwrap();
     assert_eq!(room.recorded_events.len(), 1);
@@ -498,7 +504,11 @@ fn test_maybe_record_appends_when_recording() {
 fn test_maybe_record_ignores_when_not_recording() {
     let store = new_room_store();
     let code = create_room(&store);
-    maybe_record(&store, &code, serde_json::json!({"type": "token", "text": "hello"}));
+    maybe_record(
+        &store,
+        &code,
+        serde_json::json!({"type": "token", "text": "hello"}),
+    );
     let guard = store.lock().unwrap();
     let room = guard.get(&code).unwrap();
     assert_eq!(room.recorded_events.len(), 0);
@@ -509,8 +519,16 @@ fn test_stop_recording_returns_events() {
     let store = new_room_store();
     let code = create_room(&store);
     start_recording(&store, &code);
-    maybe_record(&store, &code, serde_json::json!({"type": "token", "text": "a"}));
-    maybe_record(&store, &code, serde_json::json!({"type": "token", "text": "b"}));
+    maybe_record(
+        &store,
+        &code,
+        serde_json::json!({"type": "token", "text": "a"}),
+    );
+    maybe_record(
+        &store,
+        &code,
+        serde_json::json!({"type": "token", "text": "b"}),
+    );
     let events = stop_recording(&store, &code);
     assert_eq!(events.len(), 2);
 }
@@ -639,7 +657,11 @@ fn test_participant_colors_not_empty() {
 #[test]
 fn test_participant_colors_are_hex() {
     for color in PARTICIPANT_COLORS {
-        assert!(color.starts_with('#'), "Color {} doesn't start with #", color);
+        assert!(
+            color.starts_with('#'),
+            "Color {} doesn't start with #",
+            color
+        );
         assert_eq!(color.len(), 7, "Color {} isn't 7 chars", color);
     }
 }

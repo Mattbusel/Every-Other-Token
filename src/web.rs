@@ -10,7 +10,7 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | `GET` | `/` | Serves the embedded single-page HTML application |
-//! | `GET` | `/events` | SSE stream of [`TokenEvent`](crate::TokenEvent) JSON objects |
+//! | `GET` | `/events` | SSE stream of [`crate::TokenEvent`] JSON objects |
 //! | `GET` | `/stream` | Alias for `/events` |
 //! | `POST` | `/room/create` | Creates a new collaboration room |
 //! | `GET` | `/ws/:code` | WebSocket endpoint for room participants |
@@ -111,6 +111,7 @@ pub fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
 }
 
 /// Query parameters parsed from a /stream request.
+#[allow(dead_code)]
 struct StreamParams {
     prompt: String,
     transform: String,

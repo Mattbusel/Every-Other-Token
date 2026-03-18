@@ -124,7 +124,8 @@ fn test_openai_chunk_empty_delta() {
 
 #[test]
 fn test_anthropic_content_block_delta_deserializes() {
-    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let json =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
     let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
     assert_eq!(event.event_type, "content_block_delta");
     assert_eq!(
@@ -177,7 +178,10 @@ fn test_anthropic_plugin_name_matches_display() {
 fn test_anthropic_request_with_system_serializes() {
     let req = AnthropicRequest {
         model: "claude-sonnet-4-6".to_string(),
-        messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+        messages: vec![AnthropicMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+        }],
         max_tokens: 1024,
         stream: true,
         temperature: 0.7,
@@ -191,7 +195,10 @@ fn test_anthropic_request_with_system_serializes() {
 fn test_anthropic_request_without_system_omits_field() {
     let req = AnthropicRequest {
         model: "claude-sonnet-4-6".to_string(),
-        messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+        messages: vec![AnthropicMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+        }],
         max_tokens: 1024,
         stream: true,
         temperature: 0.7,

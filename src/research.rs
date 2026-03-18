@@ -119,7 +119,7 @@ fn ci_95(mean: f64, sd: f64, n: usize) -> (f64, f64) {
 /// Run the full headless research loop for `args.runs` iterations.
 ///
 /// Each iteration calls [`TokenInterceptor::intercept_stream`], collects the
-/// emitted [`TokenEvent`]s, and computes per-run metrics (token count, mean
+/// emitted `TokenEvent`s, and computes per-run metrics (token count, mean
 /// confidence, perplexity, vocab diversity, collapse positions).  After all
 /// runs complete, aggregate statistics and an optional CSV heatmap are written
 /// to disk.

@@ -32,7 +32,13 @@ fn store_opens_in_memory() {
 fn store_insert_returns_positive_id() {
     let store = ExperimentStore::open(":memory:").expect("open");
     let id = store
-        .insert_experiment("2026-01-01T00:00:00Z", "prompt", "openai", "reverse", "gpt-4")
+        .insert_experiment(
+            "2026-01-01T00:00:00Z",
+            "prompt",
+            "openai",
+            "reverse",
+            "gpt-4",
+        )
         .expect("insert");
     assert!(id > 0, "row id must be positive, got {id}");
 }
@@ -42,7 +48,13 @@ fn store_insert_returns_positive_id() {
 fn store_query_round_trips() {
     let store = ExperimentStore::open(":memory:").expect("open");
     store
-        .insert_experiment("2026-01-01T00:00:00Z", "hello world", "anthropic", "noise", "claude-sonnet-4-6")
+        .insert_experiment(
+            "2026-01-01T00:00:00Z",
+            "hello world",
+            "anthropic",
+            "noise",
+            "claude-sonnet-4-6",
+        )
         .expect("insert");
     let exps = store.query_experiments();
     assert_eq!(exps.len(), 1);
@@ -74,18 +86,27 @@ fn store_query_multiple_experiments() {
 fn store_load_runs_by_transform() {
     let store = ExperimentStore::open(":memory:").expect("open");
     let exp_id = store
-        .insert_experiment("2026-01-01T00:00:00Z", "test prompt", "openai", "uppercase", "gpt-4")
+        .insert_experiment(
+            "2026-01-01T00:00:00Z",
+            "test prompt",
+            "openai",
+            "uppercase",
+            "gpt-4",
+        )
         .expect("insert exp");
     for i in 0..3 {
         store
-            .insert_run(exp_id, &RunRecord {
-                run_index: i,
-                token_count: 100 + i as usize,
-                transformed_count: 50,
-                avg_confidence: Some(0.8),
-                avg_perplexity: Some(1.5),
-                vocab_diversity: 0.75,
-            })
+            .insert_run(
+                exp_id,
+                &RunRecord {
+                    run_index: i,
+                    token_count: 100 + i as usize,
+                    transformed_count: 50,
+                    avg_confidence: Some(0.8),
+                    avg_perplexity: Some(1.5),
+                    vocab_diversity: 0.75,
+                },
+            )
             .expect("insert run");
     }
     let runs = store
@@ -101,7 +122,9 @@ fn store_load_runs_unknown_transform_empty() {
     store
         .insert_experiment("2026-01-01T00:00:00Z", "x", "openai", "reverse", "gpt-4")
         .expect("insert");
-    let runs = store.load_runs_by_transform("x", "nonexistent").expect("load");
+    let runs = store
+        .load_runs_by_transform("x", "nonexistent")
+        .expect("load");
     assert!(runs.is_empty());
 }
 
@@ -110,19 +133,30 @@ fn store_load_runs_unknown_transform_empty() {
 fn store_run_null_metrics_round_trip() {
     let store = ExperimentStore::open(":memory:").expect("open");
     let exp_id = store
-        .insert_experiment("2026-01-01T00:00:00Z", "null metrics", "mock", "delete", "mock")
+        .insert_experiment(
+            "2026-01-01T00:00:00Z",
+            "null metrics",
+            "mock",
+            "delete",
+            "mock",
+        )
         .expect("insert exp");
     store
-        .insert_run(exp_id, &RunRecord {
-            run_index: 0,
-            token_count: 10,
-            transformed_count: 5,
-            avg_confidence: None,
-            avg_perplexity: None,
-            vocab_diversity: 0.5,
-        })
+        .insert_run(
+            exp_id,
+            &RunRecord {
+                run_index: 0,
+                token_count: 10,
+                transformed_count: 5,
+                avg_confidence: None,
+                avg_perplexity: None,
+                vocab_diversity: 0.5,
+            },
+        )
         .expect("insert run");
-    let runs = store.load_runs_by_transform("null metrics", "delete").expect("load");
+    let runs = store
+        .load_runs_by_transform("null metrics", "delete")
+        .expect("load");
     assert_eq!(runs.len(), 1);
     assert!(runs[0].avg_confidence.is_none());
     assert!(runs[0].avg_perplexity.is_none());
@@ -144,13 +178,19 @@ use every_other_token::providers::{AnthropicPlugin, OpenAiPlugin, Provider, Prov
 #[test]
 fn openai_plugin_api_url_is_https() {
     let p = OpenAiPlugin;
-    assert!(p.api_url().starts_with("https://"), "OpenAI API URL must use HTTPS");
+    assert!(
+        p.api_url().starts_with("https://"),
+        "OpenAI API URL must use HTTPS"
+    );
 }
 
 #[test]
 fn anthropic_plugin_api_url_is_https() {
     let p = AnthropicPlugin;
-    assert!(p.api_url().starts_with("https://"), "Anthropic API URL must use HTTPS");
+    assert!(
+        p.api_url().starts_with("https://"),
+        "Anthropic API URL must use HTTPS"
+    );
 }
 
 #[test]

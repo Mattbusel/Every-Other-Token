@@ -82,7 +82,6 @@ unsafe_code = "forbid"
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
-pedantic = "warn"
 
 [profile.release]
 opt-level = 3
