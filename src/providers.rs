@@ -592,4 +592,20 @@ mod tests {
     fn test_anthropic_plugin_default_model_nonempty() {
         assert!(!AnthropicPlugin.default_model().is_empty());
     }
+
+    // -- ANTHROPIC_API_VERSION constant tests (#14) --
+
+    #[test]
+    fn test_anthropic_api_version_nonempty() {
+        assert!(!super::ANTHROPIC_API_VERSION.is_empty());
+    }
+
+    #[test]
+    fn test_anthropic_api_version_format() {
+        // Should be a date in YYYY-MM-DD format
+        let v = super::ANTHROPIC_API_VERSION;
+        assert_eq!(v.len(), 10, "version should be YYYY-MM-DD");
+        assert!(v.chars().nth(4) == Some('-'), "4th char should be -");
+        assert!(v.chars().nth(7) == Some('-'), "7th char should be -");
+    }
 }

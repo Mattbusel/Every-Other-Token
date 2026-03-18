@@ -1395,6 +1395,60 @@ mod tests {
         maybe_record(&store, "XXXXXX", serde_json::json!({"type": "token"}));
     }
 
+    #[test]
+    fn test_maybe_record_cap_exceeded_broadcasts_truncated_warning() {
+        let store = new_room_store();
+        let code = "CAPWRN".to_string();
+        {
+            let mut guard = store.lock().unwrap();
+            let (tx, _) = tokio::sync::broadcast::channel(16);
+            let mut room = Room {
+                code: code.clone(),
+                host_id: String::new(),
+                participants: Vec::new(),
+                token_count: 0,
+                surgery_log: Vec::new(),
+                chat_log: Vec::new(),
+                votes: std::collections::HashMap::new(),
+                is_recording: true,
+                recording_start_ms: Some(now_ms()),
+                recorded_events: Vec::new(),
+                created_at_ms: now_ms(),
+                last_activity_ms: now_ms(),
+                recording_cap: 2,
+                broadcast_tx: tx,
+            };
+            let _ = room.recording_cap;
+            guard.insert(code.clone(), room);
+        }
+
+        // Subscribe to broadcast before recording events
+        let mut rx = {
+            let guard = store.lock().unwrap();
+            guard.get(&code).unwrap().broadcast_tx.subscribe()
+        };
+
+        // Push 3 events — should trigger truncation warning on the 3rd
+        maybe_record(&store, &code, serde_json::json!({"seq": 0}));
+        maybe_record(&store, &code, serde_json::json!({"seq": 1}));
+        maybe_record(&store, &code, serde_json::json!({"seq": 2}));
+
+        // Collect broadcast messages
+        let mut got_truncated = false;
+        while let Ok(msg) = rx.try_recv() {
+            if msg.get("type").and_then(|v| v.as_str()) == Some("record_truncated") {
+                got_truncated = true;
+                assert_eq!(msg["dropped"], 1);
+                assert_eq!(msg["cap"], 2);
+            }
+        }
+        assert!(got_truncated, "expected record_truncated broadcast when cap is exceeded");
+
+        // Verify only cap events remain
+        let guard = store.lock().unwrap();
+        assert_eq!(guard.get(&code).unwrap().recorded_events.len(), 2);
+    }
+
     // -- Participant serialization -------------------------------------------
 
     #[test]

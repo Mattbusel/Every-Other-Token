@@ -16,6 +16,10 @@ impl HeatmapExporter {
         }
     }
 
+    /// Append one run's token events to the heatmap.
+    ///
+    /// Each call increments the run counter by one.  Position slots are
+    /// extended as needed so runs of varying lengths are handled correctly.
     pub fn record_run(&mut self, events: &[TokenEvent]) {
         let run_idx = self.run_count;
         self.run_count += 1;
@@ -34,6 +38,14 @@ impl HeatmapExporter {
         }
     }
 
+    /// Write the accumulated heatmap data to a CSV file.
+    ///
+    /// Columns: `position`, then one `run_N` column per recorded run.
+    /// Rows with mean confidence below `min_confidence` are omitted.
+    /// Set `sort_by = "confidence"` to sort descending by mean; any other value keeps position order.
+    ///
+    /// # Errors
+    /// Returns an error if the output file cannot be created or written.
     pub fn export_csv(&self, path: &str, min_confidence: f32, sort_by: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut file = std::fs::File::create(path)?;
 
