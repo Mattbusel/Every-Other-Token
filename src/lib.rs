@@ -2130,6 +2130,41 @@ mod research_tests {
         }
     }
 
+    /// Construct a minimal [`TokenInterceptor`] suitable for unit tests.
+    ///
+    /// Uses a fixed RNG seed, a no-op web channel, and the `Reverse` transform.
+    fn make_test_interceptor() -> TokenInterceptor {
+        TokenInterceptor {
+            client: reqwest::Client::new(),
+            api_key: "test-key".to_string(),
+            provider: Provider::Openai,
+            transform: Transform::Reverse,
+            model: "test-model".to_string(),
+            token_count: 0,
+            transformed_count: 0,
+            visual_mode: false,
+            heatmap_mode: false,
+            orchestrator: false,
+            orchestrator_url: "http://localhost:3000".to_string(),
+            web_tx: None,
+            web_provider_label: None,
+            system_prompt: None,
+            #[cfg(feature = "self-tune")]
+            telemetry_bus: None,
+            #[cfg(feature = "self-modify")]
+            dedup: None,
+            rate: 0.5,
+            rng: StdRng::seed_from_u64(42),
+            top_logprobs: 5,
+            recorder: None,
+            json_stream: false,
+            pending_delay_ms: 0,
+            min_confidence: None,
+            last_token_instant: None,
+            max_retries: 3,
+        }
+    }
+
     #[test]
     fn test_research_session_serializes_basic_fields() {
         let s = make_session(10, Some(0.85), Some(2.3));

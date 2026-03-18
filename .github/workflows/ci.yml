@@ -33,6 +33,7 @@ jobs:
       - run: cargo clippy --features self-tune -- -D warnings
       - run: cargo clippy --features self-modify -- -D warnings
       - run: cargo clippy --features helix-bridge -- -D warnings
+      - run: cargo clippy --all-features -- -D warnings
 
   test:
     name: Test (${{ matrix.rust }})
@@ -51,6 +52,7 @@ jobs:
       - run: cargo test --features sqlite-log
       - run: cargo test --features self-tune
       - run: cargo test --features self-modify
+      - run: cargo test --features helix-bridge
 
   doc:
     name: Rustdoc
@@ -62,14 +64,30 @@ jobs:
       - run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      - run: cargo doc --no-deps --features sqlite-log,self-tune,self-modify,helix-bridge
+        env:
+          RUSTDOCFLAGS: -D warnings
 
-  audit:
-    name: Security audit
+  release-build:
+    name: Release build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit --locked
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Verify binary exists
+        run: test -f target/release/every-other-token
+
+  audit:
+    name: Security audit (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
       - run: cargo audit
 
   deny:
