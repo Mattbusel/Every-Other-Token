@@ -1,3 +1,35 @@
+//! # every-other-token
+//!
+//! A real-time LLM token stream interceptor for token-level interaction research.
+//!
+//! This crate sits between the caller and the model, intercepts the token stream
+//! as it arrives over SSE, applies one of five transform strategies to tokens at
+//! configurable positions, scores model confidence at each position using the
+//! OpenAI logprob API, and routes the enriched events to a terminal renderer, a
+//! zero-dependency web UI, and an optional WebSocket collaboration room.
+//!
+//! ## Feature flags
+//!
+//! | Flag | Description |
+//! |------|-------------|
+//! | `sqlite-log` | Persist experiment runs to a local SQLite database via `store::ExperimentStore`. |
+//! | `self-tune` | Enable the self-improvement telemetry bus and tuning controller. |
+//! | `self-modify` | Enable snapshot-based parameter mutation (requires `self-tune`). |
+//! | `intelligence` | Reserved namespace for future interpretability features. |
+//! | `evolution` | Reserved namespace for future evolutionary optimisation. |
+//! | `helix-bridge` | HTTP bridge that polls `/api/stats` and pushes config patches. |
+//! | `redis-backing` | Write-through Redis persistence for agent memory and snapshots. |
+//! | `wasm` | WASM target bindings via `wasm-bindgen`. |
+//!
+//! ## Quickstart
+//!
+//! ```bash
+//! export OPENAI_API_KEY="sk-..."
+//! cargo run -- "What is consciousness?" --visual
+//! cargo run -- "What is consciousness?" --web
+//! cargo run -- "Explain recursion" --research --runs 20 --output results.json
+//! ```
+
 pub mod cli;
 pub mod config;
 pub mod error;
@@ -219,6 +251,13 @@ async fn execute_with_retry(
 }
 
 impl TokenInterceptor {
+    /// Construct a new `TokenInterceptor`.
+    ///
+    /// Reads the API key from the environment (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
+    /// and validates its format.  The `Mock` provider does not require a key.
+    ///
+    /// # Errors
+    /// Returns an error if the required API key environment variable is not set.
     pub fn new(
         provider: Provider,
         transform: Transform,
@@ -310,6 +349,15 @@ impl TokenInterceptor {
     // Public entry point
     // -----------------------------------------------------------------------
 
+    /// Stream the given `prompt` through the configured provider, applying
+    /// the active transform to every other token.
+    ///
+    /// In terminal mode the tokens are printed to stdout; in web mode they are
+    /// sent over the `web_tx` channel for SSE fan-out.
+    ///
+    /// # Errors
+    /// Returns an error if the prompt is empty, exceeds 512 KB, the API key is
+    /// missing, the HTTP request fails after all retries, or JSON parsing fails.
     pub async fn intercept_stream(
         &mut self,
         prompt: &str,

@@ -1,3 +1,23 @@
+//! Embedded web UI server and HTTP request handling.
+//!
+//! This module exposes a single entry point, [`serve`], that binds a TCP listener
+//! and handles all incoming HTTP connections in a hand-rolled async loop.  No
+//! external web framework is used -- the server speaks raw HTTP/1.1 so the binary
+//! stays small and dependency-free.
+//!
+//! ## Supported routes
+//!
+//! | Method | Path | Description |
+//! |--------|------|-------------|
+//! | `GET` | `/` | Serves the embedded single-page HTML application |
+//! | `GET` | `/events` | SSE stream of [`TokenEvent`](crate::TokenEvent) JSON objects |
+//! | `GET` | `/stream` | Alias for `/events` |
+//! | `POST` | `/room/create` | Creates a new collaboration room |
+//! | `GET` | `/ws/:code` | WebSocket endpoint for room participants |
+//! | `GET` | `/join/:code` | Serve the collaboration join page |
+//! | `POST` | `/api/config` | Update runtime configuration |
+//! | `GET` | `/api/experiments` | List stored experiments (requires `sqlite-log`) |
+
 use colored::*;
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;

@@ -1,25 +1,21 @@
-# Every Other Token
+# every-other-token
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Mattbusel/Every-Other-Token&type=Date)](https://star-history.com/#Mattbusel/Every-Other-Token)
+[![CI](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/every-other-token.svg)](https://crates.io/crates/every-other-token)
+[![docs.rs](https://docs.rs/every-other-token/badge.svg)](https://docs.rs/every-other-token)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org/)
+[![GitHub Stars](https://img.shields.io/github/stars/Mattbusel/Every-Other-Token?style=social)](https://github.com/Mattbusel/Every-Other-Token)
 
-
-[![CI](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml) [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/) [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Tests](https://img.shields.io/badge/tests-1165%20passing-brightgreen.svg)](https://github.com/Mattbusel/Every-Other-Token) [![GitHub Stars](https://img.shields.io/github/stars/Mattbusel/Every-Other-Token?style=social)](https://github.com/Mattbusel/Every-Other-Token)
-
-> What if you intercept every other token from a live LLM stream and measure what breaks?
-
-That question led to this: a Rust tool that sits between you and the model, mutates tokens mid-generation, scores the model's confidence at each position, and visualizes the result in real time. It turns out LLMs are surprisingly fragile, and surprisingly resilient, in ways that aggregate benchmarks completely miss.
-
-**What it does:** intercept → perturb → score → visualize → compare across providers, simultaneously, in a zero-dependency web UI or terminal. Multiple researchers can watch the same stream live.
-
-Built in Rust. Dual-provider (OpenAI + Anthropic). 1,165 tests. Ships as a single binary.
+A real-time LLM token stream interceptor for interpretability research. Sits between your application and the model, mutates tokens mid-generation, captures per-token confidence and perplexity signals, and renders results in a zero-dependency terminal or web UI.
 
 ---
 
-## Why This Matters
+## Why this exists
 
-Token-level analysis is an underexplored axis of LLM evaluation. Aggregate benchmarks measure outputs. This tool measures what happens *during* generation -- token by token, position by position -- with confidence scores, perplexity signals, and cross-provider structural comparison running simultaneously.
+Aggregate benchmarks measure final outputs. This tool measures what happens **during** generation -- token by token, position by position -- with confidence scores, perplexity signals, and cross-provider structural comparison running simultaneously.
 
-**Four open research questions this directly enables:**
+It directly enables four research directions:
 
 1. **Semantic fragility** -- At what perturbation rate does coherent reasoning collapse?
 2. **Cross-provider divergence** -- Do OpenAI and Anthropic produce structurally different token sequences for identical prompts?
@@ -28,7 +24,20 @@ Token-level analysis is an underexplored axis of LLM evaluation. Aggregate bench
 
 ---
 
-## Quick Start
+## Feature table
+
+| Feature flag | Description |
+|---|---|
+| *(default)* | Terminal and web UI streaming, all transforms, research mode |
+| `sqlite-log` | Persist experiment runs to a local SQLite database |
+| `self-tune` | Background PID-based parameter tuning loop |
+| `self-modify` | Agent loop for automated pipeline improvement |
+| `helix-bridge` | HTTP bridge that polls HelixRouter `/api/stats` |
+| `redis-backing` | Redis-backed persistence for agent memory and snapshots |
+
+---
+
+## Quickstart
 
 ```bash
 git clone https://github.com/Mattbusel/Every-Other-Token
@@ -38,97 +47,167 @@ cargo build --release
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Terminal
-cargo run -- "What is consciousness?" --visual
+# Terminal output with per-token confidence colors
+./target/release/every-other-token "What is consciousness?" --visual
 
-# Web UI — opens http://localhost:8888
-cargo run -- "What is consciousness?" --web
+# Web UI on http://localhost:8888
+./target/release/every-other-token "What is consciousness?" --web
 
-# Headless research — 20 runs, aggregate stats to JSON
-cargo run -- "Explain recursion" --research --runs 20 --output results.json
+# Headless research: 20 runs, JSON aggregate stats
+./target/release/every-other-token "Explain recursion" \
+    --research --runs 20 --output results.json
+
+# Side-by-side OpenAI vs Anthropic diff in the terminal
+./target/release/every-other-token "Describe entropy" --diff-terminal
+
+# A/B system-prompt experiment
+./target/release/every-other-token "Tell me a story" \
+    --research --runs 10 \
+    --system-a "Be poetic." --system-b "Be literal."
 ```
 
----
+### Shell completions
 
-## Web UI
-
-`--web` launches a local server with an embedded single-page application. No npm. No webpack. No build step.
-
-| Mode | Description |
-|------|-------------|
-| **Single** | Live token stream with per-token confidence bars and perplexity pulse |
-| **Split** | Original vs transformed side by side |
-| **Quad** | All four transforms applied simultaneously in a 2x2 grid |
-| **Diff** | OpenAI and Anthropic streaming the same prompt in parallel, diverging positions highlighted red |
-| **Experiment** | A/B mode: two system prompts, same user prompt, live divergence map |
-| **Research** | Aggregate stats dashboard: perplexity, confidence histogram, vocab diversity, cost |
-
----
-
-## Research Features
-
-Every token from OpenAI carries a **confidence score** (exp(logprob), 0–1) and **top-5 alternatives** at that position. Color-coded per token: green ≥70%, yellow 40–70%, red <40%.
-
-Per-token **perplexity** streams live. High-perplexity tokens pulse in the UI. A 60-token rolling sparkline shows the model's uncertainty trajectory.
-
-**Headless mode:**
 ```bash
-cargo run -- "Explain the halting problem" --research --runs 50 --output halting.json
-cargo run -- "Tell me a story" --research --runs 10 --system-a "Be poetic." --system-b "Be literal."
+./target/release/every-other-token --completions bash >> ~/.bash_completion
+./target/release/every-other-token --completions zsh  >  ~/.zfunc/_every-other-token
 ```
 
 ---
 
 ## Transforms
 
-| Transform | Behavior |
-|-----------|----------|
-| `reverse` | Reverses token characters at odd positions |
-| `uppercase` | Uppercases token at odd positions |
-| `mock` | Alternating case at odd positions |
-| `noise` | Appends a random symbol at odd positions |
-| `chaos` | Randomly selects one of the above per token |
+| Name | CLI flag | Behavior |
+|---|---|---|
+| `reverse` | `reverse` | Reverses the characters of intercepted tokens |
+| `uppercase` | `uppercase` | Converts intercepted tokens to uppercase |
+| `mock` | `mock` | Alternating lower/upper case per character |
+| `noise` | `noise` | Appends a random symbol (`* + ~ @ # $ %`) |
+| `chaos` | `chaos` | Randomly selects one of the above per token |
+| `scramble` | `scramble` | Fisher-Yates shuffles the token's characters |
+| `delete` | `delete` | Replaces intercepted tokens with the empty string |
+| `synonym` | `synonym` | Substitutes from a 200-entry static synonym table |
+| `delay:N` | `delay:N` | Passes the token through after N ms pause |
+| *chain* | `A,B` | Applies A then B in sequence (e.g. `reverse,uppercase`) |
+
+The `--rate` flag controls the fraction of tokens intercepted (default 0.5, i.e. every other token). A Bresenham spread ensures uniform distribution. Combine with `--seed` for reproducible results.
+
+---
+
+## Web UI modes
+
+| Mode | Description |
+|---|---|
+| **Single** | Live token stream with per-token confidence bars and perplexity pulse |
+| **Split** | Original vs transformed side by side |
+| **Quad** | All four transforms applied simultaneously in a 2x2 grid |
+| **Diff** | OpenAI and Anthropic streaming the same prompt in parallel, diverging positions highlighted |
+| **Experiment** | A/B mode: two system prompts, same user prompt, live divergence map |
+| **Research** | Aggregate stats dashboard: perplexity histogram, confidence distribution, vocab diversity |
 
 ---
 
 ## Architecture
 
 ```
-TokenInterceptor
- ├── Provider::Openai   → OpenAI SSE stream (logprobs=true)
- └── Provider::Anthropic → Anthropic SSE stream
-       │
-       ▼ (per token)
- process_content_with_logprob()
-  ├── confidence = exp(logprob)
-  ├── perplexity = exp(-logprob)
-  └── alternatives = top_logprobs[0..5]
-       │
-       ├── web_tx  ──→ SSE → browser
-       ├── collab  ──→ WebSocket → all room participants
-       └── stdout  ──→ terminal mode
+CLI (clap) --> main.rs
+                |
+                v
+         TokenInterceptor
+         |              |
+         v              v
+   OpenAiPlugin   AnthropicPlugin
+   (SSE + logprobs)   (SSE)
+         |
+         v  (per token)
+  process_content_with_logprob()
+  |-- confidence  = exp(logprob)
+  |-- perplexity  = exp(-logprob)
+  |-- alternatives = top_logprobs[0..N]
+  |-- transform   = Transform::apply(token)
+         |
+         +--> web_tx  --> SSE --> browser (web.rs)
+         +--> collab  --> WebSocket --> room participants (collab.rs)
+         +--> stdout  --> terminal renderer (render.rs)
+         +--> Recorder --> replay file (replay.rs)
+         +--> HeatmapExporter --> CSV (heatmap.rs)
 
-SelfImprovementOrchestrator (background)
-  TelemetryBus → AnomalyDetector → TuningController → RedisSnapshotStore
+Research mode (research.rs)
+  run_research() x N --> ResearchOutput (JSON)
+  run_research_suite() --> batch over prompt file
+
+Self-tune (feature = "self-tune")
+  TelemetryBus --> AnomalyDetector --> TuningController --> SnapshotStore
+
+Self-modify (feature = "self-modify")
+  TaskGen --> ValidationGate --> Deploy --> Memory
 ```
+
+---
+
+## Configuration file
+
+Create `~/.eot.toml` or `./.eot.toml` (local wins):
+
+```toml
+provider     = "anthropic"
+model        = "claude-sonnet-4-6"
+transform    = "reverse"
+rate         = 0.5
+port         = 8888
+top_logprobs = 5
+```
+
+---
 
 ## Performance
 
-- ~10,000 tokens/sec on commodity hardware
-- Sub-millisecond per-token overhead
-- 4 MB release binary (LTO)
+- Sub-millisecond per-token processing overhead
 - Zero-copy async streaming via Tokio
-- 1,165 tests
+- 4 MB release binary with LTO
+- Parallel provider streams via `tokio::select!`
+
+---
+
+## Contributing
+
+Contributions are welcome. Please follow these steps:
+
+1. Fork the repository and create a feature branch from `main`.
+2. Run `cargo fmt` and `cargo clippy -- -D warnings` before committing.
+3. Add tests for any new public API surface. The CI gate requires all tests to pass on stable and the MSRV (1.75).
+4. Open a pull request against `main` with a clear description of the change and why it is needed.
+5. For significant changes, open an issue first to discuss the design.
+
+### Development commands
+
+```bash
+# Build
+cargo build
+
+# Tests
+cargo test
+cargo test --features sqlite-log
+
+# Lint
+cargo clippy -- -D warnings
+cargo clippy --features sqlite-log -- -D warnings
+
+# Format check
+cargo fmt --check
+
+# Docs
+cargo doc --no-deps --open
+
+# Dependency audit
+cargo audit
+```
 
 ---
 
 ## License
 
-MIT
-
----
-
-*Open an issue if you're working on LLM evaluation, interpretability, or inference infrastructure.*
+MIT -- see [LICENSE](LICENSE).
 
 ---
 
@@ -136,10 +215,4 @@ MIT
 
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- the orchestration layer that uses Every-Other-Token telemetry to drive HelixRouter adaptation
 - [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- companion tool for output-level reliability analysis
-- [llm-cpp](https://github.com/Mattbusel/llm-cpp) -- C++ streaming primitive that inspired the Rust token pipeline here
-
----
-## Related Projects by @Mattbusel
-- [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- Hallucination detection for LLM outputs using OpenAI and Anthropic
-- [Token-Visualizer](https://github.com/Mattbusel/Token-Visualizer) -- Interactive tokenizer and prompt-engineering visualization tool
-- [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- Production Rust LLM orchestrator with circuit breakers and self-improving loop
+- [Token-Visualizer](https://github.com/Mattbusel/Token-Visualizer) -- interactive tokenizer and prompt-engineering visualization tool

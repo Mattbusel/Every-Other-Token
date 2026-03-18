@@ -1,3 +1,18 @@
+//! SQLite-backed persistence for experiment sessions and per-run metrics.
+//!
+//! The [`ExperimentStore`] type manages three tables:
+//!
+//! - `experiments` -- one row per research session (prompt, provider, transform, model).
+//! - `runs` -- one row per execution within a session (token count, confidence, etc.).
+//! - `dedup_cache` -- fingerprint-based cross-session deduplication with TTL eviction.
+//!
+//! All write paths that produce both an experiment and its first run use
+//! [`ExperimentStore::insert_experiment_with_run`], which wraps both inserts in a
+//! single SQLite transaction to prevent orphaned experiment rows on crash.
+//!
+//! The [`Storage`] trait abstracts the backend so tests and future implementations
+//! can swap in an in-memory or remote store without changing call sites.
+
 use rusqlite::{Connection, params};
 use serde_json::json;
 
@@ -83,6 +98,11 @@ pub struct ExperimentStore {
 }
 
 impl ExperimentStore {
+    /// Open (or create) the SQLite database at `path`.
+    ///
+    /// Pass `":memory:"` to create a transient in-memory database for tests.
+    /// The schema is created idempotently (`CREATE TABLE IF NOT EXISTS`), so
+    /// this method is safe to call on an existing database.
     pub fn open(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let conn = Connection::open(path)?;
         conn.execute_batch(
@@ -145,6 +165,7 @@ impl ExperimentStore {
         }
     }
 
+    /// Insert a new experiment row and return its auto-assigned row ID.
     pub fn insert_experiment(
         &self,
         created_at: &str,
@@ -161,6 +182,7 @@ impl ExperimentStore {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Insert a run record linked to the given experiment ID.
     pub fn insert_run(
         &self,
         experiment_id: i64,
@@ -239,6 +261,7 @@ impl ExperimentStore {
         Ok(())
     }
 
+    /// Return all experiment rows as JSON objects.
     pub fn query_experiments(&self) -> Vec<serde_json::Value> {
         let mut stmt = match self.conn.prepare(
             "SELECT id, created_at, prompt, provider, transform, model FROM experiments",

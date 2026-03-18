@@ -1,16 +1,41 @@
+//! Headless research mode and batch experiment execution.
+//!
+//! This module provides two public async functions:
+//!
+//! - [`run_research`] -- runs a single prompt `N` times and writes aggregate
+//!   statistics (mean confidence, perplexity, vocab diversity, collapse positions,
+//!   95% CIs) to JSON.
+//! - [`run_research_suite`] -- reads one prompt per line from `--prompt-file` and
+//!   calls `run_research` for each, merging results into a JSONL or JSON array.
+//!
+//! A [`run_diff_terminal`] function is also provided for side-by-side OpenAI vs
+//! Anthropic streaming in the terminal (`--diff-terminal`).
+//!
+//! ## Output schema
+//!
+//! The [`ResearchOutput`] struct is versioned with a `schema_version` field so
+//! downstream consumers can detect breaking changes.  The current version is `1`.
+
 use crate::cli::Args;
 use crate::transforms::Transform;
 use crate::TokenInterceptor;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
+/// Metrics collected from a single research run.
 #[derive(Debug, Serialize)]
 pub struct ResearchRun {
+    /// Zero-based index of this run within the session.
     pub run_index: u32,
+    /// Total tokens streamed in this run.
     pub token_count: usize,
+    /// Tokens mutated by the active transform.
     pub transformed_count: usize,
+    /// Mean per-token model confidence (0.0--1.0), or `None` when logprobs are unavailable.
     pub avg_confidence: Option<f64>,
+    /// Mean per-token perplexity, or `None` when logprobs are unavailable.
     pub avg_perplexity: Option<f64>,
+    /// Vocabulary diversity: unique tokens / total tokens.
     pub vocab_diversity: f64,
     /// Starting positions of runs of 5+ consecutive tokens with confidence < 0.4
     pub collapse_positions: Vec<usize>,
@@ -25,27 +50,46 @@ pub struct ResearchRun {
     pub elapsed_ms: u64,
 }
 
+/// Top-level JSON output written by [`run_research`].
 #[derive(Debug, Serialize)]
 pub struct ResearchOutput {
+    /// Monotonically increasing version number; consumers should check this before parsing.
     pub schema_version: u8,
+    /// The prompt used for all runs in this session.
     pub prompt: String,
+    /// Provider name (`"openai"` or `"anthropic"`).
     pub provider: String,
+    /// Transform name applied to intercepted tokens.
     pub transform: String,
+    /// Per-run data in order of execution.
     pub runs: Vec<ResearchRun>,
+    /// Cross-run aggregated statistics.
     pub aggregate: ResearchAggregate,
 }
 
+/// Cross-run aggregate statistics, appended to every [`ResearchOutput`].
 #[derive(Debug, Serialize)]
 pub struct ResearchAggregate {
+    /// Total number of runs requested (may differ from `runs.len()` on early exit).
+    /// Total number of runs requested (may differ from `runs.len()` on early exit).
     pub total_runs: u32,
+    /// Mean token count per run.
     pub mean_token_count: f64,
+    /// Mean model confidence across all runs and tokens, if available.
     pub mean_confidence: Option<f64>,
+    /// Mean perplexity across all runs and tokens, if available.
     pub mean_perplexity: Option<f64>,
+    /// Mean vocabulary diversity score across all runs.
     pub mean_vocab_diversity: f64,
+    /// Sample standard deviation of per-run mean confidence.
     pub std_dev_confidence: Option<f64>,
+    /// Sample standard deviation of per-run mean perplexity.
     pub std_dev_perplexity: Option<f64>,
+    /// Sample standard deviation of per-run token count.
     pub std_dev_token_count: f64,
+    /// 95% confidence interval for mean confidence (lower, upper).
     pub confidence_interval_95_confidence: Option<(f64, f64)>,
+    /// 95% confidence interval for mean perplexity (lower, upper).
     pub confidence_interval_95_perplexity: Option<(f64, f64)>,
     /// Minimum token count across all runs (truncation-based alignment length)
     pub aligned_length: usize,
@@ -72,6 +116,17 @@ fn ci_95(mean: f64, sd: f64, n: usize) -> (f64, f64) {
     (mean - margin, mean + margin)
 }
 
+/// Run the full headless research loop for `args.runs` iterations.
+///
+/// Each iteration calls [`TokenInterceptor::intercept_stream`], collects the
+/// emitted [`TokenEvent`]s, and computes per-run metrics (token count, mean
+/// confidence, perplexity, vocab diversity, collapse positions).  After all
+/// runs complete, aggregate statistics and an optional CSV heatmap are written
+/// to disk.
+///
+/// # Errors
+/// Returns an error if the transform string is invalid, the API call fails,
+/// or output file I/O fails.
 pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let provider = args.provider.clone();
     let transform_str = args.transform.clone();
@@ -471,7 +526,11 @@ fn detect_collapse_positions(confidences: &[f64], min_run: usize, threshold: f64
             }
             run_len += 1;
             if run_len == min_run {
-                positions.push(run_start.unwrap());
+                // run_start is always Some here because it is set whenever conf < threshold
+                // and only cleared when conf >= threshold (which resets run_len to 0).
+                if let Some(start) = run_start {
+                    positions.push(start);
+                }
             }
         } else {
             run_start = None;
@@ -481,7 +540,15 @@ fn detect_collapse_positions(confidences: &[f64], min_run: usize, threshold: f64
     positions
 }
 
-/// Run research for each prompt in args.prompt_file, one by one.
+/// Run [`run_research`] independently for each prompt listed in `args.prompt_file`.
+///
+/// The file must contain one prompt per line; blank lines and lines beginning
+/// with `#` are skipped.  Results for each prompt are written to a separate
+/// JSON file named `<output>_<index>.json`.
+///
+/// # Errors
+/// Returns an error if `args.prompt_file` is `None`, the file cannot be read,
+/// or any individual research run fails.
 pub async fn run_research_suite(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let path = args.prompt_file.as_ref().ok_or("No prompt_file set")?;
     let content = std::fs::read_to_string(path)?;
@@ -633,7 +700,13 @@ async fn run_research_for_prompt(
     Ok(())
 }
 
-/// Run two parallel TokenInterceptor streams and print side-by-side diff.
+/// Stream the same prompt through OpenAI and Anthropic in parallel and print
+/// a side-by-side token diff in the terminal.
+///
+/// Diverging token positions are highlighted in red.
+///
+/// # Errors
+/// Returns an error if either provider's streaming call fails.
 pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn std::error::Error>> {
     use crate::providers::Provider;
     use crate::TokenInterceptor;

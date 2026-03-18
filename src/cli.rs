@@ -1,3 +1,9 @@
+//! Command-line argument definitions and helper functions.
+//!
+//! [`Args`] is the root Clap struct parsed in `main.rs`.  Helper functions
+//! ([`resolve_model`], [`validate_model`], [`parse_rate_range`], [`apply_template`])
+//! are kept here rather than in `main.rs` so they can be unit-tested in isolation.
+
 use crate::providers::Provider;
 use clap::Parser;
 
