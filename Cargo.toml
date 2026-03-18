@@ -26,9 +26,13 @@ base64 = "0.21"
 uuid = { version = "1.0", features = ["v4"] }
 # tracing: structured logging for diagnostics — used by helix_bridge polling loop
 tracing = "0.1"
+# thiserror: derive macro for the crate-level EotError enum in src/error.rs
+thiserror = "1.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 once_cell = "1.18"
 clap_complete = "4.4"
+toml = "0.8"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 default = []
@@ -57,11 +61,13 @@ js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+# rstest: parameterized / table-driven test helpers
+rstest = "0.18"
 
 [lib]
 name = "every_other_token"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "every-other-token"

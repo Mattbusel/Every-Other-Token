@@ -24,6 +24,12 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 /// Shared room store: room code → Room.
 pub type RoomStore = Arc<Mutex<HashMap<String, Room>>>;
 
+/// Idle TTL for rooms: rooms not mutated in this many milliseconds are eligible for eviction.
+const ROOM_IDLE_TTL_MS: u64 = 3_600_000;
+
+/// Maximum number of events stored in a room's recording buffer.
+const DEFAULT_RECORDING_CAP: usize = 10_000;
+
 /// Colors assigned to participants in round-robin order.
 pub const PARTICIPANT_COLORS: &[&str] = &[
     "#58a6ff", "#f0883e", "#a371f7", "#3fb950", "#e3b341", "#f85149",
@@ -84,6 +90,8 @@ pub struct Room {
     pub recording_start_ms: Option<u64>,
     pub recorded_events: Vec<RecordedEvent>,
     pub created_at_ms: u64,
+    pub last_activity_ms: u64,
+    pub recording_cap: usize,
     /// Broadcast sender — clone to get a Receiver for a new subscriber.
     pub broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
 }
@@ -98,6 +106,14 @@ pub fn new_room_store() -> RoomStore {
 }
 
 /// Generate a random 6-character uppercase alphanumeric room code.
+///
+/// ## Entropy analysis
+/// Alphabet: 36 chars (A–Z + 0–9). Code length: 6 chars.
+/// Search space: 36^6 = 2,176,782,336 (~2.1 × 10⁹).
+///
+/// Uses [`rand::thread_rng()`] which is seeded from OS entropy and backed
+/// by ChaCha12, a CSPRNG. Suitable for ephemeral room codes. At 1,000
+/// concurrent rooms, collision probability ≈ 0.023% (birthday paradox).
 pub fn generate_code() -> String {
     use rand::Rng;
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -135,6 +151,8 @@ pub fn create_room(store: &RoomStore) -> String {
         recording_start_ms: None,
         recorded_events: Vec::new(),
         created_at_ms: now_ms(),
+        last_activity_ms: now_ms(),
+        recording_cap: DEFAULT_RECORDING_CAP,
         broadcast_tx: tx,
     };
     if let Ok(mut guard) = store.lock() {
@@ -215,6 +233,7 @@ pub fn apply_surgery(store: &RoomStore, code: &str, edit: SurgeryEdit) {
                 "edit": edit,
             });
             room.surgery_log.push(edit);
+            room.last_activity_ms = now_ms();
             let _ = room.broadcast_tx.send(msg);
         }
     }
@@ -229,6 +248,7 @@ pub fn add_chat(store: &RoomStore, code: &str, msg: ChatMessage) {
                 "message": msg,
             });
             room.chat_log.push(msg);
+            room.last_activity_ms = now_ms();
             let _ = room.broadcast_tx.send(broadcast_msg);
         }
     }
@@ -252,6 +272,7 @@ pub fn vote(
         "down" => entry.1 = entry.1.saturating_add(1),
         _ => {}
     }
+    room.last_activity_ms = now_ms();
     Some(*entry)
 }
 
@@ -306,8 +327,20 @@ pub fn maybe_record(store: &RoomStore, code: &str, payload: serde_json::Value) {
                 let start = room.recording_start_ms.unwrap_or_else(now_ms);
                 let offset_ms = now_ms().saturating_sub(start);
                 room.recorded_events.push(RecordedEvent { offset_ms, payload });
+                while room.recorded_events.len() > room.recording_cap {
+                    room.recorded_events.remove(0);
+                }
+                room.last_activity_ms = now_ms();
             }
         }
+    }
+}
+
+/// Evict rooms that have been idle longer than `ROOM_IDLE_TTL_MS`.
+pub fn evict_idle_rooms(store: &RoomStore) {
+    if let Ok(mut guard) = store.lock() {
+        let now = now_ms();
+        guard.retain(|_, room| now.saturating_sub(room.last_activity_ms) < ROOM_IDLE_TTL_MS);
     }
 }
 
@@ -368,12 +401,20 @@ pub async fn handle_ws(
     );
 
     // Main loop: multiplex incoming WS frames and broadcast messages.
+    let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
         tokio::select! {
             // Message from this client.
             msg = ws_stream.next() => {
                 match msg {
                     Some(Ok(WsMessage::Text(text))) => {
+                        if text.len() > 65_536 {
+                            let err = serde_json::json!({"type": "error", "message": "message too large"});
+                            if let Ok(s) = serde_json::to_string(&err) {
+                                let _ = ws_sink.send(WsMessage::Text(s)).await;
+                            }
+                            continue;
+                        }
                         let parsed: serde_json::Value = match serde_json::from_str(&text) {
                             Ok(v) => v,
                             Err(_) => continue,
@@ -383,6 +424,7 @@ pub async fn handle_ws(
                         match msg_type.as_str() {
                             "set_name" => {
                                 if let Some(new_name) = parsed.get("name").and_then(|v| v.as_str()) {
+                                    let new_name = &new_name[..new_name.len().min(64)];
                                     let updated = update_participant_name(&store, &code, &participant_id, new_name);
                                     if let Some(p) = updated {
                                         broadcast(&store, &code, serde_json::json!({
@@ -406,8 +448,14 @@ pub async fn handle_ws(
                             }
                             "surgery" => {
                                 let token_index = parsed.get("token_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                                let new_text = parsed.get("new_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let old_text = parsed.get("old_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let new_text = {
+                                    let raw = parsed.get("new_text").and_then(|v| v.as_str()).unwrap_or("");
+                                    raw[..raw.len().min(4096)].to_string()
+                                };
+                                let old_text = {
+                                    let raw = parsed.get("old_text").and_then(|v| v.as_str()).unwrap_or("");
+                                    raw[..raw.len().min(4096)].to_string()
+                                };
 
                                 let (editor_color, editor_name) = get_participant_info(&store, &code, &participant_id);
                                 let edit = SurgeryEdit {
@@ -422,7 +470,10 @@ pub async fn handle_ws(
                                 apply_surgery(&store, &code, edit);
                             }
                             "chat" => {
-                                let text_content = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let text_content = {
+                                    let raw = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                                    raw[..raw.len().min(2048)].to_string()
+                                };
                                 let token_index = parsed.get("token_index").and_then(|v| v.as_u64()).map(|n| n as usize);
                                 let (author_color, author_name) = get_participant_info(&store, &code, &participant_id);
                                 let chat_msg = ChatMessage {
@@ -497,7 +548,17 @@ pub async fn handle_ws(
                                     );
                                 }
                             }
-                            _ => {}
+                            unknown => {
+                                // Log unrecognised message types (#2) rather than
+                                // silently dropping them so that client bugs are
+                                // visible in the server logs.
+                                tracing::warn!(
+                                    msg_type = unknown,
+                                    room = %code,
+                                    participant = %participant_id,
+                                    "received unknown WebSocket message type — ignoring"
+                                );
+                            }
                         }
                     }
                     Some(Ok(_)) => {} // Ignore binary / ping / pong frames
@@ -519,6 +580,13 @@ pub async fn handle_ws(
                         // Receiver fell behind; continue without the missed messages.
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+
+            // Keepalive ping to prevent idle connection teardown.
+            _ = ping_interval.tick() => {
+                if ws_sink.send(WsMessage::Ping(vec![])).await.is_err() {
+                    break;
                 }
             }
         }
@@ -1647,5 +1715,102 @@ mod tests {
 
         assert_eq!(a_events.len(), 1);
         assert!(b_events.is_empty());
+    }
+
+    // -- evict_idle_rooms ----------------------------------------------------
+
+    #[test]
+    fn test_evict_idle_rooms_removes_stale_room() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // Manually set last_activity_ms to far in the past
+        {
+            let mut guard = store.lock().unwrap();
+            let room = guard.get_mut(&code).unwrap();
+            room.last_activity_ms = 0; // epoch zero — definitely idle
+        }
+        evict_idle_rooms(&store);
+        let guard = store.lock().unwrap();
+        assert!(!guard.contains_key(&code), "stale room should have been evicted");
+    }
+
+    #[test]
+    fn test_evict_idle_rooms_keeps_active_room() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // last_activity_ms was just set to now_ms() in create_room
+        evict_idle_rooms(&store);
+        let guard = store.lock().unwrap();
+        assert!(guard.contains_key(&code), "recently active room should not be evicted");
+    }
+
+    #[test]
+    fn test_evict_idle_rooms_mixed() {
+        let store = new_room_store();
+        let code_active = create_room(&store);
+        let code_stale = create_room(&store);
+        {
+            let mut guard = store.lock().unwrap();
+            guard.get_mut(&code_stale).unwrap().last_activity_ms = 0;
+        }
+        evict_idle_rooms(&store);
+        let guard = store.lock().unwrap();
+        assert!(guard.contains_key(&code_active));
+        assert!(!guard.contains_key(&code_stale));
+    }
+
+    #[test]
+    fn test_evict_idle_rooms_empty_store_is_noop() {
+        let store = new_room_store();
+        evict_idle_rooms(&store); // must not panic
+        assert!(store.lock().unwrap().is_empty());
+    }
+
+    // -- recording_cap -------------------------------------------------------
+
+    #[test]
+    fn test_recording_cap_enforced() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // Lower the cap to a small value for testing
+        {
+            let mut guard = store.lock().unwrap();
+            guard.get_mut(&code).unwrap().recording_cap = 5;
+        }
+        start_recording(&store, &code);
+        for i in 0..10 {
+            maybe_record(&store, &code, serde_json::json!({"seq": i}));
+        }
+        let guard = store.lock().unwrap();
+        let room = guard.get(&code).unwrap();
+        assert_eq!(room.recorded_events.len(), 5, "cap should limit buffer to 5 events");
+        // The oldest events should have been dropped (FIFO trim)
+        assert_eq!(room.recorded_events[0].payload["seq"], 5);
+        assert_eq!(room.recorded_events[4].payload["seq"], 9);
+    }
+
+    #[test]
+    fn test_recording_cap_default_is_ten_thousand() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        let guard = store.lock().unwrap();
+        assert_eq!(guard.get(&code).unwrap().recording_cap, DEFAULT_RECORDING_CAP);
+    }
+
+    // -- generate_code collision test ----------------------------------------
+
+    #[test]
+    fn test_generate_code_no_collision_at_small_scale() {
+        let codes: Vec<String> = (0..1000).map(|_| generate_code()).collect();
+        for code in &codes {
+            assert_eq!(code.len(), 6, "code must be 6 chars: {}", code);
+            assert!(
+                code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
+                "code contains non-uppercase-alphanumeric chars: {}",
+                code
+            );
+        }
+        let unique: std::collections::HashSet<&String> = codes.iter().collect();
+        assert_eq!(unique.len(), codes.len(), "found duplicate codes among 1000 generated");
     }
 }

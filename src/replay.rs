@@ -81,6 +81,7 @@ mod tests {
             confidence: Some(0.9),
             perplexity: None,
             alternatives: vec![],
+            is_error: false,
         }
     }
 

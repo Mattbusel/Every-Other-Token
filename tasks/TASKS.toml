@@ -1,5 +1,20 @@
 # tokio-prompt-orchestrator: Self-Improving System Task Coordinator
 #
+# DEPRECATION NOTICE (2026-03-17)
+# ---------------------------------
+# This file is a manual task tracker inside the repository.  It causes merge
+# conflicts when multiple agents or developers update it concurrently, and its
+# status fields go stale quickly.
+#
+# RECOMMENDED MIGRATION: Move task tracking to a proper issue tracker
+# (GitHub Issues, Linear, Jira, etc.) where items are updated atomically and
+# do not require a git commit for every state change.
+#
+# Until migration is complete, existing entries are kept for historical context.
+# New tasks should NOT be added here — open a GitHub issue instead.
+# See: https://github.com/Mattbusel/Every-Other-Token/issues
+# ---------------------------------
+#
 # CLAIMING: Set status = "in_progress", owner = "<your-agent-id>", claimed_at = "<timestamp>"
 # COMPLETING: Set status = "completed", completed_at = "<timestamp>"
 # FORMAT: git commit this file after every claim/completion so agents see each other's state.

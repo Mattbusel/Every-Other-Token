@@ -14,6 +14,10 @@ pub struct ResearchRun {
     pub vocab_diversity: f64,
     /// Starting positions of runs of 5+ consecutive tokens with confidence < 0.4
     pub collapse_positions: Vec<usize>,
+    /// Per-transform breakdown: for each transform label, the mean perplexity of tokens
+    /// that were transformed with that label (useful for Chaos mode sub-transform analysis).
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub per_transform_perplexity: std::collections::HashMap<String, f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,6 +44,9 @@ pub struct ResearchAggregate {
     pub confidence_interval_95_perplexity: Option<(f64, f64)>,
     /// Minimum token count across all runs (truncation-based alignment length)
     pub aligned_length: usize,
+    /// Cross-run mean perplexity by transform label.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub mean_per_transform_perplexity: std::collections::HashMap<String, f64>,
 }
 
 fn std_dev(values: &[f64]) -> f64 {
@@ -52,6 +59,9 @@ fn std_dev(values: &[f64]) -> f64 {
     variance.sqrt()
 }
 
+// 95% CI: mean ± 1.96 * (sd / √n)
+// Ref: Casella & Berger, "Statistical Inference" 2nd ed. (2002), §9.2.
+// Note: uses Z-score approximation; valid when N ≥ 30 (CLT).
 fn ci_95(mean: f64, sd: f64, n: usize) -> (f64, f64) {
     let margin = 1.96 * sd / (n as f64).sqrt();
     (mean - margin, mean + margin)
@@ -177,7 +187,22 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             .iter()
             .map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0))
             .collect();
-        let collapse_positions = detect_collapse_positions(&per_token_confidences, 5, 0.4);
+        let collapse_positions = detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
+
+        // Per-transform perplexity breakdown
+        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        for event in &events {
+            if event.transformed {
+                let label = event.chaos_label.clone().unwrap_or_else(|| transform_str.clone());
+                if let Some(p) = event.perplexity {
+                    transform_perp.entry(label).or_default().push(p as f64);
+                }
+            }
+        }
+        let per_transform_perplexity: std::collections::HashMap<String, f64> = transform_perp
+            .into_iter()
+            .map(|(k, v)| (k, v.iter().sum::<f64>() / v.len() as f64))
+            .collect();
 
         // Persist run to DB if store is open
         if let (Some(ref s), Some(eid)) = (&store, exp_id) {
@@ -204,10 +229,37 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             avg_perplexity,
             vocab_diversity,
             collapse_positions,
+            per_transform_perplexity,
         });
     }
 
+    // Sample-size warning: CLT requires N >= 30 for valid inference
+    if args.runs < 30 {
+        eprintln!(
+            "[research] WARNING: Only {} run{} — statistical results may be unreliable. \
+             The central limit theorem typically requires N ≥ 30 for valid inference.",
+            args.runs,
+            if args.runs == 1 { "" } else { "s" }
+        );
+    }
+
     let aggregate = build_aggregate(args.runs, &runs);
+
+    // Auto-baseline: compare A (even runs) vs B (odd runs) confidence when data available.
+    // This always runs in research mode (no --baseline flag needed) if we have >= 2 runs.
+    let even_confs: Vec<f64> = runs.iter().filter(|r| r.run_index % 2 == 0).filter_map(|r| r.avg_confidence).collect();
+    let odd_confs: Vec<f64> = runs.iter().filter(|r| r.run_index % 2 == 1).filter_map(|r| r.avg_confidence).collect();
+    if !even_confs.is_empty() && !odd_confs.is_empty() {
+        let even_mean = even_confs.iter().sum::<f64>() / even_confs.len() as f64;
+        let odd_mean = odd_confs.iter().sum::<f64>() / odd_confs.len() as f64;
+        eprintln!("[auto-baseline] even_runs_mean_confidence={:.4} odd_runs_mean_confidence={:.4} delta={:+.4}",
+            even_mean, odd_mean, odd_mean - even_mean);
+        // Also run t-test if enough data
+        if let Some(p) = two_sample_t_test(&even_confs, &odd_confs) {
+            let sig = if p < 0.05 { "SIGNIFICANT" } else { "not significant" };
+            eprintln!("[auto-baseline] t-test p={:.4} ({})", p, sig);
+        }
+    }
 
     // Baseline comparison: if --baseline and there's a "none" transform in the DB
     if args.baseline {
@@ -265,7 +317,7 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
     // Export heatmap if requested
     if let (Some(ref exporter), Some(ref path)) = (heatmap_exporter, &args.heatmap_export) {
-        exporter.export_csv(path)?;
+        exporter.export_csv(path, args.heatmap_min_confidence, &args.heatmap_sort_by)?;
         eprintln!("[research] heatmap exported to {}", path);
     }
 
@@ -281,6 +333,28 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     let json = serde_json::to_string_pretty(&output)?;
     std::fs::write(&args.output, &json)?;
     eprintln!("[research] wrote {} bytes to {}", json.len(), args.output);
+
+    // Cost estimate summary (#13).
+    // GPT-3.5-Turbo at $0.002/1K tokens is used as a proxy; actual costs vary
+    // by model and direction (prompt vs. completion tokens).
+    let total_tokens: usize = output.runs.iter().map(|r| r.token_count).sum();
+    let estimated_cost = total_tokens as f64 / 1000.0 * 0.002;
+    eprintln!(
+        "[research] total tokens: {} | estimated cost: ${:.4} (GPT-3.5 proxy — verify for your model)",
+        total_tokens, estimated_cost
+    );
+
+    // Perplexity normalisation note (#20).
+    // Anthropic never exposes logprobs, so perplexity is unavailable.
+    // Cross-provider comparisons of perplexity are also not meaningful
+    // without normalising by log(vocab_size) for each model.
+    if output.provider == "anthropic" && output.aggregate.mean_perplexity.is_none() {
+        eprintln!(
+            "[research] note: Anthropic does not expose logprobs — \
+             perplexity/confidence metrics are unavailable. \
+             Use --provider openai for logprob-based analysis."
+        );
+    }
 
     Ok(())
 }
@@ -299,6 +373,7 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
             confidence_interval_95_confidence: None,
             confidence_interval_95_perplexity: None,
             aligned_length: 0,
+            mean_per_transform_perplexity: std::collections::HashMap::new(),
         };
     }
 
@@ -341,6 +416,18 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
 
     let aligned_length = runs.iter().map(|r| r.token_count).min().unwrap_or(0);
 
+    // Aggregate per-transform perplexity across runs
+    let mut all_transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    for run in runs {
+        for (label, perp) in &run.per_transform_perplexity {
+            all_transform_perp.entry(label.clone()).or_default().push(*perp);
+        }
+    }
+    let mean_per_transform_perplexity: std::collections::HashMap<String, f64> = all_transform_perp
+        .into_iter()
+        .map(|(k, v)| (k, v.iter().sum::<f64>() / v.len() as f64))
+        .collect();
+
     ResearchAggregate {
         total_runs,
         mean_token_count,
@@ -353,6 +440,7 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
         confidence_interval_95_confidence,
         confidence_interval_95_perplexity,
         aligned_length,
+        mean_per_transform_perplexity,
     }
 }
 
@@ -473,7 +561,22 @@ async fn run_research_for_prompt(
         let unique: std::collections::HashSet<&str> = events.iter().map(|e| e.original.as_str()).collect();
         let vocab_diversity = if token_count == 0 { 0.0 } else { unique.len() as f64 / token_count as f64 };
         let per_token_confidences: Vec<f64> = events.iter().map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0)).collect();
-        let collapse_positions = detect_collapse_positions(&per_token_confidences, 5, 0.4);
+        let collapse_positions = detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
+
+        // Per-transform perplexity breakdown
+        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        for event in &events {
+            if event.transformed {
+                let label = event.chaos_label.clone().unwrap_or_else(|| transform_str.clone());
+                if let Some(p) = event.perplexity {
+                    transform_perp.entry(label).or_default().push(p as f64);
+                }
+            }
+        }
+        let per_transform_perplexity: std::collections::HashMap<String, f64> = transform_perp
+            .into_iter()
+            .map(|(k, v)| (k, v.iter().sum::<f64>() / v.len() as f64))
+            .collect();
 
         runs.push(ResearchRun {
             run_index: i,
@@ -483,6 +586,7 @@ async fn run_research_for_prompt(
             avg_perplexity,
             vocab_diversity,
             collapse_positions,
+            per_transform_perplexity,
         });
     }
 
@@ -610,6 +714,7 @@ mod tests {
                 avg_perplexity: perp,
                 vocab_diversity: vd,
                 collapse_positions: vec![],
+                per_transform_perplexity: std::collections::HashMap::new(),
             })
             .collect()
     }
@@ -685,6 +790,7 @@ mod tests {
                 confidence_interval_95_confidence: None,
                 confidence_interval_95_perplexity: None,
                 aligned_length: 0,
+                mean_per_transform_perplexity: std::collections::HashMap::new(),
             },
         };
         let json = serde_json::to_string(&output).expect("serialize");
@@ -703,6 +809,7 @@ mod tests {
             avg_perplexity: Some(1.05),
             vocab_diversity: 0.7,
             collapse_positions: vec![],
+            per_transform_perplexity: std::collections::HashMap::new(),
         };
         let json = serde_json::to_string(&run).expect("serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("parse");

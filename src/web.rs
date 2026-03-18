@@ -965,6 +965,7 @@ mod tests {
             confidence: None,
             perplexity: None,
             alternatives: vec![],
+            is_error: false,
         };
         let diff = DiffTokenEvent {
             side: "openai",
@@ -989,6 +990,7 @@ mod tests {
             confidence: None,
             perplexity: None,
             alternatives: vec![],
+            is_error: false,
         };
         let diff = DiffTokenEvent {
             side: "anthropic",
@@ -1449,5 +1451,118 @@ mod tests {
         let hook_pos = INDEX_HTML.find("_baseStartClick").expect("base start click hook not found");
         let after = &INDEX_HTML[hook_pos..hook_pos + 500];
         assert!(after.contains("amHost") || after.contains("roomCode"));
+    }
+
+    // -- url_decode tests (#1 — additional coverage) --
+
+    #[test]
+    fn test_url_decode_plain_ascii() {
+        assert_eq!(url_decode("hello"), "hello");
+    }
+
+    #[test]
+    fn test_url_decode_plus_to_space() {
+        assert_eq!(url_decode("hello+world"), "hello world");
+    }
+
+    #[test]
+    fn test_url_decode_percent_space() {
+        assert_eq!(url_decode("hello%20world"), "hello world");
+    }
+
+    #[test]
+    fn test_url_decode_equals() {
+        assert_eq!(url_decode("a%3Db"), "a=b");
+    }
+
+    #[test]
+    fn test_url_decode_ampersand() {
+        assert_eq!(url_decode("a%26b"), "a&b");
+    }
+
+    #[test]
+    fn test_url_decode_multibyte_utf8_accent() {
+        // %C3%A9 encodes 'é' (U+00E9) in UTF-8 — two-byte sequence
+        assert_eq!(url_decode("%C3%A9"), "é");
+    }
+
+    #[test]
+    fn test_url_decode_trailing_percent_no_panic() {
+        let result = url_decode("hello%");
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn test_url_decode_one_hex_digit_no_panic() {
+        let result = url_decode("hello%2");
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn test_url_decode_invalid_hex_emitted_literally() {
+        let result = url_decode("%ZZ");
+        assert!(result.contains('%'));
+    }
+
+    #[test]
+    fn test_url_decode_empty_string_is_empty() {
+        assert_eq!(url_decode(""), "");
+    }
+
+    #[test]
+    fn test_url_decode_only_plus() {
+        assert_eq!(url_decode("+++"), "   ");
+    }
+
+    #[test]
+    fn test_url_decode_mixed_equals_ampersand() {
+        assert_eq!(url_decode("foo%3Dbar%26baz"), "foo=bar&baz");
+    }
+
+    #[test]
+    fn test_url_decode_slash() {
+        assert_eq!(url_decode("%2F"), "/");
+    }
+
+    #[test]
+    fn test_url_decode_lowercase_hex() {
+        assert_eq!(url_decode("%2f"), "/");
+    }
+
+    #[test]
+    fn test_url_decode_encoded_percent() {
+        assert_eq!(url_decode("%25"), "%");
+    }
+
+    // -- parse_query tests --
+
+    #[test]
+    fn test_parse_query_single_pair() {
+        let m = parse_query("prompt=hello");
+        assert_eq!(m.get("prompt").map(|s| s.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn test_parse_query_multiple_pairs() {
+        let m = parse_query("a=1&b=2&c=3");
+        assert_eq!(m.get("a").map(|s| s.as_str()), Some("1"));
+        assert_eq!(m.get("b").map(|s| s.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn test_parse_query_url_decoded_value() {
+        let m = parse_query("prompt=hello%20world");
+        assert_eq!(m.get("prompt").map(|s| s.as_str()), Some("hello world"));
+    }
+
+    #[test]
+    fn test_parse_query_empty_value() {
+        let m = parse_query("key=");
+        assert_eq!(m.get("key").map(|s| s.as_str()), Some(""));
+    }
+
+    #[test]
+    fn test_parse_query_empty_string_no_panic() {
+        let _ = parse_query("");
     }
 }

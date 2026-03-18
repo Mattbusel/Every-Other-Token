@@ -168,14 +168,17 @@ impl PidState {
     /// Compute PID output given current error and spec gains.
     /// Returns the signed adjustment to apply to the current value.
     fn update(&mut self, error: f64, spec: &ParameterSpec, dt: f64) -> f64 {
+        // I += Ki * error * dt  (Åström & Hägglund 1995, §3.5; with anti-windup clamping)
         self.integral += error * dt;
         // Clamp integral to prevent wind-up: ±(max - min)
         let wind_up_limit = (spec.max - spec.min).abs();
         self.integral = self.integral.clamp(-wind_up_limit, wind_up_limit);
 
+        // D = Kd * (error - prev_error) / dt  (discrete backward difference; Ziegler-Nichols, 1942)
         let derivative = if dt > 0.0 { (error - self.prev_error) / dt } else { 0.0 };
         self.prev_error = error;
 
+        // P = Kp * error  (Åström & Hägglund, "PID Controllers: Theory, Design, and Tuning", 2nd ed., 1995, §2.2)
         spec.kp * error + spec.ki * self.integral + spec.kd * derivative
     }
 

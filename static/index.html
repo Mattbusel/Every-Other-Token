@@ -222,9 +222,23 @@ canvas#depgraph{width:100%;height:200px;display:block}
       <ol id="research-perp-list" style="list-style:none;font-size:.8rem;color:#c9d1d9"></ol>
     </div>
     <div style="margin-top:16px">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Perplexity Distribution</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:#8b949e;margin-bottom:4px">
+        Perplexity bins: <input type="range" id="perp-bin-slider" min="5" max="50" value="10" style="width:80px;accent-color:#a371f7">
+        <span id="perp-bin-count">10</span>
+      </label>
+      <div id="research-perp-hist" style="display:flex;gap:2px;align-items:flex-end;height:48px;margin-top:4px"></div>
+    </div>
+    <div style="margin-top:16px">
       <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Confidence Distribution</div>
       <div id="research-conf-hist" style="display:flex;gap:2px;align-items:flex-end;height:48px;margin-top:4px"></div>
       <div style="display:flex;justify-content:space-between;font-size:.6rem;color:#484f58;margin-top:2px"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+    </div>
+    <div style="margin-top:16px" id="sig-test-section">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">A/B Significance Test (Even vs Odd Runs)</div>
+      <div id="sig-test-result" style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:10px 12px;font-size:.8rem">
+        <span style="color:#484f58">Run at least 4 tokens from two alternating runs to see results.</span>
+      </div>
     </div>
     <div style="margin-top:16px">
       <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Citation</div>
@@ -290,6 +304,7 @@ const TX={
 
 /* ---- State ---- */
 let es=null, mode='single', allTokens=[], graphNodes=[], surgeryLog=[];
+let undoStack = []; // {sp, oldText, newText, idx}
 let perpWindow=[], expATokens=[], expBTokens=[];
 const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff'),experiment:$('#v-experiment'),research:$('#v-research')};
 
@@ -357,6 +372,71 @@ function updatePerpSparkline(perplexity){
   line.setAttribute('points',pts);
 }
 
+/* ---- Welch's t-test for significance testing ---- */
+function welchT(a, b) {
+  if (a.length < 2 || b.length < 2) return null;
+  const ma = a.reduce((s,x)=>s+x,0)/a.length;
+  const mb = b.reduce((s,x)=>s+x,0)/b.length;
+  const va = a.reduce((s,x)=>s+(x-ma)**2,0)/(a.length-1);
+  const vb = b.reduce((s,x)=>s+(x-mb)**2,0)/(b.length-1);
+  const se = Math.sqrt(va/a.length + vb/b.length);
+  if (se === 0) return null;
+  const t = Math.abs(ma - mb) / se;
+  // Normal CDF approximation for p-value (two-tailed)
+  const normalCDF = z => {
+    const t = 1/(1+0.2316419*Math.abs(z));
+    const poly = t*(0.319381530+t*(-0.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))));
+    const pdf = Math.exp(-z*z/2)/Math.sqrt(2*Math.PI);
+    const p = 1 - pdf*poly;
+    return z >= 0 ? p : 1-p;
+  };
+  const p = 2*(1-normalCDF(t));
+  return {t, p, ma, mb, na: a.length, nb: b.length};
+}
+
+function updateSigTest(tokens) {
+  const evenConf = tokens.filter((_,i)=>i%2===0).map(t=>t.confidence).filter(c=>c!=null);
+  const oddConf = tokens.filter((_,i)=>i%2!==0).map(t=>t.confidence).filter(c=>c!=null);
+  const el = document.getElementById('sig-test-result');
+  if (!el) return;
+  const r = welchT(evenConf, oddConf);
+  if (!r) {
+    el.innerHTML = '<span style="color:#484f58">Not enough confidence data for t-test (need OpenAI provider).</span>';
+    return;
+  }
+  const sig = r.p < 0.05;
+  const color = sig ? '#f85149' : '#3fb950';
+  el.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div><span style="color:#8b949e">Even tokens mean conf:</span> <strong style="color:#58a6ff">${r.ma.toFixed(4)}</strong> (n=${r.na})</div>
+      <div><span style="color:#8b949e">Odd tokens mean conf:</span> <strong style="color:#a371f7">${r.mb.toFixed(4)}</strong> (n=${r.nb})</div>
+      <div><span style="color:#8b949e">t-statistic:</span> <strong style="color:#e3b341">${r.t.toFixed(3)}</strong></div>
+      <div><span style="color:#8b949e">p-value:</span> <strong style="color:${color}">${r.p.toFixed(4)}</strong></div>
+      <div style="padding:2px 8px;border-radius:3px;background:${sig?'#2d1b1b':'#0d2010'};color:${color};font-size:.75rem">${sig?'⚠ SIGNIFICANT (p<0.05)':'✓ Not significant'}</div>
+    </div>`;
+}
+
+/* ---- Perplexity histogram ---- */
+function renderPerpHist(binCount){
+    const hist=document.getElementById('research-perp-hist');
+    if(!hist)return;
+    const withPerp=allTokens.filter(t=>t.perplexity!=null);
+    if(!withPerp.length)return;
+    const maxP=Math.max(...withPerp.map(t=>t.perplexity));
+    const minP=Math.min(...withPerp.map(t=>t.perplexity));
+    const buckets=Array(binCount).fill(0);
+    withPerp.forEach(t=>{
+        const b=Math.min(binCount-1,Math.floor((t.perplexity-minP)/(maxP-minP+1e-9)*binCount));
+        buckets[b]++;
+    });
+    const maxB=Math.max(...buckets,1);
+    hist.innerHTML=buckets.map((v,i)=>{
+        const lo=(minP+(maxP-minP)/binCount*i).toFixed(1);
+        const hi=(minP+(maxP-minP)/binCount*(i+1)).toFixed(1);
+        return `<div style="flex:1;background:#a371f7;height:${Math.round(v/maxB*44)+2}px;border-radius:2px 2px 0 0" title="${lo}–${hi}: ${v}"></div>`;
+    }).join('');
+}
+
 /* ---- Research Dashboard ---- */
 function renderResearch(){
   const grid=$('#research-grid');
@@ -402,6 +482,18 @@ function renderResearch(){
   if(citation){
     const ts=new Date().toISOString().replace('T',' ').replace(/\.\d+Z$/,' UTC');
     citation.textContent=`Every Other Token (v4.0.0). Session recorded ${ts}.\nTokens: ${allTokens.length}, Transform: ${$('#transform').value}, Provider: ${$('#provider').value}, Model: ${$('#model').value||'auto'}.\nVocab diversity: ${diversity}, Avg perplexity: ${avgPerp}, Avg confidence: ${avgConf}.`;
+  }
+  /* Significance test */
+  updateSigTest(allTokens);
+  /* Perplexity histogram */
+  renderPerpHist(10);
+  /* Wire perplexity bin slider */
+  const perpSlider=document.getElementById('perp-bin-slider');
+  if(perpSlider){
+    perpSlider.oninput=function(){
+      document.getElementById('perp-bin-count').textContent=this.value;
+      renderPerpHist(parseInt(this.value));
+    };
   }
 }
 
@@ -481,6 +573,7 @@ function enableSurgery(container){
         sp.textContent=newText;
         inp.replaceWith(sp);
         if(newText!==orig){
+          undoStack.push({sp, oldText: orig, newText, idx: parseInt(sp.dataset.idx || '-1')});
           surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
           if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}
         }
@@ -564,7 +657,7 @@ $('#start').onclick=()=>{
     const el=$('#mp-'+t);if(el)el.innerHTML='<span class="multi-label">'+t+'</span>';
   });
   $('#stats').textContent='';
-  allTokens=[];graphNodes=[];surgeryLog=[];
+  allTokens=[];graphNodes=[];surgeryLog=[];undoStack=[];
   if($('#graphtoggle').checked)drawGraph();
 
   const p=encodeURIComponent($('#prompt').value);
@@ -742,6 +835,8 @@ $('#btn-export').onclick=()=>{
     model:$('#model').value||'auto',
     transform:$('#transform').value,
     timestamp:new Date().toISOString(),
+    exported_at: new Date().toISOString(),
+    mode: mode,
     token_count:allTokens.length,
     transformed_count:allTokens.filter(t=>t.transformed).length,
     tokens:allTokens.map(t=>({text:t.text,original:t.original,index:t.index,transformed:t.transformed,importance:t.importance,chaos_label:t.chaos_label||null,confidence:t.confidence,perplexity:t.perplexity,alternatives:t.alternatives||[]})),
@@ -758,9 +853,16 @@ $('#btn-export').onclick=()=>{
 /* ---- Export CSV ---- */
 $('#btn-export-csv').onclick=()=>{
   if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return;}
+  const meta=[
+    '# Every-Other-Token Export',
+    '# exported_at: '+new Date().toISOString(),
+    '# prompt: '+JSON.stringify(document.getElementById('prompt')?document.getElementById('prompt').value:''),
+    '# token_count: '+allTokens.length,
+    ''
+  ].join('\n');
   const header='index,original,text,transformed,confidence,perplexity\n';
   const rows=allTokens.map(t=>[t.index,JSON.stringify(t.original),JSON.stringify(t.text),t.transformed,t.confidence!=null?t.confidence:'',t.perplexity!=null?t.perplexity:''].join(',')).join('\n');
-  const blob=new Blob([header+rows],{type:'text/csv'});
+  const blob=new Blob([meta+header+rows],{type:'text/csv'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;a.download='eot_session_'+Date.now()+'.csv';
@@ -770,6 +872,20 @@ $('#btn-export-csv').onclick=()=>{
 
 /* ---- Resize graph on window resize ---- */
 window.addEventListener('resize',()=>{if($('#graphtoggle').checked)drawGraph()});
+
+/* ---- Token surgery undo (Ctrl+Z / Cmd+Z) ---- */
+document.addEventListener('keydown', function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
+        e.preventDefault();
+        const last=undoStack.pop();
+        if(!last)return;
+        last.sp.textContent=last.oldText;
+        if(last.idx>=0&&allTokens[last.idx])allTokens[last.idx].text=last.oldText;
+        if(typeof ws!=='undefined'&&ws&&ws.readyState===WebSocket.OPEN){
+            ws.send(JSON.stringify({type:'surgery',token_index:last.idx,old_text:last.newText,new_text:last.oldText}));
+        }
+    }
+});
 
 /* ================================================================
    MULTIPLAYER — WebSocket collaboration
