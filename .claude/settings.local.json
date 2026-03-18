@@ -92,7 +92,8 @@
       "Bash(for dir:*)",
       "Bash(__NEW_LINE_5700714a3ccc5000__ find:*)",
       "Bash(__NEW_LINE_5700714a3ccc5000__ echo:*)",
-      "Bash(__NEW_LINE_5700714a3ccc5000__ done:*)"
+      "Bash(__NEW_LINE_5700714a3ccc5000__ done:*)",
+      "WebFetch(domain:crates.io)"
     ],
     "defaultMode": "bypassPermissions"
   }
