@@ -76,6 +76,14 @@ crate-type = ["rlib"]
 name = "every-other-token"
 path = "src/main.rs"
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+pedantic = "warn"
+
 [profile.release]
 opt-level = 3
 lto = true
