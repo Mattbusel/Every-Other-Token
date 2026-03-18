@@ -61,7 +61,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
       - run: cargo doc --no-deps --features sqlite-log,self-tune,self-modify,helix-bridge
+        env:
+          RUSTDOCFLAGS: "-D warnings"
 
   release-build:
     name: Release build
@@ -97,7 +101,6 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
-    if: runner.os == 'Linux'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
