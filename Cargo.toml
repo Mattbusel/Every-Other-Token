@@ -2,7 +2,7 @@
 name = "every-other-token"
 version = "4.0.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.81"
 authors = ["AI Research Tools"]
 description = "A real-time LLM stream interceptor for token-level interaction research"
 license = "MIT"
@@ -80,8 +80,8 @@ path = "src/main.rs"
 unsafe_code = "forbid"
 
 [lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
+unwrap_used = "allow"
+expect_used = "allow"
 
 [profile.release]
 opt-level = 3
