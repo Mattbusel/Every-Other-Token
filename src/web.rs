@@ -90,7 +90,66 @@ pub fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
         .collect()
 }
 
-/// Start the web UI server and open the browser.
+/// Query parameters parsed from a /stream request.
+struct StreamParams {
+    prompt: String,
+    transform: String,
+    provider: String,
+    model: String,
+    rate: f64,
+    seed: Option<u64>,
+    top_logprobs: u8,
+    system: Option<String>,
+    visual: bool,
+    heatmap: bool,
+}
+
+fn parse_stream_params(query: &std::collections::HashMap<String, String>) -> StreamParams {
+    StreamParams {
+        prompt: query.get("prompt").cloned().unwrap_or_default(),
+        transform: query.get("transform").cloned().unwrap_or_else(|| "reverse".to_string()),
+        provider: query.get("provider").cloned().unwrap_or_else(|| "openai".to_string()),
+        model: query.get("model").cloned().unwrap_or_default(),
+        rate: query.get("rate").and_then(|r| r.parse().ok()).unwrap_or(0.5),
+        seed: query.get("seed").and_then(|s| s.parse().ok()),
+        top_logprobs: query.get("top_logprobs").and_then(|t| t.parse().ok()).unwrap_or(5),
+        system: query.get("system").filter(|s| !s.is_empty()).cloned(),
+        visual: query.get("visual").map(|v| v == "1" || v == "true").unwrap_or(false),
+        heatmap: query.get("heatmap").map(|v| v == "1" || v == "true").unwrap_or(false),
+    }
+}
+
+/// # HTTP API
+///
+/// ## Endpoints
+///
+/// - `GET /` — Serves the embedded single-page web UI
+///
+/// - `GET /stream?prompt=...&transform=...&provider=...&model=...&rate=...`  
+///   Server-Sent Events stream of [`TokenEvent`] JSON objects.  
+///   Each event: `data: {"text":"...","index":N,"transformed":bool,...}`
+///
+/// - `GET /diff-stream?prompt=...&transform=...`  
+///   SSE stream with two providers side-by-side; each event includes `"side":"openai"|"anthropic"`.
+///
+/// - `GET /ab-stream?prompt=...&system_a=...&system_b=...`  
+///   SSE stream for A/B experiment mode.
+///
+/// - `POST /room/create` — Creates a multiplayer room, returns `{"code":"XXXXXX"}`.
+///
+/// - `GET /join/CODE` — Returns room join HTML page.
+///
+/// - `WS /ws/CODE` — WebSocket connection for multiplayer collaboration.  
+///   **Inbound message types** (JSON):  
+///   `{"type":"set_name","name":"..."}` — Update display name (max 64 chars)  
+///   `{"type":"vote","transform":"...","dir":"up"|"down"}` — Cast a vote  
+///   `{"type":"surgery","token_index":N,"new_text":"...","old_text":"..."}` — Edit a token  
+///   `{"type":"chat","text":"...","token_index":N}` — Send a chat message  
+///   `{"type":"record_start"}` / `{"type":"record_stop"}` — Recording control  
+///   `{"type":"token",...}` — Host broadcasts a token event to guests  
+///   **Outbound event types**: `welcome`, `participant_join`, `participant_leave`,  
+///   `participant_update`, `vote_update`, `surgery`, `chat`, `record_started`,  
+///   `record_stopped`, `replay_event`, `replay_done`, `stream_done`, `pong`, `error`
 pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
 
@@ -235,17 +294,16 @@ async fn handle_connection(
         }
         "/stream" => {
             let params = parse_query(query_str);
-            let prompt = params.get("prompt").cloned().unwrap_or_default();
-            let transform_str = params
-                .get("transform")
-                .cloned()
-                .unwrap_or_else(|| "reverse".to_string());
-            let provider_str = params
-                .get("provider")
-                .cloned()
-                .unwrap_or_else(|| default_provider.to_string());
-            let model_input = params.get("model").cloned().unwrap_or_default();
-            let heatmap = params.get("heatmap").is_some_and(|v| v == "1");
+            let sp = parse_stream_params(&params);
+            let prompt = sp.prompt;
+            let transform_str = sp.transform;
+            let provider_str = if sp.provider == "openai" {
+                default_provider.to_string()
+            } else {
+                sp.provider
+            };
+            let model_input = sp.model;
+            let heatmap = sp.heatmap;
 
             let provider = match provider_str.as_str() {
                 "anthropic" => Provider::Anthropic,

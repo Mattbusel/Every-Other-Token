@@ -73,7 +73,20 @@ fn load_file(path: &PathBuf) -> EotConfig {
         Err(_) => return EotConfig::default(),
     };
     match toml::from_str::<EotConfig>(&text) {
-        Ok(cfg) => cfg,
+        Ok(mut cfg) => {
+            // Validate rate is in [0.0, 1.0]; warn and clamp if out of range.
+            if let Some(r) = cfg.rate {
+                if !(0.0..=1.0).contains(&r) {
+                    eprintln!(
+                        "[config] warning: rate={} in {} is out of range [0.0, 1.0]; clamping",
+                        r,
+                        path.display()
+                    );
+                    cfg.rate = Some(r.clamp(0.0, 1.0));
+                }
+            }
+            cfg
+        }
         Err(e) => {
             eprintln!(
                 "[config] warning: failed to parse {}: {}",
@@ -206,5 +219,34 @@ mod tests {
         assert_eq!(base.port, Some(9999));
         assert_eq!(base.top_logprobs, Some(10));
         assert_eq!(base.system_a.as_deref(), Some("Be concise."));
+    }
+
+    // -- Rate validation tests (#15) --
+
+    #[test]
+    fn test_load_file_rate_too_high_clamped_to_one() {
+        let tmp = std::env::temp_dir().join("eot_test_rate_high.toml");
+        std::fs::write(&tmp, "rate = 5.0\n").ok();
+        let cfg = load_file(&tmp);
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(cfg.rate, Some(1.0));
+    }
+
+    #[test]
+    fn test_load_file_rate_negative_clamped_to_zero() {
+        let tmp = std::env::temp_dir().join("eot_test_rate_neg.toml");
+        std::fs::write(&tmp, "rate = -0.5\n").ok();
+        let cfg = load_file(&tmp);
+        std::fs::remove_file(&tmp).ok();
+        assert_eq!(cfg.rate, Some(0.0));
+    }
+
+    #[test]
+    fn test_load_file_rate_valid_unchanged() {
+        let tmp = std::env::temp_dir().join("eot_test_rate_ok.toml");
+        std::fs::write(&tmp, "rate = 0.4\n").ok();
+        let cfg = load_file(&tmp);
+        std::fs::remove_file(&tmp).ok();
+        assert!((cfg.rate.unwrap() - 0.4).abs() < 1e-9);
     }
 }

@@ -41,7 +41,9 @@
       "Bash(git:*)",
       "Bash(powershell -c \"Get-Item 'R:\\\\cargo-target' | Select-Object FullName; \\(Get-ChildItem 'R:\\\\cargo-target' -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum\\).Sum / 1GB\")",
       "Bash(bash ./scripts/ratio_check.sh)",
-      "Bash(bash scripts/ratio_check.sh)"
+      "Bash(bash scripts/ratio_check.sh)",
+      "Bash(powershell -Command \"\\(Get-Content src/lib.rs -Raw\\) -replace ''''execute_with_retry\\\\\\(&self\\\\.client, req, 3\\\\\\)'''', ''''execute_with_retry\\(&self.client, req, self.max_retries\\)'''' | Set-Content src/lib.rs\")",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -327,8 +327,23 @@ pub fn maybe_record(store: &RoomStore, code: &str, payload: serde_json::Value) {
                 let start = room.recording_start_ms.unwrap_or_else(now_ms);
                 let offset_ms = now_ms().saturating_sub(start);
                 room.recorded_events.push(RecordedEvent { offset_ms, payload });
-                while room.recorded_events.len() > room.recording_cap {
-                    room.recorded_events.remove(0);
+                // Count dropped events and warn
+                let dropped = if room.recorded_events.len() > room.recording_cap {
+                    let excess = room.recorded_events.len() - room.recording_cap;
+                    for _ in 0..excess { room.recorded_events.remove(0); }
+                    excess
+                } else {
+                    0
+                };
+
+                if dropped > 0 {
+                    // Notify all subscribers that recording was truncated
+                    let warn = serde_json::json!({
+                        "type": "record_truncated",
+                        "dropped": dropped,
+                        "cap": room.recording_cap,
+                    });
+                    let _ = room.broadcast_tx.send(warn);
                 }
                 room.last_activity_ms = now_ms();
             }

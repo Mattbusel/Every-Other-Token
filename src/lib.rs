@@ -161,6 +161,8 @@ pub struct TokenInterceptor {
     pub min_confidence: Option<f64>,
     /// Timestamp of the last received token, used for timing-based confidence proxy.
     last_token_instant: Option<std::time::Instant>,
+    /// Maximum retry attempts for API calls on 429/5xx (configurable via --max-retries).
+    pub max_retries: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +276,7 @@ impl TokenInterceptor {
             pending_delay_ms: 0,
             min_confidence: None,
             last_token_instant: None,
+            max_retries: 3,
         })
     }
 
@@ -456,7 +459,7 @@ impl TokenInterceptor {
             .build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
-        let response = execute_with_retry(&self.client, req, 3).await
+        let response = execute_with_retry(&self.client, req, self.max_retries).await
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
@@ -550,13 +553,13 @@ impl TokenInterceptor {
             .client
             .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-version", providers::ANTHROPIC_API_VERSION)
             .header("Content-Type", "application/json")
             .json(&request)
             .build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
-        let response = execute_with_retry(&self.client, req, 3).await
+        let response = execute_with_retry(&self.client, req, self.max_retries).await
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
@@ -840,8 +843,9 @@ impl TokenInterceptor {
                 let (display_text, chaos_label) = if should_transform {
                     self.transformed_count += 1;
                     let (text, label) = self.transform.apply_with_label_rng(&token, &mut self.rng);
-                    let cl = if matches!(self.transform, Transform::Chaos) {
-                        Some(label.to_string())
+                    let cl = if matches!(self.transform, Transform::Chaos) || text.is_empty() {
+                        // Chaos: use sub-transform label; Delete: mark explicitly as "deleted"
+                        Some(if text.is_empty() { "deleted".to_string() } else { label.to_string() })
                     } else {
                         None
                     };
@@ -858,10 +862,10 @@ impl TokenInterceptor {
                     }
                 }
 
-                // Delete transform: skip printing/emitting if the result is empty
+                // Delete transform: the result is an empty string (chaos_label="deleted").
                 let is_deleted = should_transform && display_text.is_empty();
 
-                // Web mode: send event through channel
+                // Web / terminal / json output — skip deleted tokens for display.
                 if !is_deleted {
                     if let Some(tx) = &self.web_tx {
                         let event = TokenEvent {
@@ -1137,6 +1141,7 @@ mod tests {
             pending_delay_ms: 0,
             min_confidence: None,
             last_token_instant: None,
+            max_retries: 3,
         }
     }
 
@@ -2102,3 +2107,4 @@ mod wasm_support {
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub use wasm_support::wasm_run;
+
