@@ -77,7 +77,8 @@ impl Replayer {
         tx: UnboundedSender<TokenEvent>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         for record in records {
-            tx.send(record.event).map_err(|e| format!("send error: {}", e))?;
+            tx.send(record.event)
+                .map_err(|e| format!("send error: {}", e))?;
         }
         Ok(())
     }

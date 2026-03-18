@@ -1,13 +1,13 @@
 //! HTTP client and bridge runner for HelixRouter integration.
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
-use tracing::{warn, error};
+use tracing::{error, warn};
 
-use crate::self_tune::telemetry_bus::{TelemetryBus, TelemetrySnapshot};
 use super::converter::stats_to_snapshot;
+use crate::self_tune::telemetry_bus::{TelemetryBus, TelemetrySnapshot};
 
 // --- HelixRouter API types (mirror what HelixRouter exposes) ---
 
@@ -25,11 +25,11 @@ pub enum RoutingStrategy {
 impl std::fmt::Display for RoutingStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RoutingStrategy::Inline  => write!(f, "Inline"),
-            RoutingStrategy::Spawn   => write!(f, "Spawn"),
+            RoutingStrategy::Inline => write!(f, "Inline"),
+            RoutingStrategy::Spawn => write!(f, "Spawn"),
             RoutingStrategy::CpuPool => write!(f, "CpuPool"),
-            RoutingStrategy::Batch   => write!(f, "Batch"),
-            RoutingStrategy::Drop    => write!(f, "Drop"),
+            RoutingStrategy::Batch => write!(f, "Batch"),
+            RoutingStrategy::Drop => write!(f, "Drop"),
         }
     }
 }
@@ -357,12 +357,15 @@ impl HelixBridge {
     /// This function never panics.
     pub async fn fetch_stats(&self) -> Result<RouterStats, HelixBridgeError> {
         let url = format!("{}/api/stats", self.config.base_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            HelixBridgeError::Connect {
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| HelixBridgeError::Connect {
                 url: url.clone(),
                 detail: e.to_string(),
-            }
-        })?;
+            })?;
 
         if !resp.status().is_success() {
             return Err(HelixBridgeError::Http {
@@ -479,9 +482,7 @@ impl HelixBridge {
     ///
     /// # Panics
     /// This function never panics.
-    pub async fn fetch_neural_state(
-        &self,
-    ) -> Result<Option<NeuralRouterState>, HelixBridgeError> {
+    pub async fn fetch_neural_state(&self) -> Result<Option<NeuralRouterState>, HelixBridgeError> {
         let url = format!("{}/api/neural", self.config.base_url);
         let resp = self
             .client
@@ -593,9 +594,9 @@ impl HelixBridge {
                         // into HelixRouter's composite pressure score via POST /api/telemetry,
                         // allowing HelixRouter to raise its own spawn threshold before
                         // its own queues fill — a predictive rather than reactive signal.
-                        let eot_pressure = eot_snap.drop_rate.max(
-                            (eot_snap.avg_latency_us / 50_000.0).clamp(0.0, 1.0),
-                        );
+                        let eot_pressure = eot_snap
+                            .drop_rate
+                            .max((eot_snap.avg_latency_us / 50_000.0).clamp(0.0, 1.0));
                         if eot_pressure > 0.0 {
                             if let Err(e) = self.push_eot_pressure(eot_pressure).await {
                                 tracing::debug!(
@@ -617,8 +618,7 @@ impl HelixBridge {
                             // pressure is only mildly elevated (within 10% of threshold).
                             let pressure_far_from_threshold = stats.pressure_score
                                 > self.config.pressure_high_threshold * 1.1
-                                || stats.pressure_score
-                                    < self.config.pressure_low_threshold * 0.9;
+                                || stats.pressure_score < self.config.pressure_low_threshold * 0.9;
                             let should_push = !neural_healthy || pressure_far_from_threshold;
 
                             if should_push {
@@ -766,12 +766,30 @@ mod tests {
             adaptive_spawn_threshold: 100,
             pressure_score: 0.2,
             routed_by_strategy: vec![
-                RoutedStrategyCount { strategy: RoutingStrategy::Inline, count: 10 },
-                RoutedStrategyCount { strategy: RoutingStrategy::Spawn, count: 5 },
+                RoutedStrategyCount {
+                    strategy: RoutingStrategy::Inline,
+                    count: 10,
+                },
+                RoutedStrategyCount {
+                    strategy: RoutingStrategy::Spawn,
+                    count: 5,
+                },
             ],
             latency_by_strategy: vec![
-                LatencySummary { strategy: RoutingStrategy::Inline, count: 10, avg_ms: 1.2, ema_ms: 1.1, p95_ms: 4 },
-                LatencySummary { strategy: RoutingStrategy::Spawn, count: 5, avg_ms: 8.5, ema_ms: 8.0, p95_ms: 18 },
+                LatencySummary {
+                    strategy: RoutingStrategy::Inline,
+                    count: 10,
+                    avg_ms: 1.2,
+                    ema_ms: 1.1,
+                    p95_ms: 4,
+                },
+                LatencySummary {
+                    strategy: RoutingStrategy::Spawn,
+                    count: 5,
+                    avg_ms: 8.5,
+                    ema_ms: 8.0,
+                    p95_ms: 18,
+                },
             ],
         }
     }
@@ -910,7 +928,10 @@ mod tests {
     fn suggest_patch_returns_none_in_normal_range() {
         let stats = make_stats_with_pressure(0.5);
         let patch = suggest_config_patch(&stats, 0.3, 0.8);
-        assert!(patch.is_none(), "mid-range pressure should produce no patch");
+        assert!(
+            patch.is_none(),
+            "mid-range pressure should produce no patch"
+        );
     }
 
     #[test]
@@ -970,7 +991,10 @@ mod tests {
         let step = patch.adaptive_step.expect("adaptive_step should be set");
         // Under low pressure we want a value lower than the default (0.10).
         assert!(step < 0.10, "adaptive_step should be below default: {step}");
-        assert!(step >= 0.02, "adaptive_step should not go below 0.02: {step}");
+        assert!(
+            step >= 0.02,
+            "adaptive_step should not go below 0.02: {step}"
+        );
     }
 
     #[test]
@@ -1023,7 +1047,10 @@ mod tests {
         let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch");
         // High pressure: trigger adaptive raises sooner (1.2 < default 1.5)
         let factor = patch.adaptive_p95_threshold_factor.expect("should be set");
-        assert!(factor < 1.5, "high pressure should tighten factor, got {factor}");
+        assert!(
+            factor < 1.5,
+            "high pressure should tighten factor, got {factor}"
+        );
     }
 
     #[test]
@@ -1034,7 +1061,10 @@ mod tests {
         let low_patch = suggest_config_patch(&low_stats, 0.3, 0.8).unwrap();
         let high_thresh = high_patch.backpressure_busy_threshold.unwrap();
         let low_thresh = low_patch.backpressure_busy_threshold.unwrap();
-        assert!(low_thresh > high_thresh, "low pressure should relax threshold: {low_thresh} > {high_thresh}");
+        assert!(
+            low_thresh > high_thresh,
+            "low pressure should relax threshold: {low_thresh} > {high_thresh}"
+        );
     }
 
     #[test]
@@ -1088,7 +1118,10 @@ mod tests {
         let stats = make_stats_with_pressure(0.1);
         let snap = make_eot_snap_with_drop_rate(0.9);
         let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
-        assert!(patch.is_some(), "high EOT drop rate should trigger tighten patch");
+        assert!(
+            patch.is_some(),
+            "high EOT drop rate should trigger tighten patch"
+        );
         let p = patch.unwrap();
         // Should be a tighten patch (backpressure_busy_threshold = 5).
         assert_eq!(p.backpressure_busy_threshold, Some(5));
@@ -1109,7 +1142,10 @@ mod tests {
         let stats = make_stats_with_pressure(0.2);
         let snap = make_eot_snap_with_queue_fill(0.95);
         let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
-        assert!(patch.is_some(), "full EOT queue should trigger tighten patch");
+        assert!(
+            patch.is_some(),
+            "full EOT queue should trigger tighten patch"
+        );
     }
 
     #[test]
@@ -1118,7 +1154,10 @@ mod tests {
         let stats = make_stats_with_pressure(0.2);
         let snap = make_eot_snap_circuit_open();
         let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
-        assert!(patch.is_some(), "open circuit breaker should trigger tighten patch");
+        assert!(
+            patch.is_some(),
+            "open circuit breaker should trigger tighten patch"
+        );
         let p = patch.unwrap();
         assert_eq!(p.backpressure_busy_threshold, Some(5));
     }
@@ -1141,9 +1180,16 @@ mod tests {
         let stats = make_stats_with_pressure(0.95);
         let snap = make_eot_snap_with_drop_rate(0.0);
         let patch = suggest_config_patch_with_eot(&stats, Some(&snap), 0.3, 0.8);
-        assert!(patch.is_some(), "HelixRouter high pressure should still trigger patch");
+        assert!(
+            patch.is_some(),
+            "HelixRouter high pressure should still trigger patch"
+        );
         let p = patch.unwrap();
-        assert_eq!(p.backpressure_busy_threshold, Some(5), "should be tighten patch");
+        assert_eq!(
+            p.backpressure_busy_threshold,
+            Some(5),
+            "should be tighten patch"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1158,7 +1204,10 @@ mod tests {
         };
         let s = err.to_string();
         assert!(s.contains("503"), "expected status in display: {s}");
-        assert!(s.contains("http://localhost:3000/api/stats"), "expected url: {s}");
+        assert!(
+            s.contains("http://localhost:3000/api/stats"),
+            "expected url: {s}"
+        );
     }
 
     #[test]
@@ -1187,7 +1236,10 @@ mod tests {
     fn helix_bridge_error_is_std_error() {
         // Compile-time proof that HelixBridgeError implements std::error::Error.
         fn assert_error<E: std::error::Error>(_: &E) {}
-        let err = HelixBridgeError::Http { status: 500, url: "x".to_string() };
+        let err = HelixBridgeError::Http {
+            status: 500,
+            url: "x".to_string(),
+        };
         assert_error(&err);
     }
 
@@ -1198,7 +1250,10 @@ mod tests {
             detail: "refused".to_string(),
         };
         let dbg = format!("{:?}", err);
-        assert!(dbg.contains("Connect"), "Debug should contain variant name: {dbg}");
+        assert!(
+            dbg.contains("Connect"),
+            "Debug should contain variant name: {dbg}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1212,7 +1267,10 @@ mod tests {
         let back: RouterStats = serde_json::from_str(&json).unwrap();
         assert_eq!(back.completed, stats.completed);
         assert_eq!(back.dropped, stats.dropped);
-        assert_eq!(back.adaptive_spawn_threshold, stats.adaptive_spawn_threshold);
+        assert_eq!(
+            back.adaptive_spawn_threshold,
+            stats.adaptive_spawn_threshold
+        );
         assert!((back.pressure_score - stats.pressure_score).abs() < 1e-9);
     }
 
@@ -1234,8 +1292,14 @@ mod tests {
     #[test]
     fn router_stats_pressure_score_range() {
         let stats = make_stats();
-        assert!(stats.pressure_score.is_finite(), "pressure_score must be finite");
-        assert!(!stats.pressure_score.is_nan(), "pressure_score must not be NaN");
+        assert!(
+            stats.pressure_score.is_finite(),
+            "pressure_score must be finite"
+        );
+        assert!(
+            !stats.pressure_score.is_nan(),
+            "pressure_score must not be NaN"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1271,7 +1335,10 @@ mod tests {
         let json = serde_json::to_string(&patch).unwrap();
         assert!(json.contains("inline_threshold"), "json: {json}");
         assert!(json.contains("ema_alpha"), "json: {json}");
-        assert!(!json.contains("spawn_threshold"), "absent field should be omitted: {json}");
+        assert!(
+            !json.contains("spawn_threshold"),
+            "absent field should be omitted: {json}"
+        );
     }
 
     #[test]
@@ -1431,7 +1498,10 @@ mod tests {
         };
         // Neural is warmed up but reward is negative: neural_healthy should be false
         let neural_healthy = state.is_warmed_up && state.avg_reward > 0.0;
-        assert!(!neural_healthy, "negative avg_reward means routing is not healthy");
+        assert!(
+            !neural_healthy,
+            "negative avg_reward means routing is not healthy"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1451,7 +1521,10 @@ mod tests {
             pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
         let should_push = !neural_healthy || pressure_far_from_threshold;
 
-        assert!(!should_push, "patch should be suppressed when neural healthy and pressure barely over threshold");
+        assert!(
+            !should_push,
+            "patch should be suppressed when neural healthy and pressure barely over threshold"
+        );
     }
 
     #[test]
@@ -1465,7 +1538,10 @@ mod tests {
             pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
         let should_push = !neural_healthy || pressure_far_from_threshold;
 
-        assert!(should_push, "patch should be pushed when pressure is far above threshold even if neural is healthy");
+        assert!(
+            should_push,
+            "patch should be pushed when pressure is far above threshold even if neural is healthy"
+        );
     }
 
     #[test]
@@ -1479,7 +1555,10 @@ mod tests {
             pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
         let should_push = !neural_healthy || pressure_far_from_threshold;
 
-        assert!(should_push, "patch should always be pushed when neural routing is not healthy");
+        assert!(
+            should_push,
+            "patch should always be pushed when neural routing is not healthy"
+        );
     }
 
     #[test]
@@ -1493,7 +1572,10 @@ mod tests {
             pressure > high_threshold * 1.1 || pressure < low_threshold * 0.9;
         let should_push = !neural_healthy || pressure_far_from_threshold;
 
-        assert!(should_push, "patch should be pushed when pressure is far below low threshold");
+        assert!(
+            should_push,
+            "patch should be pushed when pressure is far below low threshold"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1505,7 +1587,9 @@ mod tests {
     // and fetch_neural_state().
 
     async fn bind_mock() -> (u16, tokio::net::TcpListener) {
-        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let port = l.local_addr().expect("addr").port();
         (port, l)
     }
@@ -1517,7 +1601,8 @@ mod tests {
         let _ = tokio::time::timeout(
             Duration::from_millis(200),
             tokio::io::AsyncReadExt::read(&mut s, &mut buf),
-        ).await;
+        )
+        .await;
         let resp = format!(
             "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
@@ -1544,9 +1629,16 @@ mod tests {
         tokio::spawn(serve_once(listener, 200, body));
 
         let bridge = make_bridge_at(port);
-        let patch = RouterConfigPatch { adaptive_step: Some(0.20), ema_alpha: Some(0.30), ..Default::default() };
+        let patch = RouterConfigPatch {
+            adaptive_step: Some(0.20),
+            ema_alpha: Some(0.30),
+            ..Default::default()
+        };
         let result = bridge.push_config(&patch).await;
-        assert!(result.is_ok(), "push_config should succeed on HTTP 200: {result:?}");
+        assert!(
+            result.is_ok(),
+            "push_config should succeed on HTTP 200: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -1559,7 +1651,10 @@ mod tests {
         let result = bridge.push_config(&patch).await;
         assert!(result.is_err(), "push_config should fail on HTTP 400");
         let err = result.unwrap_err();
-        assert!(matches!(err, HelixBridgeError::Http { status: 400, .. }), "expected Http 400 error: {err}");
+        assert!(
+            matches!(err, HelixBridgeError::Http { status: 400, .. }),
+            "expected Http 400 error: {err}"
+        );
     }
 
     #[tokio::test]
@@ -1568,11 +1663,17 @@ mod tests {
         tokio::spawn(serve_once(listener, 500, r#"{"error":"internal"}"#));
 
         let bridge = make_bridge_at(port);
-        let patch = RouterConfigPatch { spawn_threshold: Some(54_000), ..Default::default() };
+        let patch = RouterConfigPatch {
+            spawn_threshold: Some(54_000),
+            ..Default::default()
+        };
         let result = bridge.push_config(&patch).await;
         assert!(result.is_err(), "push_config should fail on HTTP 500");
         let err = result.unwrap_err();
-        assert!(matches!(err, HelixBridgeError::Http { status: 500, .. }), "expected Http 500 error: {err}");
+        assert!(
+            matches!(err, HelixBridgeError::Http { status: 500, .. }),
+            "expected Http 500 error: {err}"
+        );
     }
 
     #[tokio::test]
@@ -1588,7 +1689,10 @@ mod tests {
         let patch = RouterConfigPatch::default();
         let result = bridge.push_config(&patch).await;
         assert!(result.is_err(), "should fail on connection refused");
-        assert!(matches!(result.unwrap_err(), HelixBridgeError::Connect { .. }), "expected Connect error");
+        assert!(
+            matches!(result.unwrap_err(), HelixBridgeError::Connect { .. }),
+            "expected Connect error"
+        );
     }
 
     #[tokio::test]
@@ -1603,12 +1707,25 @@ mod tests {
             routed_by_strategy: vec![],
             latency_by_strategy: vec![],
         };
-        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for high pressure");
-        assert!(patch.adaptive_step.is_some(), "high-pressure patch must set adaptive_step");
-        assert!(patch.ema_alpha.is_some(), "high-pressure patch must set ema_alpha");
-        assert!(patch.backpressure_busy_threshold.is_some(), "high-pressure patch must set backpressure_busy_threshold");
+        let patch =
+            suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for high pressure");
+        assert!(
+            patch.adaptive_step.is_some(),
+            "high-pressure patch must set adaptive_step"
+        );
+        assert!(
+            patch.ema_alpha.is_some(),
+            "high-pressure patch must set ema_alpha"
+        );
+        assert!(
+            patch.backpressure_busy_threshold.is_some(),
+            "high-pressure patch must set backpressure_busy_threshold"
+        );
         // High-pressure adaptive_step should be larger than low-pressure
-        assert!(patch.adaptive_step.unwrap() > 0.05, "high-pressure adaptive_step should be elevated");
+        assert!(
+            patch.adaptive_step.unwrap() > 0.05,
+            "high-pressure adaptive_step should be elevated"
+        );
     }
 
     #[tokio::test]
@@ -1621,11 +1738,15 @@ mod tests {
             routed_by_strategy: vec![],
             latency_by_strategy: vec![],
         };
-        let patch = suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for low pressure");
+        let patch =
+            suggest_config_patch(&stats, 0.3, 0.8).expect("should produce patch for low pressure");
         assert!(patch.adaptive_step.is_some());
         assert!(patch.ema_alpha.is_some());
         // Low-pressure adaptive_step should be smaller than default (0.10)
-        assert!(patch.adaptive_step.unwrap() < 0.10, "low-pressure adaptive_step should be reduced");
+        assert!(
+            patch.adaptive_step.unwrap() < 0.10,
+            "low-pressure adaptive_step should be reduced"
+        );
     }
 
     // -- fetch_neural_state mock-HTTP tests --
@@ -1639,7 +1760,10 @@ mod tests {
 
         let bridge = make_bridge_at(port);
         let result = bridge.fetch_neural_state().await;
-        assert!(result.is_ok(), "fetch_neural_state should succeed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "fetch_neural_state should succeed: {result:?}"
+        );
         let state = result.unwrap().expect("should return Some on 200");
         assert!(state.is_warmed_up);
         assert!((state.avg_reward - 0.82).abs() < 1e-6);
@@ -1697,7 +1821,8 @@ mod tests {
                     let _ = tokio::time::timeout(
                         Duration::from_millis(200),
                         tokio::io::AsyncReadExt::read(&mut s, &mut buf),
-                    ).await;
+                    )
+                    .await;
                     let resp = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
@@ -1715,13 +1840,16 @@ mod tests {
         assert!((stats.pressure_score - 0.9).abs() < 1e-6);
 
         // Step 2: derive patch
-        let patch = suggest_config_patch(&stats, 0.3, 0.8)
-            .expect("high pressure should produce a patch");
+        let patch =
+            suggest_config_patch(&stats, 0.3, 0.8).expect("high pressure should produce a patch");
         assert!(patch.adaptive_step.is_some());
 
         // Step 3: push patch
         let push_result = bridge.push_config(&patch).await;
-        assert!(push_result.is_ok(), "push_config should succeed: {push_result:?}");
+        assert!(
+            push_result.is_ok(),
+            "push_config should succeed: {push_result:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1740,7 +1868,10 @@ mod tests {
                 backoff <= poll * 5,
                 "backoff must not exceed 5× poll interval at failures={failures}"
             );
-            assert!(backoff >= poll, "backoff must be at least 1× poll at failures={failures}");
+            assert!(
+                backoff >= poll,
+                "backoff must be at least 1× poll at failures={failures}"
+            );
         }
     }
 
@@ -1769,7 +1900,10 @@ mod tests {
         tokio::spawn(serve_once(listener, 204, ""));
         let bridge = make_bridge_at(port);
         let result = bridge.push_eot_pressure(0.5).await;
-        assert!(result.is_ok(), "push_eot_pressure should succeed on HTTP 204: {result:?}");
+        assert!(
+            result.is_ok(),
+            "push_eot_pressure should succeed on HTTP 204: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -1778,7 +1912,10 @@ mod tests {
         tokio::spawn(serve_once(listener, 200, "{}"));
         let bridge = make_bridge_at(port);
         let result = bridge.push_eot_pressure(0.75).await;
-        assert!(result.is_ok(), "push_eot_pressure should succeed on HTTP 200: {result:?}");
+        assert!(
+            result.is_ok(),
+            "push_eot_pressure should succeed on HTTP 200: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -1788,7 +1925,10 @@ mod tests {
         let bridge = make_bridge_at(port);
         let result = bridge.push_eot_pressure(0.9).await;
         assert!(result.is_err(), "push_eot_pressure should fail on HTTP 400");
-        assert!(matches!(result.unwrap_err(), HelixBridgeError::Http { status: 400, .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HelixBridgeError::Http { status: 400, .. }
+        ));
     }
 
     #[tokio::test]
@@ -1798,7 +1938,10 @@ mod tests {
         let bridge = make_bridge_at(port);
         let result = bridge.push_eot_pressure(0.1).await;
         assert!(result.is_err(), "push_eot_pressure should fail on HTTP 500");
-        assert!(matches!(result.unwrap_err(), HelixBridgeError::Http { status: 500, .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HelixBridgeError::Http { status: 500, .. }
+        ));
     }
 
     #[tokio::test]
@@ -1811,7 +1954,10 @@ mod tests {
             .expect("build bridge");
         let result = bridge.push_eot_pressure(0.5).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), HelixBridgeError::Connect { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            HelixBridgeError::Connect { .. }
+        ));
     }
 
     #[test]

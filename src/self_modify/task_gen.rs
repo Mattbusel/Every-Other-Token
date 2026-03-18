@@ -93,10 +93,7 @@ pub enum DegradationSignal {
         fraction: f64,
     },
     /// Error rate has spiked in a specific pipeline stage.
-    ErrorSpike {
-        stage: String,
-        error_rate: f64,
-    },
+    ErrorSpike { stage: String, error_rate: f64 },
     /// Budget ceiling has been breached on a backend.
     BudgetExceeded {
         backend: String,
@@ -122,7 +119,9 @@ impl DegradationSignal {
     /// Derive a stable deduplication key for this signal.
     pub fn dedup_key(&self) -> String {
         match self {
-            DegradationSignal::Anomaly { metric, severity, .. } => {
+            DegradationSignal::Anomaly {
+                metric, severity, ..
+            } => {
                 format!("anomaly:{}:{:?}", metric, severity)
             }
             DegradationSignal::MetricDegradation { metric, .. } => {
@@ -395,7 +394,12 @@ impl TaskGenerator {
         let complexity = signal.complexity();
 
         let (name, description, affected_files, acceptance_criteria) = match signal {
-            DegradationSignal::Anomaly { metric, severity, observed, baseline } => (
+            DegradationSignal::Anomaly {
+                metric,
+                severity,
+                observed,
+                baseline,
+            } => (
                 format!("Investigate anomaly in {}", metric),
                 format!(
                     "Anomaly detected in metric '{}' (severity: {:?}). \
@@ -414,7 +418,12 @@ impl TaskGenerator {
                 ],
             ),
 
-            DegradationSignal::MetricDegradation { metric, current, baseline, fraction } => (
+            DegradationSignal::MetricDegradation {
+                metric,
+                current,
+                baseline,
+                fraction,
+            } => (
                 format!("Fix degradation in {}", metric),
                 format!(
                     "Metric '{}' has degraded {:.1}% from baseline. \
@@ -430,7 +439,10 @@ impl TaskGenerator {
                     format!("src/self_tune/snapshot.rs"),
                 ],
                 vec![
-                    format!("'{}' returns to within 10% of baseline ({:.3})", metric, baseline),
+                    format!(
+                        "'{}' returns to within 10% of baseline ({:.3})",
+                        metric, baseline
+                    ),
                     format!("Config snapshot shows improvement vs previous revision"),
                     format!("cargo test --features self-tune passes"),
                 ],
@@ -456,7 +468,11 @@ impl TaskGenerator {
                 ],
             ),
 
-            DegradationSignal::BudgetExceeded { backend, spend_usd, ceiling_usd } => (
+            DegradationSignal::BudgetExceeded {
+                backend,
+                spend_usd,
+                ceiling_usd,
+            } => (
                 format!("Reduce spend on backend '{}'", backend),
                 format!(
                     "Backend '{}' spend ${:.4} has exceeded ceiling ${:.4}. \
@@ -468,13 +484,19 @@ impl TaskGenerator {
                     format!("src/self_tune/controller.rs"),
                 ],
                 vec![
-                    format!("Backend '{}' daily spend drops below ${:.4}", backend, ceiling_usd),
+                    format!(
+                        "Backend '{}' daily spend drops below ${:.4}",
+                        backend, ceiling_usd
+                    ),
                     format!("Budget pressure level returns to Normal"),
                     format!("Cost optimizer unit tests pass"),
                 ],
             ),
 
-            DegradationSignal::Manual { description, affected_files } => (
+            DegradationSignal::Manual {
+                description,
+                affected_files,
+            } => (
                 format!("Manual task: {}", &description[..description.len().min(50)]),
                 description.clone(),
                 affected_files.clone(),
@@ -551,7 +573,10 @@ mod tests {
     }
 
     fn signal_error(stage: &str, rate: f64) -> DegradationSignal {
-        DegradationSignal::ErrorSpike { stage: stage.to_string(), error_rate: rate }
+        DegradationSignal::ErrorSpike {
+            stage: stage.to_string(),
+            error_rate: rate,
+        }
     }
 
     fn signal_budget(backend: &str, spend: f64, ceiling: f64) -> DegradationSignal {
@@ -576,8 +601,10 @@ mod tests {
     #[test]
     fn test_priority_anomaly_info_is_low() {
         let s = DegradationSignal::Anomaly {
-            metric: "x".into(), severity: AnomalySeverity::Info,
-            observed: 1.0, baseline: 1.0,
+            metric: "x".into(),
+            severity: AnomalySeverity::Info,
+            observed: 1.0,
+            baseline: 1.0,
         };
         assert_eq!(s.priority(), Priority::Low);
     }
@@ -585,8 +612,10 @@ mod tests {
     #[test]
     fn test_priority_anomaly_warn_is_medium() {
         let s = DegradationSignal::Anomaly {
-            metric: "x".into(), severity: AnomalySeverity::Warn,
-            observed: 1.0, baseline: 1.0,
+            metric: "x".into(),
+            severity: AnomalySeverity::Warn,
+            observed: 1.0,
+            baseline: 1.0,
         };
         assert_eq!(s.priority(), Priority::Medium);
     }
@@ -594,15 +623,20 @@ mod tests {
     #[test]
     fn test_priority_anomaly_critical_is_critical() {
         let s = DegradationSignal::Anomaly {
-            metric: "x".into(), severity: AnomalySeverity::Critical,
-            observed: 1.0, baseline: 1.0,
+            metric: "x".into(),
+            severity: AnomalySeverity::Critical,
+            observed: 1.0,
+            baseline: 1.0,
         };
         assert_eq!(s.priority(), Priority::Critical);
     }
 
     #[test]
     fn test_priority_degradation_50pct_is_critical() {
-        assert_eq!(signal_degradation("lat", 0.50).priority(), Priority::Critical);
+        assert_eq!(
+            signal_degradation("lat", 0.50).priority(),
+            Priority::Critical
+        );
     }
 
     #[test]
@@ -637,7 +671,10 @@ mod tests {
 
     #[test]
     fn test_priority_manual_is_medium() {
-        assert_eq!(signal_manual("do something", vec![]).priority(), Priority::Medium);
+        assert_eq!(
+            signal_manual("do something", vec![]).priority(),
+            Priority::Medium
+        );
     }
 
     // -------------------------------------------------------------------
@@ -651,32 +688,50 @@ mod tests {
 
     #[test]
     fn test_complexity_degradation_is_trivial() {
-        assert_eq!(signal_degradation("lat", 0.1).complexity(), Complexity::Trivial);
+        assert_eq!(
+            signal_degradation("lat", 0.1).complexity(),
+            Complexity::Trivial
+        );
     }
 
     #[test]
     fn test_complexity_error_spike_is_moderate() {
-        assert_eq!(signal_error("cache", 0.05).complexity(), Complexity::Moderate);
+        assert_eq!(
+            signal_error("cache", 0.05).complexity(),
+            Complexity::Moderate
+        );
     }
 
     #[test]
     fn test_complexity_budget_is_trivial() {
-        assert_eq!(signal_budget("gpt", 5.0, 4.0).complexity(), Complexity::Trivial);
+        assert_eq!(
+            signal_budget("gpt", 5.0, 4.0).complexity(),
+            Complexity::Trivial
+        );
     }
 
     #[test]
     fn test_complexity_manual_single_file_is_trivial() {
-        assert_eq!(signal_manual("fix x", vec!["src/a.rs"]).complexity(), Complexity::Trivial);
+        assert_eq!(
+            signal_manual("fix x", vec!["src/a.rs"]).complexity(),
+            Complexity::Trivial
+        );
     }
 
     #[test]
     fn test_complexity_manual_two_files_is_moderate() {
-        assert_eq!(signal_manual("fix x", vec!["a.rs", "b.rs"]).complexity(), Complexity::Moderate);
+        assert_eq!(
+            signal_manual("fix x", vec!["a.rs", "b.rs"]).complexity(),
+            Complexity::Moderate
+        );
     }
 
     #[test]
     fn test_complexity_manual_four_files_is_complex() {
-        assert_eq!(signal_manual("big change", vec!["a", "b", "c", "d"]).complexity(), Complexity::Complex);
+        assert_eq!(
+            signal_manual("big change", vec!["a", "b", "c", "d"]).complexity(),
+            Complexity::Complex
+        );
     }
 
     // -------------------------------------------------------------------
@@ -729,7 +784,9 @@ mod tests {
         let now = Instant::now();
         let t1 = gen.generate_at(signal_anomaly("lat"), now, 0).unwrap();
         // Different signal to bypass dedup
-        let t2 = gen.generate_at(signal_error("cache", 0.05), now, 0).unwrap();
+        let t2 = gen
+            .generate_at(signal_error("cache", 0.05), now, 0)
+            .unwrap();
         assert_ne!(t1.id, t2.id);
     }
 
@@ -746,7 +803,9 @@ mod tests {
     fn test_generated_task_toml_contains_priority() {
         let mut gen = TaskGenerator::new(cfg_fast());
         let now = Instant::now();
-        let task = gen.generate_at(signal_degradation("lat", 0.5), now, 0).unwrap();
+        let task = gen
+            .generate_at(signal_degradation("lat", 0.5), now, 0)
+            .unwrap();
         let toml = task.to_toml();
         assert!(toml.contains("critical"));
     }
@@ -831,7 +890,10 @@ mod tests {
 
     #[test]
     fn test_rate_limit_blocks_after_max_per_window() {
-        let cfg = TaskGenConfig { max_per_window: 3, ..cfg_fast() };
+        let cfg = TaskGenConfig {
+            max_per_window: 3,
+            ..cfg_fast()
+        };
         let mut gen = TaskGenerator::new(cfg);
         let now = Instant::now();
         // 3 different signals
@@ -862,7 +924,10 @@ mod tests {
 
     #[test]
     fn test_window_count_reflects_recent_generations() {
-        let cfg = TaskGenConfig { max_per_window: 10, ..cfg_fast() };
+        let cfg = TaskGenConfig {
+            max_per_window: 10,
+            ..cfg_fast()
+        };
         let mut gen = TaskGenerator::new(cfg);
         let now = Instant::now();
         gen.generate_at(signal_anomaly("a"), now, 0);
@@ -879,7 +944,9 @@ mod tests {
     fn test_budget_task_mentions_backend() {
         let mut gen = TaskGenerator::new(cfg_fast());
         let now = Instant::now();
-        let task = gen.generate_at(signal_budget("gpt-4o", 5.0, 4.0), now, 0).unwrap();
+        let task = gen
+            .generate_at(signal_budget("gpt-4o", 5.0, 4.0), now, 0)
+            .unwrap();
         assert!(task.description.contains("gpt-4o"));
     }
 
@@ -895,10 +962,13 @@ mod tests {
     fn test_manual_task_uses_provided_files() {
         let mut gen = TaskGenerator::new(cfg_fast());
         let now = Instant::now();
-        let task = gen.generate_at(
-            signal_manual("fix the thing", vec!["src/foo.rs", "src/bar.rs"]),
-            now, 0,
-        ).unwrap();
+        let task = gen
+            .generate_at(
+                signal_manual("fix the thing", vec!["src/foo.rs", "src/bar.rs"]),
+                now,
+                0,
+            )
+            .unwrap();
         assert!(task.affected_files.contains(&"src/foo.rs".to_string()));
         assert!(task.affected_files.contains(&"src/bar.rs".to_string()));
     }

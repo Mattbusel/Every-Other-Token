@@ -110,11 +110,7 @@ impl DiscoveryFinding {
             title = self.title,
             id = self.id,
             effort = self.estimated_effort,
-            status = if self.resolved {
-                "Resolved"
-            } else {
-                "Open"
-            },
+            status = if self.resolved { "Resolved" } else { "Open" },
             desc = self.description,
             action = self.suggested_action,
             files = self

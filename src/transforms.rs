@@ -294,7 +294,9 @@ impl Transform {
             let transforms = parts?;
             if transforms.len() == 1 {
                 // len == 1 is checked above, so into_iter().next() is always Some.
-                return Ok(transforms.into_iter().next()
+                return Ok(transforms
+                    .into_iter()
+                    .next()
                     .ok_or_else(|| "internal: empty transform list".to_string())?);
             }
             return Ok(Transform::Chain(transforms));
@@ -352,10 +354,7 @@ impl Transform {
             Transform::Delete => (String::new(), "delete".to_string()),
             Transform::Synonym => {
                 let lower = token.to_lowercase();
-                let result = SYNONYM_MAP
-                    .get(lower.as_str())
-                    .copied()
-                    .unwrap_or(token);
+                let result = SYNONYM_MAP.get(lower.as_str()).copied().unwrap_or(token);
                 (result.to_string(), "synonym".to_string())
             }
             Transform::Delay(_) => (token.to_string(), "delay".to_string()),
@@ -945,7 +944,11 @@ mod tests {
         let known = ["reverse", "uppercase", "mock", "noise"];
         for _ in 0..50 {
             let (_text, label) = Transform::Chaos.apply_with_label("hello");
-            assert!(known.contains(&label.as_str()), "unexpected label: {}", label);
+            assert!(
+                known.contains(&label.as_str()),
+                "unexpected label: {}",
+                label
+            );
         }
     }
 
@@ -1012,7 +1015,10 @@ mod tests {
             let mut res_sorted: Vec<char> = result.chars().collect();
             orig_sorted.sort();
             res_sorted.sort();
-            assert_eq!(orig_sorted, res_sorted, "Scramble should produce same chars");
+            assert_eq!(
+                orig_sorted, res_sorted,
+                "Scramble should produce same chars"
+            );
         }
     }
 
@@ -1110,7 +1116,11 @@ mod tests {
     fn test_chain_mock_noise_label() {
         let chain = Transform::Chain(vec![Transform::Mock, Transform::Noise]);
         let (result, label) = chain.apply_with_label("hello");
-        assert!(result.starts_with("hElLo"), "expected mock applied: {}", result);
+        assert!(
+            result.starts_with("hElLo"),
+            "expected mock applied: {}",
+            result
+        );
         assert_eq!(label, "mock+noise");
     }
 
@@ -1237,7 +1247,10 @@ mod tests {
         for _ in 0..50 {
             results.insert(Transform::Scramble.apply("hello"));
         }
-        assert!(results.len() >= 2, "scramble should produce different orderings");
+        assert!(
+            results.len() >= 2,
+            "scramble should produce different orderings"
+        );
     }
 
     #[test]
@@ -1263,10 +1276,10 @@ mod tests {
         use rstest::rstest;
 
         #[rstest]
-        #[case("reverse",   "olleh")]
+        #[case("reverse", "olleh")]
         #[case("uppercase", "HELLO")]
-        #[case("mock",      "hElLo")]
-        #[case("delete",    "")]
+        #[case("mock", "hElLo")]
+        #[case("delete", "")]
         fn test_deterministic_transforms(#[case] name: &str, #[case] expected: &str) {
             let t = Transform::from_str_loose(name).expect("valid transform");
             assert_eq!(t.apply("hello"), expected, "transform={name}");
@@ -1295,7 +1308,10 @@ mod tests {
         #[case("MOCK")]
         #[case("NOISE")]
         fn test_case_insensitive_parse(#[case] name: &str) {
-            assert!(Transform::from_str_loose(name).is_ok(), "expected '{name}' to parse case-insensitively");
+            assert!(
+                Transform::from_str_loose(name).is_ok(),
+                "expected '{name}' to parse case-insensitively"
+            );
         }
 
         #[rstest]
@@ -1304,7 +1320,10 @@ mod tests {
         #[case("REVERSED")]
         #[case("upper case")]
         fn test_invalid_transforms_error(#[case] name: &str) {
-            assert!(Transform::from_str_loose(name).is_err(), "expected '{name}' to fail");
+            assert!(
+                Transform::from_str_loose(name).is_err(),
+                "expected '{name}' to fail"
+            );
         }
     }
 }

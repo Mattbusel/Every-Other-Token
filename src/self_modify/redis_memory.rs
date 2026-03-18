@@ -326,7 +326,8 @@ impl RedisMemoryBackend {
         let mut conn = client
             .get_connection()
             .map_err(|e| format!("Redis connection failed: {}", e))?;
-        conn.ping().map_err(|e| format!("Redis ping failed: {}", e))?;
+        conn.ping()
+            .map_err(|e| format!("Redis ping failed: {}", e))?;
         let max_modifications = config.max_modifications;
         Ok(Self {
             ops: Box::new(conn),
@@ -557,11 +558,7 @@ mod tests {
         }
 
         fn hget(&mut self, key: &str, field: &str) -> Result<Option<String>, String> {
-            Ok(self
-                .hashes
-                .get(key)
-                .and_then(|h| h.get(field))
-                .cloned())
+            Ok(self.hashes.get(key).and_then(|h| h.get(field)).cloned())
         }
 
         fn sadd(&mut self, key: &str, member: &str) -> Result<(), String> {

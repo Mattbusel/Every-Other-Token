@@ -13,13 +13,13 @@
 //! - `cost` (task 1.5) — real-time cost tracking and budget-aware routing
 //! - `snapshot` (task 1.6) — git-like configuration versioning
 
-pub mod telemetry_bus;
-pub mod controller;
-pub mod experiment;
 pub mod anomaly;
+pub mod controller;
 pub mod cost;
-pub mod snapshot;
+pub mod experiment;
 pub mod orchestrator;
+pub mod snapshot;
+pub mod telemetry_bus;
 
 #[cfg(feature = "redis-backing")]
 pub mod redis_snapshot;

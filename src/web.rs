@@ -127,15 +127,33 @@ struct StreamParams {
 fn parse_stream_params(query: &std::collections::HashMap<String, String>) -> StreamParams {
     StreamParams {
         prompt: query.get("prompt").cloned().unwrap_or_default(),
-        transform: query.get("transform").cloned().unwrap_or_else(|| "reverse".to_string()),
-        provider: query.get("provider").cloned().unwrap_or_else(|| "openai".to_string()),
+        transform: query
+            .get("transform")
+            .cloned()
+            .unwrap_or_else(|| "reverse".to_string()),
+        provider: query
+            .get("provider")
+            .cloned()
+            .unwrap_or_else(|| "openai".to_string()),
         model: query.get("model").cloned().unwrap_or_default(),
-        rate: query.get("rate").and_then(|r| r.parse().ok()).unwrap_or(0.5),
+        rate: query
+            .get("rate")
+            .and_then(|r| r.parse().ok())
+            .unwrap_or(0.5),
         seed: query.get("seed").and_then(|s| s.parse().ok()),
-        top_logprobs: query.get("top_logprobs").and_then(|t| t.parse().ok()).unwrap_or(5),
+        top_logprobs: query
+            .get("top_logprobs")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(5),
         system: query.get("system").filter(|s| !s.is_empty()).cloned(),
-        visual: query.get("visual").map(|v| v == "1" || v == "true").unwrap_or(false),
-        heatmap: query.get("heatmap").map(|v| v == "1" || v == "true").unwrap_or(false),
+        visual: query
+            .get("visual")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false),
+        heatmap: query
+            .get("heatmap")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false),
     }
 }
 
@@ -211,20 +229,29 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     // → SelfImprovementOrchestrator → parameter adjustments.
     #[cfg(feature = "helix-bridge")]
     if let Some(ref helix_url) = default_args.helix_url {
-        use std::sync::Arc;
         use crate::helix_bridge::client::HelixBridge;
-        use crate::self_tune::telemetry_bus::{TelemetryBus, BusConfig};
-        use crate::self_tune::orchestrator::{SelfImprovementOrchestrator, OrchestratorConfig};
+        use crate::self_tune::orchestrator::{OrchestratorConfig, SelfImprovementOrchestrator};
+        use crate::self_tune::telemetry_bus::{BusConfig, TelemetryBus};
+        use std::sync::Arc;
 
         let bus = Arc::new(TelemetryBus::new(BusConfig::default()));
         bus.start_emitter();
 
-        match HelixBridge::builder(helix_url.clone()).bus(Arc::clone(&bus)).build() {
+        match HelixBridge::builder(helix_url.clone())
+            .bus(Arc::clone(&bus))
+            .build()
+        {
             Ok(bridge) => {
-                let orc = SelfImprovementOrchestrator::new(OrchestratorConfig::default(), Arc::clone(&bus));
+                let orc = SelfImprovementOrchestrator::new(
+                    OrchestratorConfig::default(),
+                    Arc::clone(&bus),
+                );
                 tokio::spawn(async move { bridge.run().await });
                 tokio::spawn(async move { orc.run().await });
-                eprintln!("{}", format!("  HelixBridge active → {helix_url}").bright_cyan());
+                eprintln!(
+                    "{}",
+                    format!("  HelixBridge active → {helix_url}").bright_cyan()
+                );
             }
             Err(e) => {
                 eprintln!("  HelixBridge init failed: {e}; continuing without it");
@@ -576,15 +603,9 @@ async fn handle_connection(
             }
 
             // Side B
-            let b_result = TokenInterceptor::new(
-                ab_provider,
-                transform,
-                model,
-                true,
-                false,
-                orchestrator,
-            )
-            .map_err(|e| e.to_string());
+            let b_result =
+                TokenInterceptor::new(ab_provider, transform, model, true, false, orchestrator)
+                    .map_err(|e| e.to_string());
             if let Ok(mut side_b) = b_result {
                 let (tx_b, mut rx_b) = mpsc::unbounded_channel::<TokenEvent>();
                 side_b.web_tx = Some(tx_b);
@@ -604,7 +625,10 @@ async fn handle_connection(
             drop(merged_tx);
 
             while let Some((side, event)) = merged_rx.recv().await {
-                let diff_event = DiffTokenEvent { side, event: &event };
+                let diff_event = DiffTokenEvent {
+                    side,
+                    event: &event,
+                };
                 if let Ok(json) = serde_json::to_string(&diff_event) {
                     let sse = format!("data: {}\n\n", json);
                     if stream.write_all(sse.as_bytes()).await.is_err() {
@@ -637,7 +661,8 @@ async fn handle_connection(
             let code = path.strip_prefix("/replay/").unwrap_or("");
             let body = if let Ok(guard) = store.lock() {
                 if let Some(room) = guard.get(code) {
-                    serde_json::to_string(&room.recorded_events).unwrap_or_else(|_| "[]".to_string())
+                    serde_json::to_string(&room.recorded_events)
+                        .unwrap_or_else(|_| "[]".to_string())
                 } else {
                     r#"{"error":"room not found"}"#.to_string()
                 }
@@ -1136,7 +1161,10 @@ mod tests {
         let surgery_pos = INDEX_HTML[done_pos..]
             .find("enableSurgery")
             .expect("enableSurgery not found after [DONE]");
-        assert!(research_pos > surgery_pos, "renderResearch should come after enableSurgery");
+        assert!(
+            research_pos > surgery_pos,
+            "renderResearch should come after enableSurgery"
+        );
     }
 
     #[test]
@@ -1371,7 +1399,9 @@ mod tests {
     #[test]
     fn test_index_html_stream_done_enables_guests() {
         // stream_done case must call enableSurgery for guests
-        let pos = INDEX_HTML.find("stream_done").expect("stream_done not found");
+        let pos = INDEX_HTML
+            .find("stream_done")
+            .expect("stream_done not found");
         let after = &INDEX_HTML[pos..pos + 300];
         assert!(after.contains("enableSurgery") || after.contains("amHost"));
     }
@@ -1528,7 +1558,9 @@ mod tests {
     #[test]
     fn test_index_html_host_session_broadcasts_tokens() {
         // The start-click hook should send WS token messages when hosting
-        let hook_pos = INDEX_HTML.find("_baseStartClick").expect("base start click hook not found");
+        let hook_pos = INDEX_HTML
+            .find("_baseStartClick")
+            .expect("base start click hook not found");
         let after = &INDEX_HTML[hook_pos..hook_pos + 500];
         assert!(after.contains("amHost") || after.contains("roomCode"));
     }

@@ -30,8 +30,12 @@ use std::collections::HashMap;
 pub struct Backend(pub String);
 
 impl Backend {
-    pub fn new(name: impl Into<String>) -> Self { Self(name.into()) }
-    pub fn name(&self) -> &str { &self.0 }
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+    pub fn name(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for Backend {
@@ -55,13 +59,15 @@ pub struct TokenPrice {
 
 impl TokenPrice {
     pub fn new(input_per_token: f64, output_per_token: f64) -> Self {
-        Self { input_per_token, output_per_token }
+        Self {
+            input_per_token,
+            output_per_token,
+        }
     }
 
     /// Estimate cost in USD for given token counts.
     pub fn estimate(&self, input_tokens: u64, output_tokens: u64) -> f64 {
-        self.input_per_token * input_tokens as f64
-            + self.output_per_token * output_tokens as f64
+        self.input_per_token * input_tokens as f64 + self.output_per_token * output_tokens as f64
     }
 }
 
@@ -138,8 +144,8 @@ pub enum BudgetPressure {
 impl std::fmt::Display for BudgetPressure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BudgetPressure::Normal   => write!(f, "normal"),
-            BudgetPressure::Warn     => write!(f, "warn"),
+            BudgetPressure::Normal => write!(f, "normal"),
+            BudgetPressure::Warn => write!(f, "warn"),
             BudgetPressure::Critical => write!(f, "critical"),
         }
     }
@@ -180,13 +186,20 @@ struct BackendStats {
 
 impl BackendStats {
     fn new(ema_alpha: f64) -> Self {
-        Self { ema_alpha, ..Default::default() }
+        Self {
+            ema_alpha,
+            ..Default::default()
+        }
     }
 
     fn record_cost(&mut self, cost_usd: f64) {
         self.total_spent_usd += cost_usd;
         self.request_count += 1;
-        let alpha = if self.ema_alpha > 0.0 { self.ema_alpha } else { 0.1 };
+        let alpha = if self.ema_alpha > 0.0 {
+            self.ema_alpha
+        } else {
+            0.1
+        };
         self.cost_ema = if self.request_count == 1 {
             cost_usd
         } else {
@@ -197,7 +210,11 @@ impl BackendStats {
     fn record_quality(&mut self, score: f64) {
         self.quality_sum += score;
         self.quality_count += 1;
-        let alpha = if self.ema_alpha > 0.0 { self.ema_alpha } else { 0.1 };
+        let alpha = if self.ema_alpha > 0.0 {
+            self.ema_alpha
+        } else {
+            0.1
+        };
         self.quality_ema = if self.quality_count == 1 {
             score
         } else {
@@ -206,13 +223,19 @@ impl BackendStats {
     }
 
     fn avg_cost(&self) -> f64 {
-        if self.request_count == 0 { 0.0 }
-        else { self.total_spent_usd / self.request_count as f64 }
+        if self.request_count == 0 {
+            0.0
+        } else {
+            self.total_spent_usd / self.request_count as f64
+        }
     }
 
     fn avg_quality(&self) -> f64 {
-        if self.quality_count == 0 { 0.0 }
-        else { self.quality_sum / self.quality_count as f64 }
+        if self.quality_count == 0 {
+            0.0
+        } else {
+            self.quality_sum / self.quality_count as f64
+        }
     }
 }
 
@@ -268,7 +291,9 @@ impl CostOptimizer {
     /// Record a completed request cost (estimated or reconciled).
     pub fn record_request(&mut self, req: RequestCost) {
         let cost = req.effective_usd();
-        let stats = self.stats.entry(req.backend.clone())
+        let stats = self
+            .stats
+            .entry(req.backend.clone())
             .or_insert_with(|| BackendStats::new(self.ema_alpha));
         stats.record_cost(cost);
         if let Some(q) = req.quality_score {
@@ -285,7 +310,10 @@ impl CostOptimizer {
     ///
     /// Finds the most recent unreconciled request for the backend and updates it.
     pub fn reconcile(&mut self, backend: &Backend, actual_usd: f64) {
-        if let Some(req) = self.history.iter_mut().rev()
+        if let Some(req) = self
+            .history
+            .iter_mut()
+            .rev()
             .find(|r| &r.backend == backend && r.actual_usd.is_none())
         {
             let old_cost = req.estimated_usd;
@@ -306,7 +334,9 @@ impl CostOptimizer {
 
     /// Fraction of budget ceiling consumed [0, ∞).
     pub fn budget_fraction(&self) -> f64 {
-        if self.cfg.ceiling_usd <= 0.0 { return 0.0; }
+        if self.cfg.ceiling_usd <= 0.0 {
+            return 0.0;
+        }
         self.total_spent_usd() / self.cfg.ceiling_usd
     }
 
@@ -331,7 +361,9 @@ impl CostOptimizer {
 
     /// All known backends sorted by average cost per request (cheapest first).
     pub fn backends_by_cost(&self) -> Vec<Backend> {
-        let mut v: Vec<_> = self.stats.iter()
+        let mut v: Vec<_> = self
+            .stats
+            .iter()
             .map(|(b, s)| (b.clone(), s.avg_cost()))
             .collect();
         v.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -351,9 +383,7 @@ impl CostOptimizer {
                 let keep = (by_cost.len() / 2).max(1);
                 by_cost.into_iter().take(keep).collect()
             }
-            BudgetPressure::Critical => {
-                by_cost.into_iter().take(1).collect()
-            }
+            BudgetPressure::Critical => by_cost.into_iter().take(1).collect(),
         }
     }
 
@@ -369,7 +399,9 @@ impl CostOptimizer {
     /// A point dominates another if it has both lower cost AND higher quality.
     /// The returned vec contains only non-dominated points, sorted by cost ascending.
     pub fn pareto_frontier(&self) -> Vec<ParetoPoint> {
-        let mut points: Vec<ParetoPoint> = self.stats.iter()
+        let mut points: Vec<ParetoPoint> = self
+            .stats
+            .iter()
             .filter(|(_, s)| s.request_count > 0 && s.quality_count > 0)
             .map(|(b, s)| ParetoPoint {
                 backend: b.clone(),
@@ -380,8 +412,11 @@ impl CostOptimizer {
             .collect();
 
         // Sort by cost ascending
-        points.sort_by(|a, b| a.avg_cost_usd.partial_cmp(&b.avg_cost_usd)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        points.sort_by(|a, b| {
+            a.avg_cost_usd
+                .partial_cmp(&b.avg_cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Keep non-dominated points (sweep: a point is dominated if another
         // has lower/equal cost AND strictly higher quality)
@@ -400,21 +435,29 @@ impl CostOptimizer {
 
     /// Per-backend cost and quality summary.
     pub fn backend_report(&self) -> Vec<BackendReport> {
-        let mut v: Vec<BackendReport> = self.stats.iter().map(|(b, s)| BackendReport {
-            backend: b.clone(),
-            total_spent_usd: s.total_spent_usd,
-            request_count: s.request_count,
-            avg_cost_usd: s.avg_cost(),
-            cost_ema_usd: s.cost_ema,
-            avg_quality: s.avg_quality(),
-            quality_ema: s.quality_ema,
-        }).collect();
+        let mut v: Vec<BackendReport> = self
+            .stats
+            .iter()
+            .map(|(b, s)| BackendReport {
+                backend: b.clone(),
+                total_spent_usd: s.total_spent_usd,
+                request_count: s.request_count,
+                avg_cost_usd: s.avg_cost(),
+                cost_ema_usd: s.cost_ema,
+                avg_quality: s.avg_quality(),
+                quality_ema: s.quality_ema,
+            })
+            .collect();
         v.sort_by(|a, b| a.backend.0.cmp(&b.backend.0));
         v
     }
 
-    pub fn history_len(&self) -> usize { self.history.len() }
-    pub fn known_backend_count(&self) -> usize { self.stats.len() }
+    pub fn history_len(&self) -> usize {
+        self.history.len()
+    }
+    pub fn known_backend_count(&self) -> usize {
+        self.stats.len()
+    }
 }
 
 /// Summary row for one backend.
@@ -437,9 +480,13 @@ pub struct BackendReport {
 mod tests {
     use super::*;
 
-    fn b(name: &str) -> Backend { Backend::new(name) }
+    fn b(name: &str) -> Backend {
+        Backend::new(name)
+    }
 
-    fn cheap_price() -> TokenPrice { TokenPrice::new(0.000001, 0.000002) }
+    fn cheap_price() -> TokenPrice {
+        TokenPrice::new(0.000001, 0.000002)
+    }
 
     fn req(backend: &str, cost: f64, quality: Option<f64>) -> RequestCost {
         RequestCost {
@@ -515,8 +562,8 @@ mod tests {
 
     #[test]
     fn test_budget_pressure_display() {
-        assert_eq!(BudgetPressure::Normal.to_string(),   "normal");
-        assert_eq!(BudgetPressure::Warn.to_string(),     "warn");
+        assert_eq!(BudgetPressure::Normal.to_string(), "normal");
+        assert_eq!(BudgetPressure::Warn.to_string(), "warn");
         assert_eq!(BudgetPressure::Critical.to_string(), "critical");
     }
 
@@ -568,8 +615,16 @@ mod tests {
 
     #[test]
     fn test_optimizer_history_bounded() {
-        let mut opt = CostOptimizer::new(BudgetConfig { history_cap: 5, ..Default::default() }, 0.1);
-        for _ in 0..10 { opt.record_request(req("a", 0.01, None)); }
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                history_cap: 5,
+                ..Default::default()
+            },
+            0.1,
+        );
+        for _ in 0..10 {
+            opt.record_request(req("a", 0.01, None));
+        }
         assert_eq!(opt.history_len(), 5);
     }
 
@@ -577,42 +632,83 @@ mod tests {
 
     #[test]
     fn test_optimizer_pressure_normal_when_under_warn() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 10.0, warn_fraction: 0.8, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 10.0,
+                warn_fraction: 0.8,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 5.0, None)); // 50% of ceiling
         assert_eq!(opt.pressure(), BudgetPressure::Normal);
     }
 
     #[test]
     fn test_optimizer_pressure_warn_when_above_warn_fraction() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 10.0, warn_fraction: 0.8, critical_fraction: 0.95, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 10.0,
+                warn_fraction: 0.8,
+                critical_fraction: 0.95,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 8.5, None)); // 85%
         assert_eq!(opt.pressure(), BudgetPressure::Warn);
     }
 
     #[test]
     fn test_optimizer_pressure_critical_when_above_critical_fraction() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 10.0, warn_fraction: 0.8, critical_fraction: 0.95, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 10.0,
+                warn_fraction: 0.8,
+                critical_fraction: 0.95,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 9.6, None)); // 96%
         assert_eq!(opt.pressure(), BudgetPressure::Critical);
     }
 
     #[test]
     fn test_optimizer_remaining_usd_decreases_with_spend() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 10.0, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 10.0,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 3.0, None));
         assert!((opt.remaining_usd() - 7.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_optimizer_remaining_usd_clamped_to_zero() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 1.0, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 1.0,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 5.0, None));
         assert_eq!(opt.remaining_usd(), 0.0);
     }
 
     #[test]
     fn test_optimizer_budget_fraction_zero_ceiling_is_zero() {
-        let opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 0.0, ..Default::default() }, 0.1);
+        let opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 0.0,
+                ..Default::default()
+            },
+            0.1,
+        );
         assert_eq!(opt.budget_fraction(), 0.0);
     }
 
@@ -641,8 +737,8 @@ mod tests {
     fn test_backends_by_cost_sorted_cheapest_first() {
         let mut opt = default_optimizer();
         opt.record_request(req("expensive", 1.00, None));
-        opt.record_request(req("medium",    0.50, None));
-        opt.record_request(req("cheap",     0.10, None));
+        opt.record_request(req("medium", 0.50, None));
+        opt.record_request(req("cheap", 0.10, None));
         let order = opt.backends_by_cost();
         assert_eq!(order[0], b("cheap"));
         assert_eq!(order[2], b("expensive"));
@@ -650,7 +746,13 @@ mod tests {
 
     #[test]
     fn test_preferred_backends_normal_returns_all() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 100.0, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 100.0,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 0.01, None));
         opt.record_request(req("b", 0.02, None));
         let preferred = opt.preferred_backends();
@@ -659,11 +761,19 @@ mod tests {
 
     #[test]
     fn test_preferred_backends_critical_returns_one() {
-        let mut opt = CostOptimizer::new(BudgetConfig { ceiling_usd: 1.0, critical_fraction: 0.5, warn_fraction: 0.3, ..Default::default() }, 0.1);
+        let mut opt = CostOptimizer::new(
+            BudgetConfig {
+                ceiling_usd: 1.0,
+                critical_fraction: 0.5,
+                warn_fraction: 0.3,
+                ..Default::default()
+            },
+            0.1,
+        );
         opt.record_request(req("a", 0.01, Some(0.8)));
         opt.record_request(req("b", 0.02, Some(0.9)));
         opt.record_request(req("c", 0.03, Some(0.7)));
-        opt.record_request(req("x", 0.9,  None));   // push past critical
+        opt.record_request(req("x", 0.9, None)); // push past critical
         let preferred = opt.preferred_backends();
         assert_eq!(preferred.len(), 1);
     }
@@ -704,7 +814,7 @@ mod tests {
     fn test_pareto_frontier_dominated_point_excluded() {
         let mut opt = default_optimizer();
         // "cheap" costs less AND has higher quality — "expensive" is dominated
-        opt.record_request(req("cheap",     0.01, Some(0.9)));
+        opt.record_request(req("cheap", 0.01, Some(0.9)));
         opt.record_request(req("expensive", 0.10, Some(0.5)));
         let f = opt.pareto_frontier();
         // Only "cheap" is non-dominated
@@ -716,7 +826,7 @@ mod tests {
     fn test_pareto_frontier_tradeoff_keeps_both() {
         let mut opt = default_optimizer();
         // "cheap" costs less but lower quality; "premium" costs more but higher quality
-        opt.record_request(req("cheap",   0.01, Some(0.3)));
+        opt.record_request(req("cheap", 0.01, Some(0.3)));
         opt.record_request(req("premium", 0.10, Some(0.9)));
         let f = opt.pareto_frontier();
         assert_eq!(f.len(), 2);
@@ -726,7 +836,7 @@ mod tests {
     fn test_pareto_frontier_sorted_by_cost() {
         let mut opt = default_optimizer();
         opt.record_request(req("z_expensive", 1.00, Some(0.9)));
-        opt.record_request(req("a_cheap",     0.01, Some(0.1)));
+        opt.record_request(req("a_cheap", 0.01, Some(0.1)));
         let f = opt.pareto_frontier();
         if f.len() >= 2 {
             assert!(f[0].avg_cost_usd <= f[1].avg_cost_usd);

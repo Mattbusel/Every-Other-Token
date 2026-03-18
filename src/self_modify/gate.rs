@@ -72,13 +72,20 @@ pub struct CheckResult {
 
 impl CheckResult {
     pub fn passed(name: impl Into<String>, duration: Duration) -> Self {
-        Self { name: name.into(), status: CheckStatus::Passed, duration, details: vec![] }
+        Self {
+            name: name.into(),
+            status: CheckStatus::Passed,
+            duration,
+            details: vec![],
+        }
     }
 
     pub fn failed(name: impl Into<String>, reason: impl Into<String>, duration: Duration) -> Self {
         Self {
             name: name.into(),
-            status: CheckStatus::Failed { reason: reason.into() },
+            status: CheckStatus::Failed {
+                reason: reason.into(),
+            },
             duration,
             details: vec![],
         }
@@ -87,7 +94,9 @@ impl CheckResult {
     pub fn skipped(name: impl Into<String>, reason: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            status: CheckStatus::Skipped { reason: reason.into() },
+            status: CheckStatus::Skipped {
+                reason: reason.into(),
+            },
             duration: Duration::ZERO,
             details: vec![],
         }
@@ -268,15 +277,24 @@ impl std::fmt::Display for RecommendedAction {
 
 impl ValidationReport {
     pub fn failed_checks(&self) -> Vec<&CheckResult> {
-        self.checks.iter().filter(|c| c.status.is_failed()).collect()
+        self.checks
+            .iter()
+            .filter(|c| c.status.is_failed())
+            .collect()
     }
 
     pub fn passed_checks(&self) -> Vec<&CheckResult> {
-        self.checks.iter().filter(|c| c.status.is_passed()).collect()
+        self.checks
+            .iter()
+            .filter(|c| c.status.is_passed())
+            .collect()
     }
 
     pub fn skipped_checks(&self) -> Vec<&CheckResult> {
-        self.checks.iter().filter(|c| c.status.is_skipped()).collect()
+        self.checks
+            .iter()
+            .filter(|c| c.status.is_skipped())
+            .collect()
     }
 
     /// Return a compact text summary for logs.
@@ -361,7 +379,11 @@ impl ValidationGate {
 
         // 4. Smoke test
         if self.config.run_smoke {
-            let cmd = self.config.smoke_command.as_deref().unwrap_or("./scripts/smoke.sh");
+            let cmd = self
+                .config
+                .smoke_command
+                .as_deref()
+                .unwrap_or("./scripts/smoke.sh");
             checks.push(runner.run_smoke(cmd));
         } else {
             checks.push(CheckResult::skipped("smoke", "disabled in config"));
@@ -372,7 +394,10 @@ impl ValidationGate {
             let metrics = runner.staging_metrics();
             checks.push(self.evaluate_staging_metrics(metrics));
         } else {
-            checks.push(CheckResult::skipped("staging_metrics", "disabled in config"));
+            checks.push(CheckResult::skipped(
+                "staging_metrics",
+                "disabled in config",
+            ));
         }
 
         let total_duration = start.elapsed();
@@ -391,8 +416,10 @@ impl ValidationGate {
 
     fn evaluate_benchmarks(&self, samples: Vec<BenchmarkSample>) -> CheckResult {
         let threshold = self.config.bench_regression_threshold;
-        let regressions: Vec<&BenchmarkSample> =
-            samples.iter().filter(|s| s.is_regression(threshold)).collect();
+        let regressions: Vec<&BenchmarkSample> = samples
+            .iter()
+            .filter(|s| s.is_regression(threshold))
+            .collect();
 
         if regressions.is_empty() {
             CheckResult::passed("benchmarks", Duration::ZERO)
@@ -452,7 +479,9 @@ impl ValidationGate {
                 .filter(|c| c.status.is_failed())
                 .map(|c| c.name.clone())
                 .collect();
-            return RecommendedAction::Reject { failed_checks: failed };
+            return RecommendedAction::Reject {
+                failed_checks: failed,
+            };
         }
         match self.config.trust_level {
             TrustLevel::ReviewRequired => RecommendedAction::AwaitReview,
@@ -485,11 +514,15 @@ impl CheckRunner for AlwaysPassRunner {
     fn run_clippy(&self, _cmd: &str) -> CheckResult {
         CheckResult::passed("clippy", Duration::from_millis(200))
     }
-    fn run_benchmarks(&self) -> Vec<BenchmarkSample> { vec![] }
+    fn run_benchmarks(&self) -> Vec<BenchmarkSample> {
+        vec![]
+    }
     fn run_smoke(&self, _cmd: &str) -> CheckResult {
         CheckResult::passed("smoke", Duration::from_millis(100))
     }
-    fn staging_metrics(&self) -> Vec<StagingMetric> { vec![] }
+    fn staging_metrics(&self) -> Vec<StagingMetric> {
+        vec![]
+    }
 }
 
 /// A `CheckRunner` with configurable failures.
@@ -586,7 +619,10 @@ mod tests {
     }
 
     fn gate_with_smoke() -> ValidationGate {
-        ValidationGate::new(GateConfig { run_smoke: true, ..GateConfig::default() })
+        ValidationGate::new(GateConfig {
+            run_smoke: true,
+            ..GateConfig::default()
+        })
     }
 
     fn gate_with_staging() -> ValidationGate {
@@ -609,14 +645,18 @@ mod tests {
 
     #[test]
     fn test_check_status_failed_is_failed() {
-        let s = CheckStatus::Failed { reason: "oops".into() };
+        let s = CheckStatus::Failed {
+            reason: "oops".into(),
+        };
         assert!(s.is_failed());
         assert!(!s.is_passed());
     }
 
     #[test]
     fn test_check_status_skipped_is_skipped() {
-        let s = CheckStatus::Skipped { reason: "off".into() };
+        let s = CheckStatus::Skipped {
+            reason: "off".into(),
+        };
         assert!(s.is_skipped());
         assert!(!s.is_failed());
     }
@@ -644,31 +684,51 @@ mod tests {
 
     #[test]
     fn test_bench_regression_fraction_zero_baseline() {
-        let s = BenchmarkSample { name: "x".into(), baseline_ns: 0.0, current_ns: 100.0 };
+        let s = BenchmarkSample {
+            name: "x".into(),
+            baseline_ns: 0.0,
+            current_ns: 100.0,
+        };
         assert_eq!(s.regression_fraction(), 0.0);
     }
 
     #[test]
     fn test_bench_regression_fraction_10pct() {
-        let s = BenchmarkSample { name: "x".into(), baseline_ns: 100.0, current_ns: 110.0 };
+        let s = BenchmarkSample {
+            name: "x".into(),
+            baseline_ns: 100.0,
+            current_ns: 110.0,
+        };
         assert!((s.regression_fraction() - 0.1).abs() < 1e-9);
     }
 
     #[test]
     fn test_bench_regression_fraction_improvement_is_negative() {
-        let s = BenchmarkSample { name: "x".into(), baseline_ns: 100.0, current_ns: 90.0 };
+        let s = BenchmarkSample {
+            name: "x".into(),
+            baseline_ns: 100.0,
+            current_ns: 90.0,
+        };
         assert!(s.regression_fraction() < 0.0);
     }
 
     #[test]
     fn test_bench_is_regression_above_threshold() {
-        let s = BenchmarkSample { name: "x".into(), baseline_ns: 100.0, current_ns: 110.0 };
+        let s = BenchmarkSample {
+            name: "x".into(),
+            baseline_ns: 100.0,
+            current_ns: 110.0,
+        };
         assert!(s.is_regression(0.05)); // 10% > 5%
     }
 
     #[test]
     fn test_bench_is_not_regression_below_threshold() {
-        let s = BenchmarkSample { name: "x".into(), baseline_ns: 100.0, current_ns: 103.0 };
+        let s = BenchmarkSample {
+            name: "x".into(),
+            baseline_ns: 100.0,
+            current_ns: 103.0,
+        };
         assert!(!s.is_regression(0.05)); // 3% < 5%
     }
 
@@ -678,25 +738,45 @@ mod tests {
 
     #[test]
     fn test_staging_metric_passes_in_range() {
-        let m = StagingMetric { name: "lat".into(), observed: 50.0, min: 0.0, max: 100.0 };
+        let m = StagingMetric {
+            name: "lat".into(),
+            observed: 50.0,
+            min: 0.0,
+            max: 100.0,
+        };
         assert!(m.passes());
     }
 
     #[test]
     fn test_staging_metric_fails_above_max() {
-        let m = StagingMetric { name: "lat".into(), observed: 150.0, min: 0.0, max: 100.0 };
+        let m = StagingMetric {
+            name: "lat".into(),
+            observed: 150.0,
+            min: 0.0,
+            max: 100.0,
+        };
         assert!(!m.passes());
     }
 
     #[test]
     fn test_staging_metric_fails_below_min() {
-        let m = StagingMetric { name: "thr".into(), observed: 10.0, min: 50.0, max: 500.0 };
+        let m = StagingMetric {
+            name: "thr".into(),
+            observed: 10.0,
+            min: 50.0,
+            max: 500.0,
+        };
         assert!(!m.passes());
     }
 
     #[test]
     fn test_staging_metric_passes_at_boundary() {
-        let m = StagingMetric { name: "x".into(), observed: 100.0, min: 0.0, max: 100.0 };
+        let m = StagingMetric {
+            name: "x".into(),
+            observed: 100.0,
+            min: 0.0,
+            max: 100.0,
+        };
         assert!(m.passes());
     }
 
@@ -768,7 +848,10 @@ mod tests {
         let gate = default_gate();
         let runner = ConfigurableRunner::all_pass().with_test_failure("test failed");
         let report = gate.run("sha-xyz", &runner);
-        assert!(matches!(report.recommended_action, RecommendedAction::Reject { .. }));
+        assert!(matches!(
+            report.recommended_action,
+            RecommendedAction::Reject { .. }
+        ));
     }
 
     #[test]
@@ -798,21 +881,29 @@ mod tests {
     #[test]
     fn test_gate_bench_regression_fails() {
         let gate = default_gate();
-        let runner = ConfigurableRunner::all_pass()
-            .with_bench_regression("dedup_hot_path", 100.0, 120.0); // 20% > 5%
+        let runner =
+            ConfigurableRunner::all_pass().with_bench_regression("dedup_hot_path", 100.0, 120.0); // 20% > 5%
         let report = gate.run("sha", &runner);
         assert!(!report.overall_passed);
-        let bench = report.checks.iter().find(|c| c.name == "benchmarks").unwrap();
+        let bench = report
+            .checks
+            .iter()
+            .find(|c| c.name == "benchmarks")
+            .unwrap();
         assert!(bench.status.is_failed());
     }
 
     #[test]
     fn test_gate_bench_within_threshold_passes() {
         let gate = default_gate();
-        let runner = ConfigurableRunner::all_pass()
-            .with_bench_regression("dedup_hot_path", 100.0, 103.0); // 3% < 5%
+        let runner =
+            ConfigurableRunner::all_pass().with_bench_regression("dedup_hot_path", 100.0, 103.0); // 3% < 5%
         let report = gate.run("sha", &runner);
-        let bench = report.checks.iter().find(|c| c.name == "benchmarks").unwrap();
+        let bench = report
+            .checks
+            .iter()
+            .find(|c| c.name == "benchmarks")
+            .unwrap();
         assert!(bench.status.is_passed());
     }
 
@@ -823,17 +914,24 @@ mod tests {
             .with_test_failure("fail")
             .with_bench_regression("x", 100.0, 200.0); // would fail but should be skipped
         let report = gate.run("sha", &runner);
-        let bench = report.checks.iter().find(|c| c.name == "benchmarks").unwrap();
+        let bench = report
+            .checks
+            .iter()
+            .find(|c| c.name == "benchmarks")
+            .unwrap();
         assert!(bench.status.is_skipped());
     }
 
     #[test]
     fn test_gate_bench_regression_details_contain_name() {
         let gate = default_gate();
-        let runner = ConfigurableRunner::all_pass()
-            .with_bench_regression("my_bench", 100.0, 200.0);
+        let runner = ConfigurableRunner::all_pass().with_bench_regression("my_bench", 100.0, 200.0);
         let report = gate.run("sha", &runner);
-        let bench = report.checks.iter().find(|c| c.name == "benchmarks").unwrap();
+        let bench = report
+            .checks
+            .iter()
+            .find(|c| c.name == "benchmarks")
+            .unwrap();
         assert!(bench.details.iter().any(|d| d.contains("my_bench")));
     }
 
@@ -844,20 +942,28 @@ mod tests {
     #[test]
     fn test_gate_staging_metric_out_of_bounds_fails() {
         let gate = gate_with_staging();
-        let runner = ConfigurableRunner::all_pass()
-            .with_staging_metric("p95_latency_ms", 200.0, 0.0, 100.0);
+        let runner =
+            ConfigurableRunner::all_pass().with_staging_metric("p95_latency_ms", 200.0, 0.0, 100.0);
         let report = gate.run("sha", &runner);
-        let sm = report.checks.iter().find(|c| c.name == "staging_metrics").unwrap();
+        let sm = report
+            .checks
+            .iter()
+            .find(|c| c.name == "staging_metrics")
+            .unwrap();
         assert!(sm.status.is_failed());
     }
 
     #[test]
     fn test_gate_staging_metric_in_bounds_passes() {
         let gate = gate_with_staging();
-        let runner = ConfigurableRunner::all_pass()
-            .with_staging_metric("p95_latency_ms", 50.0, 0.0, 100.0);
+        let runner =
+            ConfigurableRunner::all_pass().with_staging_metric("p95_latency_ms", 50.0, 0.0, 100.0);
         let report = gate.run("sha", &runner);
-        let sm = report.checks.iter().find(|c| c.name == "staging_metrics").unwrap();
+        let sm = report
+            .checks
+            .iter()
+            .find(|c| c.name == "staging_metrics")
+            .unwrap();
         assert!(sm.status.is_passed());
     }
 
@@ -867,7 +973,10 @@ mod tests {
 
     #[test]
     fn test_gate_disabled_tests_skips_tests() {
-        let gate = ValidationGate::new(GateConfig { run_tests: false, ..GateConfig::default() });
+        let gate = ValidationGate::new(GateConfig {
+            run_tests: false,
+            ..GateConfig::default()
+        });
         let report = gate.run("sha", &AlwaysPassRunner);
         let tests = report.checks.iter().find(|c| c.name == "tests").unwrap();
         assert!(tests.status.is_skipped());
@@ -875,9 +984,16 @@ mod tests {
 
     #[test]
     fn test_gate_disabled_benchmarks_skips_benchmarks() {
-        let gate = ValidationGate::new(GateConfig { run_benchmarks: false, ..GateConfig::default() });
+        let gate = ValidationGate::new(GateConfig {
+            run_benchmarks: false,
+            ..GateConfig::default()
+        });
         let report = gate.run("sha", &AlwaysPassRunner);
-        let bench = report.checks.iter().find(|c| c.name == "benchmarks").unwrap();
+        let bench = report
+            .checks
+            .iter()
+            .find(|c| c.name == "benchmarks")
+            .unwrap();
         assert!(bench.status.is_skipped());
     }
 
@@ -949,7 +1065,9 @@ mod tests {
 
     #[test]
     fn test_recommended_action_display_reject_includes_names() {
-        let a = RecommendedAction::Reject { failed_checks: vec!["tests".into(), "clippy".into()] };
+        let a = RecommendedAction::Reject {
+            failed_checks: vec!["tests".into(), "clippy".into()],
+        };
         let s = a.to_string();
         assert!(s.contains("tests"));
         assert!(s.contains("clippy"));

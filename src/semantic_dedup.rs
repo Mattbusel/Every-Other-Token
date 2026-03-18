@@ -37,7 +37,10 @@ pub struct DedupConfig {
 
 impl Default for DedupConfig {
     fn default() -> Self {
-        DedupConfig { ttl_ms: 300_000, capacity: 1_024 }
+        DedupConfig {
+            ttl_ms: 300_000,
+            capacity: 1_024,
+        }
     }
 }
 
@@ -72,7 +75,10 @@ pub struct SemanticDedup {
 impl SemanticDedup {
     /// Construct a new, empty cache with the provided configuration.
     pub fn new(config: DedupConfig) -> Self {
-        SemanticDedup { config, cache: HashMap::new() }
+        SemanticDedup {
+            config,
+            cache: HashMap::new(),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -173,7 +179,12 @@ impl SemanticDedup {
 
         self.cache.insert(
             fp.clone(),
-            CacheEntry { fingerprint: fp, value, inserted_ms: now_ms, hit_count: 0 },
+            CacheEntry {
+                fingerprint: fp,
+                value,
+                inserted_ms: now_ms,
+                hit_count: 0,
+            },
         );
     }
 
@@ -184,9 +195,8 @@ impl SemanticDedup {
     /// This function never panics.
     pub fn evict_expired(&mut self, now_ms: u64) {
         let ttl = self.config.ttl_ms;
-        self.cache.retain(|_, entry| {
-            now_ms.saturating_sub(entry.inserted_ms) < ttl
-        });
+        self.cache
+            .retain(|_, entry| now_ms.saturating_sub(entry.inserted_ms) < ttl);
     }
 
     /// Return the number of entries currently in the cache.
@@ -289,7 +299,10 @@ mod tests {
     fn test_fingerprint_trims_to_128_chars() {
         let long_input: String = "a ".repeat(200); // 400 chars
         let fp = SemanticDedup::fingerprint(&long_input);
-        assert!(fp.chars().count() <= 128, "fingerprint must be at most 128 chars");
+        assert!(
+            fp.chars().count() <= 128,
+            "fingerprint must be at most 128 chars"
+        );
     }
 
     #[test]
@@ -735,7 +748,11 @@ mod tests {
         // é is alphanumeric (Unicode), so it is kept; accent-less ASCII letters kept.
         // The important invariant: result contains only alphanumerics and spaces.
         for ch in fp.chars() {
-            assert!(ch.is_alphanumeric() || ch == ' ', "unexpected char: {:?}", ch);
+            assert!(
+                ch.is_alphanumeric() || ch == ' ',
+                "unexpected char: {:?}",
+                ch
+            );
         }
     }
 

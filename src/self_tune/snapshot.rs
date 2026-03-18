@@ -335,7 +335,9 @@ impl SnapshotRegistry {
 
     /// Return snapshots since `timestamp_ms` (inclusive), chronological.
     pub fn since(&self, timestamp_ms: u64) -> impl Iterator<Item = &ConfigSnapshot> {
-        self.history.iter().filter(move |s| s.timestamp_ms >= timestamp_ms)
+        self.history
+            .iter()
+            .filter(move |s| s.timestamp_ms >= timestamp_ms)
     }
 
     /// Return snapshots from the last `window_ms` milliseconds.
@@ -542,7 +544,10 @@ mod tests {
 
     #[test]
     fn test_change_source_display_anomaly_rollback() {
-        assert_eq!(ChangeSource::AnomalyRollback.to_string(), "anomaly-rollback");
+        assert_eq!(
+            ChangeSource::AnomalyRollback.to_string(),
+            "anomaly-rollback"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -551,25 +556,41 @@ mod tests {
 
     #[test]
     fn test_param_diff_delta_positive() {
-        let d = ParamDiff { name: "x".into(), before: 100.0, after: 150.0 };
+        let d = ParamDiff {
+            name: "x".into(),
+            before: 100.0,
+            after: 150.0,
+        };
         assert!((d.delta() - 50.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_param_diff_delta_negative() {
-        let d = ParamDiff { name: "x".into(), before: 200.0, after: 100.0 };
+        let d = ParamDiff {
+            name: "x".into(),
+            before: 200.0,
+            after: 100.0,
+        };
         assert!((d.delta() - (-100.0)).abs() < 1e-9);
     }
 
     #[test]
     fn test_param_diff_pct_change_normal() {
-        let d = ParamDiff { name: "x".into(), before: 100.0, after: 125.0 };
+        let d = ParamDiff {
+            name: "x".into(),
+            before: 100.0,
+            after: 125.0,
+        };
         assert!((d.pct_change() - 25.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_param_diff_pct_change_zero_before_returns_zero() {
-        let d = ParamDiff { name: "x".into(), before: 0.0, after: 50.0 };
+        let d = ParamDiff {
+            name: "x".into(),
+            before: 0.0,
+            after: 50.0,
+        };
         assert_eq!(d.pct_change(), 0.0);
     }
 
@@ -580,12 +601,20 @@ mod tests {
     #[test]
     fn test_diff_detects_changed_parameter() {
         let s1 = ConfigSnapshot {
-            id: 1, timestamp_ms: 1, source: ChangeSource::Initial,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 1,
+            timestamp_ms: 1,
+            source: ChangeSource::Initial,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let s2 = ConfigSnapshot {
-            id: 2, timestamp_ms: 2, source: ChangeSource::Controller,
-            params: changed_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 2,
+            timestamp_ms: 2,
+            source: ChangeSource::Controller,
+            params: changed_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let diff = s1.diff_to(&s2);
         assert!(!diff.is_empty());
@@ -598,15 +627,26 @@ mod tests {
     #[test]
     fn test_diff_detects_new_parameter() {
         let s1 = ConfigSnapshot {
-            id: 1, timestamp_ms: 1, source: ChangeSource::Initial,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 1,
+            timestamp_ms: 1,
+            source: ChangeSource::Initial,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let s2 = ConfigSnapshot {
-            id: 2, timestamp_ms: 2, source: ChangeSource::Controller,
-            params: changed_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 2,
+            timestamp_ms: 2,
+            source: ChangeSource::Controller,
+            params: changed_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let diff = s1.diff_to(&s2);
-        let new_param = diff.changes.iter().find(|d| d.name == "priority_interval_ms");
+        let new_param = diff
+            .changes
+            .iter()
+            .find(|d| d.name == "priority_interval_ms");
         assert!(new_param.is_some());
         assert!((new_param.unwrap().before - 0.0).abs() < 1e-9);
         assert!((new_param.unwrap().after - 50.0).abs() < 1e-9);
@@ -618,12 +658,20 @@ mod tests {
         let mut p2 = changed_params();
         p2.remove("rate_limit");
         let s1 = ConfigSnapshot {
-            id: 1, timestamp_ms: 1, source: ChangeSource::Initial,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 1,
+            timestamp_ms: 1,
+            source: ChangeSource::Initial,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let s2 = ConfigSnapshot {
-            id: 2, timestamp_ms: 2, source: ChangeSource::Controller,
-            params: p2, metrics: SnapshotMetrics::default(), note: None,
+            id: 2,
+            timestamp_ms: 2,
+            source: ChangeSource::Controller,
+            params: p2,
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let diff = s1.diff_to(&s2);
         let removed = diff.changes.iter().find(|d| d.name == "rate_limit");
@@ -635,12 +683,20 @@ mod tests {
     #[test]
     fn test_diff_empty_when_identical() {
         let s1 = ConfigSnapshot {
-            id: 1, timestamp_ms: 1, source: ChangeSource::Initial,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 1,
+            timestamp_ms: 1,
+            source: ChangeSource::Initial,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let s2 = ConfigSnapshot {
-            id: 2, timestamp_ms: 2, source: ChangeSource::Controller,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 2,
+            timestamp_ms: 2,
+            source: ChangeSource::Controller,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let diff = s1.diff_to(&s2);
         assert!(diff.is_empty());
@@ -649,12 +705,20 @@ mod tests {
     #[test]
     fn test_diff_changes_sorted_by_name() {
         let s1 = ConfigSnapshot {
-            id: 1, timestamp_ms: 1, source: ChangeSource::Initial,
-            params: base_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 1,
+            timestamp_ms: 1,
+            source: ChangeSource::Initial,
+            params: base_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let s2 = ConfigSnapshot {
-            id: 2, timestamp_ms: 2, source: ChangeSource::Controller,
-            params: changed_params(), metrics: SnapshotMetrics::default(), note: None,
+            id: 2,
+            timestamp_ms: 2,
+            source: ChangeSource::Controller,
+            params: changed_params(),
+            metrics: SnapshotMetrics::default(),
+            note: None,
         };
         let diff = s1.diff_to(&s2);
         let names: Vec<&str> = diff.changes.iter().map(|d| d.name.as_str()).collect();
@@ -677,8 +741,18 @@ mod tests {
     #[test]
     fn test_commit_returns_incrementing_ids() {
         let mut reg = SnapshotRegistry::new(10);
-        let id1 = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        let id2 = reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        let id1 = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        let id2 = reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         assert_eq!(id1, 1);
         assert_eq!(id2, 2);
         assert_eq!(reg.len(), 2);
@@ -687,8 +761,18 @@ mod tests {
     #[test]
     fn test_get_returns_correct_snapshot() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        let id = reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        let id = reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         let snap = reg.get(id).unwrap();
         assert_eq!(snap.id, id);
         assert!(matches!(snap.source, ChangeSource::Controller));
@@ -703,8 +787,18 @@ mod tests {
     #[test]
     fn test_latest_returns_most_recent() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         let latest = reg.latest().unwrap();
         assert_eq!(latest.id, 2);
     }
@@ -722,11 +816,31 @@ mod tests {
     #[test]
     fn test_capacity_evicts_oldest() {
         let mut reg = SnapshotRegistry::new(3);
-        let id1 = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        reg.commit(base_params(), ChangeSource::Controller, metrics(11.0, 0.0), None);
-        reg.commit(base_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        let id1 = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(11.0, 0.0),
+            None,
+        );
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         // Adding a 4th should evict id1
-        reg.commit(base_params(), ChangeSource::Controller, metrics(13.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(13.0, 0.0),
+            None,
+        );
         assert_eq!(reg.len(), 3);
         assert!(reg.get(id1).is_none(), "oldest snapshot should be evicted");
     }
@@ -734,8 +848,18 @@ mod tests {
     #[test]
     fn test_capacity_one_always_contains_latest() {
         let mut reg = SnapshotRegistry::new(1);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        let id = reg.commit(changed_params(), ChangeSource::Controller, metrics(11.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        let id = reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(11.0, 0.0),
+            None,
+        );
         assert_eq!(reg.len(), 1);
         assert_eq!(reg.latest().unwrap().id, id);
     }
@@ -747,11 +871,27 @@ mod tests {
     #[test]
     fn test_rollback_to_creates_new_snapshot_with_old_params() {
         let mut reg = SnapshotRegistry::new(10);
-        let id1 = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        reg.commit(changed_params(), ChangeSource::Controller, metrics(20.0, 0.1), None);
+        let id1 = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(20.0, 0.1),
+            None,
+        );
 
         let rb_id = reg
-            .rollback_to(id1, ChangeSource::AutoRollback { degraded_metric: "p95_latency_ms".into() }, metrics(15.0, 0.05))
+            .rollback_to(
+                id1,
+                ChangeSource::AutoRollback {
+                    degraded_metric: "p95_latency_ms".into(),
+                },
+                metrics(15.0, 0.05),
+            )
             .unwrap();
 
         let rb_snap = reg.get(rb_id).unwrap();
@@ -765,7 +905,12 @@ mod tests {
     #[test]
     fn test_rollback_to_unknown_id_returns_err() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         let result = reg.rollback_to(999, ChangeSource::AnomalyRollback, metrics(10.0, 0.0));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("999"));
@@ -774,9 +919,21 @@ mod tests {
     #[test]
     fn test_rollback_increments_id() {
         let mut reg = SnapshotRegistry::new(10);
-        let id1 = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        let id2 = reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
-        let rb_id = reg.rollback_to(id1, ChangeSource::AnomalyRollback, metrics(10.0, 0.0)).unwrap();
+        let id1 = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        let id2 = reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
+        let rb_id = reg
+            .rollback_to(id1, ChangeSource::AnomalyRollback, metrics(10.0, 0.0))
+            .unwrap();
         assert_eq!(rb_id, id2 + 1);
     }
 
@@ -787,8 +944,18 @@ mod tests {
     #[test]
     fn test_registry_diff_between_two_snapshots() {
         let mut reg = SnapshotRegistry::new(10);
-        let id1 = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        let id2 = reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        let id1 = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        let id2 = reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         let diff = reg.diff(id1, id2).unwrap();
         assert!(!diff.is_empty());
     }
@@ -796,14 +963,24 @@ mod tests {
     #[test]
     fn test_registry_diff_unknown_from_returns_none() {
         let mut reg = SnapshotRegistry::new(10);
-        let id = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        let id = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         assert!(reg.diff(999, id).is_none());
     }
 
     #[test]
     fn test_registry_diff_unknown_to_returns_none() {
         let mut reg = SnapshotRegistry::new(10);
-        let id = reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        let id = reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         assert!(reg.diff(id, 999).is_none());
     }
 
@@ -815,10 +992,30 @@ mod tests {
     fn test_since_filters_by_timestamp() {
         let mut reg = SnapshotRegistry::new(10);
         // Internal clock increments on each commit: 1, 2, 3, 4
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None); // ts=1
-        reg.commit(base_params(), ChangeSource::Controller, metrics(11.0, 0.0), None); // ts=2
-        reg.commit(base_params(), ChangeSource::Controller, metrics(12.0, 0.0), None); // ts=3
-        reg.commit(base_params(), ChangeSource::Controller, metrics(13.0, 0.0), None); // ts=4
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        ); // ts=1
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(11.0, 0.0),
+            None,
+        ); // ts=2
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        ); // ts=3
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(13.0, 0.0),
+            None,
+        ); // ts=4
         let recent: Vec<_> = reg.since(3).collect();
         assert_eq!(recent.len(), 2, "should include ts=3 and ts=4");
     }
@@ -826,10 +1023,25 @@ mod tests {
     #[test]
     fn test_last_window_returns_recent_entries() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None); // ts=1
-        reg.commit(base_params(), ChangeSource::Controller, metrics(11.0, 0.0), None); // ts=2
-        reg.commit(base_params(), ChangeSource::Controller, metrics(12.0, 0.0), None); // ts=3
-        // clock_ms is now 3; last_window(2) → cutoff = 3-2=1 → includes ts=2 and ts=3
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        ); // ts=1
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(11.0, 0.0),
+            None,
+        ); // ts=2
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        ); // ts=3
+           // clock_ms is now 3; last_window(2) → cutoff = 3-2=1 → includes ts=2 and ts=3
         let window: Vec<_> = reg.last_window(2).collect();
         assert_eq!(window.len(), 2);
     }
@@ -841,9 +1053,24 @@ mod tests {
     #[test]
     fn test_best_in_window_lower_is_better_latency() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(50.0, 0.0), None); // p95=50
-        reg.commit(base_params(), ChangeSource::Controller, metrics(30.0, 0.0), None); // p95=30 ← best
-        reg.commit(base_params(), ChangeSource::Controller, metrics(40.0, 0.0), None); // p95=40
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(50.0, 0.0),
+            None,
+        ); // p95=50
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(30.0, 0.0),
+            None,
+        ); // p95=30 ← best
+        reg.commit(
+            base_params(),
+            ChangeSource::Controller,
+            metrics(40.0, 0.0),
+            None,
+        ); // p95=40
         let best = reg.best_in_window("p95_latency_ms", 100, false).unwrap();
         assert!((best.metrics.p95_latency_ms - 30.0).abs() < 1e-9);
     }
@@ -851,9 +1078,12 @@ mod tests {
     #[test]
     fn test_best_in_window_higher_is_better_throughput() {
         let mut reg = SnapshotRegistry::new(10);
-        let mut m1 = SnapshotMetrics::default(); m1.throughput_rps = 100.0;
-        let mut m2 = SnapshotMetrics::default(); m2.throughput_rps = 500.0; // best
-        let mut m3 = SnapshotMetrics::default(); m3.throughput_rps = 300.0;
+        let mut m1 = SnapshotMetrics::default();
+        m1.throughput_rps = 100.0;
+        let mut m2 = SnapshotMetrics::default();
+        m2.throughput_rps = 500.0; // best
+        let mut m3 = SnapshotMetrics::default();
+        m3.throughput_rps = 300.0;
         reg.commit(base_params(), ChangeSource::Initial, m1, None);
         reg.commit(base_params(), ChangeSource::Controller, m2, None);
         reg.commit(base_params(), ChangeSource::Controller, m3, None);
@@ -864,7 +1094,12 @@ mod tests {
     #[test]
     fn test_best_in_window_empty_window_returns_none() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         // Window of 0ms → nothing qualifies (cutoff = clock - 0 = clock, filter is > cutoff)
         // Actually clock is 1 after one commit; window=0 means cutoff=1; filter is ts > 1 → nothing
         let best = reg.best_in_window("p95_latency_ms", 0, false);
@@ -874,7 +1109,12 @@ mod tests {
     #[test]
     fn test_best_in_window_unknown_metric_returns_none() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         let best = reg.best_in_window("nonexistent_metric", 100, true);
         assert!(best.is_none());
     }
@@ -917,8 +1157,18 @@ mod tests {
     #[test]
     fn test_config_history_json_returns_correct_count() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         let json = reg.config_history_json();
         assert_eq!(json.len(), 2);
     }
@@ -926,7 +1176,12 @@ mod tests {
     #[test]
     fn test_config_history_json_first_entry_has_no_changes() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         let json = reg.config_history_json();
         let changes = json[0]["changes"].as_array().unwrap();
         assert!(changes.is_empty());
@@ -935,8 +1190,18 @@ mod tests {
     #[test]
     fn test_config_history_json_second_entry_has_changes() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
-        reg.commit(changed_params(), ChangeSource::Controller, metrics(12.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
+        reg.commit(
+            changed_params(),
+            ChangeSource::Controller,
+            metrics(12.0, 0.0),
+            None,
+        );
         let json = reg.config_history_json();
         let changes = json[1]["changes"].as_array().unwrap();
         assert!(!changes.is_empty());
@@ -945,7 +1210,12 @@ mod tests {
     #[test]
     fn test_config_history_json_contains_source_string() {
         let mut reg = SnapshotRegistry::new(10);
-        reg.commit(base_params(), ChangeSource::Initial, metrics(10.0, 0.0), None);
+        reg.commit(
+            base_params(),
+            ChangeSource::Initial,
+            metrics(10.0, 0.0),
+            None,
+        );
         let json = reg.config_history_json();
         assert_eq!(json[0]["source"].as_str().unwrap(), "initial");
     }
@@ -967,7 +1237,12 @@ mod tests {
         for i in 0..5u64 {
             let mut p = base_params();
             p.insert("counter".to_string(), i as f64);
-            reg.commit(p, ChangeSource::Controller, metrics(10.0 + i as f64, 0.0), None);
+            reg.commit(
+                p,
+                ChangeSource::Controller,
+                metrics(10.0 + i as f64, 0.0),
+                None,
+            );
         }
         let ids: Vec<u64> = reg.all().map(|s| s.id).collect();
         assert_eq!(ids, vec![1, 2, 3, 4, 5]);

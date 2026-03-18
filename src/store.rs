@@ -13,7 +13,7 @@
 //! The [`Storage`] trait abstracts the backend so tests and future implementations
 //! can swap in an in-memory or remote store without changing call sites.
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde_json::json;
 
 // ---------------------------------------------------------------------------
@@ -160,8 +160,14 @@ impl ExperimentStore {
             Ok(exp_id)
         })();
         match result {
-            Ok(id) => { self.conn.execute("COMMIT", [])?; Ok(id) }
-            Err(e) => { let _ = self.conn.execute("ROLLBACK", []); Err(e) }
+            Ok(id) => {
+                self.conn.execute("COMMIT", [])?;
+                Ok(id)
+            }
+            Err(e) => {
+                let _ = self.conn.execute("ROLLBACK", []);
+                Err(e)
+            }
         }
     }
 
@@ -243,7 +249,12 @@ impl ExperimentStore {
     }
 
     /// Register a fingerprint in the cross-session dedup cache.
-    pub fn dedup_register(&self, fingerprint: &str, value: &str, now_ms: u64) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn dedup_register(
+        &self,
+        fingerprint: &str,
+        value: &str,
+        now_ms: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute(
             "INSERT OR REPLACE INTO dedup_cache (fingerprint, value, inserted_ms) VALUES (?1, ?2, ?3)",
             rusqlite::params![fingerprint, value, now_ms as i64],
@@ -252,7 +263,11 @@ impl ExperimentStore {
     }
 
     /// Remove expired entries from the dedup cache.
-    pub fn dedup_evict_expired(&self, now_ms: u64, ttl_ms: u64) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn dedup_evict_expired(
+        &self,
+        now_ms: u64,
+        ttl_ms: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let cutoff = now_ms.saturating_sub(ttl_ms);
         self.conn.execute(
             "DELETE FROM dedup_cache WHERE inserted_ms < ?1",
@@ -263,9 +278,10 @@ impl ExperimentStore {
 
     /// Return all experiment rows as JSON objects.
     pub fn query_experiments(&self) -> Vec<serde_json::Value> {
-        let mut stmt = match self.conn.prepare(
-            "SELECT id, created_at, prompt, provider, transform, model FROM experiments",
-        ) {
+        let mut stmt = match self
+            .conn
+            .prepare("SELECT id, created_at, prompt, provider, transform, model FROM experiments")
+        {
             Ok(s) => s,
             Err(_) => return vec![],
         };
@@ -306,7 +322,13 @@ mod tests {
     fn test_insert_and_query_experiment() {
         let store = ExperimentStore::open(":memory:").expect("open");
         let id = store
-            .insert_experiment("2026-01-01T00:00:00Z", "hello", "openai", "reverse", "gpt-4")
+            .insert_experiment(
+                "2026-01-01T00:00:00Z",
+                "hello",
+                "openai",
+                "reverse",
+                "gpt-4",
+            )
             .expect("insert");
         assert!(id > 0);
         let exps = store.query_experiments();
@@ -321,14 +343,17 @@ mod tests {
             .insert_experiment("2026-01-01T00:00:00Z", "test", "openai", "reverse", "gpt-4")
             .expect("insert exp");
         store
-            .insert_run(exp_id, &RunRecord {
-                run_index: 0,
-                token_count: 42,
-                transformed_count: 21,
-                avg_confidence: Some(0.9),
-                avg_perplexity: Some(1.1),
-                vocab_diversity: 0.8,
-            })
+            .insert_run(
+                exp_id,
+                &RunRecord {
+                    run_index: 0,
+                    token_count: 42,
+                    transformed_count: 21,
+                    avg_confidence: Some(0.9),
+                    avg_perplexity: Some(1.1),
+                    vocab_diversity: 0.8,
+                },
+            )
             .expect("insert run");
     }
 
@@ -339,7 +364,13 @@ mod tests {
         let store = ExperimentStore::open(":memory:").expect("open");
         let storage: &dyn super::Storage = &store;
         let id = storage
-            .store_experiment("2026-01-01T00:00:00Z", "trait test", "anthropic", "noise", "claude-sonnet-4-6")
+            .store_experiment(
+                "2026-01-01T00:00:00Z",
+                "trait test",
+                "anthropic",
+                "noise",
+                "claude-sonnet-4-6",
+            )
             .expect("store_experiment via trait");
         assert!(id > 0);
     }
@@ -349,7 +380,13 @@ mod tests {
         let store = ExperimentStore::open(":memory:").expect("open");
         let storage: &dyn super::Storage = &store;
         storage
-            .store_experiment("2026-01-01T00:00:00Z", "hello", "openai", "reverse", "gpt-4")
+            .store_experiment(
+                "2026-01-01T00:00:00Z",
+                "hello",
+                "openai",
+                "reverse",
+                "gpt-4",
+            )
             .expect("insert");
         let exps = storage.list_experiments();
         assert_eq!(exps.len(), 1);
@@ -361,17 +398,26 @@ mod tests {
         let store = ExperimentStore::open(":memory:").expect("open");
         let storage: &dyn super::Storage = &store;
         let exp_id = storage
-            .store_experiment("2026-01-01T00:00:00Z", "run test", "openai", "chaos", "gpt-4")
+            .store_experiment(
+                "2026-01-01T00:00:00Z",
+                "run test",
+                "openai",
+                "chaos",
+                "gpt-4",
+            )
             .expect("insert");
         storage
-            .store_run(exp_id, &RunRecord {
-                run_index: 0,
-                token_count: 10,
-                transformed_count: 5,
-                avg_confidence: Some(0.7),
-                avg_perplexity: Some(2.0),
-                vocab_diversity: 0.6,
-            })
+            .store_run(
+                exp_id,
+                &RunRecord {
+                    run_index: 0,
+                    token_count: 10,
+                    transformed_count: 5,
+                    avg_confidence: Some(0.7),
+                    avg_perplexity: Some(2.0),
+                    vocab_diversity: 0.6,
+                },
+            )
             .expect("store_run via trait");
     }
 
@@ -394,7 +440,9 @@ mod tests {
     fn test_dedup_register_and_hit() {
         let tmp = std::env::temp_dir().join("dedup_hit.db");
         let store = ExperimentStore::open(tmp.to_str().unwrap()).unwrap();
-        store.dedup_register("fp2", "cached_value", 1_000_000).unwrap();
+        store
+            .dedup_register("fp2", "cached_value", 1_000_000)
+            .unwrap();
         let result = store.dedup_check("fp2", 1_100_000, 300_000);
         assert_eq!(result, Some("cached_value".to_string()));
         std::fs::remove_file(&tmp).ok();
@@ -417,17 +465,23 @@ mod tests {
     #[test]
     fn test_insert_experiment_with_run_atomic() {
         let store = ExperimentStore::open(":memory:").expect("open");
-        let exp_id = store.insert_experiment_with_run(
-            "2026-01-01T00:00:00Z", "hello", "openai", "reverse", "gpt-4",
-            &RunRecord {
-                run_index: 0,
-                token_count: 10,
-                transformed_count: 5,
-                avg_confidence: Some(0.8),
-                avg_perplexity: Some(1.5),
-                vocab_diversity: 0.9,
-            },
-        ).expect("transactional insert");
+        let exp_id = store
+            .insert_experiment_with_run(
+                "2026-01-01T00:00:00Z",
+                "hello",
+                "openai",
+                "reverse",
+                "gpt-4",
+                &RunRecord {
+                    run_index: 0,
+                    token_count: 10,
+                    transformed_count: 5,
+                    avg_confidence: Some(0.8),
+                    avg_perplexity: Some(1.5),
+                    vocab_diversity: 0.9,
+                },
+            )
+            .expect("transactional insert");
         assert!(exp_id > 0);
         let exps = store.query_experiments();
         assert_eq!(exps.len(), 1);
@@ -436,17 +490,23 @@ mod tests {
     #[test]
     fn test_insert_experiment_with_run_run_is_linked() {
         let store = ExperimentStore::open(":memory:").expect("open");
-        let exp_id = store.insert_experiment_with_run(
-            "2026-01-01T00:00:00Z", "test", "anthropic", "uppercase", "claude-sonnet-4-6",
-            &RunRecord {
-                run_index: 0,
-                token_count: 20,
-                transformed_count: 10,
-                avg_confidence: None,
-                avg_perplexity: None,
-                vocab_diversity: 0.5,
-            },
-        ).expect("insert");
+        let exp_id = store
+            .insert_experiment_with_run(
+                "2026-01-01T00:00:00Z",
+                "test",
+                "anthropic",
+                "uppercase",
+                "claude-sonnet-4-6",
+                &RunRecord {
+                    run_index: 0,
+                    token_count: 20,
+                    transformed_count: 10,
+                    avg_confidence: None,
+                    avg_perplexity: None,
+                    vocab_diversity: 0.5,
+                },
+            )
+            .expect("insert");
         // The returned id must be positive and the experiment must be queryable
         assert!(exp_id > 0);
         let exps = store.query_experiments();
@@ -458,15 +518,22 @@ mod tests {
     #[test]
     fn test_load_runs_by_transform_cached_stmt() {
         let store = ExperimentStore::open(":memory:").expect("open");
-        let exp_id = store.insert_experiment("now", "p", "openai", "noise", "gpt-4").expect("exp");
-        store.insert_run(exp_id, &RunRecord {
-            run_index: 0,
-            token_count: 3,
-            transformed_count: 1,
-            avg_confidence: Some(0.6),
-            avg_perplexity: Some(2.0),
-            vocab_diversity: 0.7,
-        }).expect("run");
+        let exp_id = store
+            .insert_experiment("now", "p", "openai", "noise", "gpt-4")
+            .expect("exp");
+        store
+            .insert_run(
+                exp_id,
+                &RunRecord {
+                    run_index: 0,
+                    token_count: 3,
+                    transformed_count: 1,
+                    avg_confidence: Some(0.6),
+                    avg_perplexity: Some(2.0),
+                    vocab_diversity: 0.7,
+                },
+            )
+            .expect("run");
         // Call twice to exercise prepare_cached reuse
         let r1 = store.load_runs_by_transform("p", "noise").expect("q1");
         let r2 = store.load_runs_by_transform("p", "noise").expect("q2");

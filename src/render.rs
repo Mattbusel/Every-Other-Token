@@ -47,8 +47,8 @@ impl ConfidenceBand {
     pub fn indicator(self) -> &'static str {
         match self {
             ConfidenceBand::High => "●",
-            ConfidenceBand::Mid  => "◑",
-            ConfidenceBand::Low  => "○",
+            ConfidenceBand::Mid => "◑",
+            ConfidenceBand::Low => "○",
         }
     }
 }
@@ -70,11 +70,17 @@ impl ConfidenceBand {
 /// ```
 #[inline]
 pub fn importance_to_heat(importance: f64) -> u8 {
-    if importance >= 0.8 { 4 }
-    else if importance >= 0.6 { 3 }
-    else if importance >= 0.4 { 2 }
-    else if importance >= 0.2 { 1 }
-    else { 0 }
+    if importance >= 0.8 {
+        4
+    } else if importance >= 0.6 {
+        3
+    } else if importance >= 0.4 {
+        2
+    } else if importance >= 0.2 {
+        1
+    } else {
+        0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -262,8 +268,14 @@ mod tests {
     #[test]
     fn test_format_visual_with_alternatives() {
         let alts = vec![
-            OpenAITopLogprob { token: "foo".to_string(), logprob: 0.0 },
-            OpenAITopLogprob { token: "bar".to_string(), logprob: -1.0 },
+            OpenAITopLogprob {
+                token: "foo".to_string(),
+                logprob: 0.0,
+            },
+            OpenAITopLogprob {
+                token: "bar".to_string(),
+                logprob: -1.0,
+            },
         ];
         let ev = make_event("baz", None, None);
         let out = format_visual_token(&ev, &alts);
@@ -282,7 +294,10 @@ mod tests {
 
     #[test]
     fn test_token_alternative_fields() {
-        let alt = TokenAlternative { token: "hello".to_string(), probability: 0.42 };
+        let alt = TokenAlternative {
+            token: "hello".to_string(),
+            probability: 0.42,
+        };
         assert_eq!(alt.token, "hello");
         assert!((alt.probability - 0.42).abs() < 1e-6);
     }

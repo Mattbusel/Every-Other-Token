@@ -55,18 +55,18 @@ impl Param {
     /// Human-readable name for logging.
     pub fn name(self) -> &'static str {
         match self {
-            Param::DedupChannelBuf              => "dedup_channel_buf",
-            Param::RateLimitChannelBuf          => "rate_limit_channel_buf",
-            Param::PriorityChannelBuf           => "priority_channel_buf",
-            Param::CacheChannelBuf              => "cache_channel_buf",
-            Param::InferenceChannelBuf          => "inference_channel_buf",
-            Param::BackpressureShedThreshold    => "backpressure_shed_threshold",
+            Param::DedupChannelBuf => "dedup_channel_buf",
+            Param::RateLimitChannelBuf => "rate_limit_channel_buf",
+            Param::PriorityChannelBuf => "priority_channel_buf",
+            Param::CacheChannelBuf => "cache_channel_buf",
+            Param::InferenceChannelBuf => "inference_channel_buf",
+            Param::BackpressureShedThreshold => "backpressure_shed_threshold",
             Param::CircuitBreakerFailureThreshold => "circuit_breaker_failure_threshold",
-            Param::CircuitBreakerSuccessRate    => "circuit_breaker_success_rate",
-            Param::CircuitBreakerTimeoutMs      => "circuit_breaker_timeout_ms",
-            Param::DedupTtlMs                   => "dedup_ttl_ms",
-            Param::DedupHashBuckets             => "dedup_hash_buckets",
-            Param::RateLimiterRefillRate        => "rate_limiter_refill_rate",
+            Param::CircuitBreakerSuccessRate => "circuit_breaker_success_rate",
+            Param::CircuitBreakerTimeoutMs => "circuit_breaker_timeout_ms",
+            Param::DedupTtlMs => "dedup_ttl_ms",
+            Param::DedupHashBuckets => "dedup_hash_buckets",
+            Param::RateLimiterRefillRate => "rate_limiter_refill_rate",
         }
     }
 
@@ -129,7 +129,9 @@ impl ParameterSpec {
 
     /// Round a value to the nearest multiple of `step` (clamped).
     pub fn snap(&self, v: f64) -> f64 {
-        if self.step <= 0.0 { return self.clamp(v); }
+        if self.step <= 0.0 {
+            return self.clamp(v);
+        }
         let snapped = (v / self.step).round() * self.step;
         self.clamp(snapped)
     }
@@ -161,7 +163,12 @@ struct PidState {
 }
 
 impl Default for PidState {
-    fn default() -> Self { Self { integral: 0.0, prev_error: 0.0 } }
+    fn default() -> Self {
+        Self {
+            integral: 0.0,
+            prev_error: 0.0,
+        }
+    }
 }
 
 impl PidState {
@@ -175,7 +182,11 @@ impl PidState {
         self.integral = self.integral.clamp(-wind_up_limit, wind_up_limit);
 
         // D = Kd * (error - prev_error) / dt  (discrete backward difference; Ziegler-Nichols, 1942)
-        let derivative = if dt > 0.0 { (error - self.prev_error) / dt } else { 0.0 };
+        let derivative = if dt > 0.0 {
+            (error - self.prev_error) / dt
+        } else {
+            0.0
+        };
         self.prev_error = error;
 
         // P = Kp * error  (Åström & Hägglund, "PID Controllers: Theory, Design, and Tuning", 2nd ed., 1995, §2.2)
@@ -224,7 +235,9 @@ struct RollbackGuard {
 impl RollbackGuard {
     /// Returns `true` if the metric has degraded enough to trigger rollback.
     fn should_rollback(&self, current_metric: f64) -> bool {
-        if self.metric_before <= 0.0 { return false; }
+        if self.metric_before <= 0.0 {
+            return false;
+        }
         // For latency: degradation = (current - before) / before (higher is worse)
         let degradation = (current_metric - self.metric_before) / self.metric_before;
         degradation > self.rollback_threshold
@@ -255,8 +268,8 @@ pub struct ControllerConfig {
 impl Default for ControllerConfig {
     fn default() -> Self {
         Self {
-            target_latency_us: 5_000.0,   // 5 ms
-            target_drop_rate: 0.01,        // 1%
+            target_latency_us: 5_000.0, // 5 ms
+            target_drop_rate: 0.01,     // 1%
             audit_log_cap: 1_000,
             rollback_window: Duration::from_secs(30),
         }
@@ -338,7 +351,8 @@ impl Controller {
     /// any pending rollback guards.
     pub fn observe(&mut self, snap: &TelemetrySnapshot) {
         let now = Instant::now();
-        let dt = self.last_snapshot_time
+        let dt = self
+            .last_snapshot_time
             .map(|t| now.duration_since(t).as_secs_f64())
             .unwrap_or(1.0)
             .max(0.001);
@@ -366,31 +380,73 @@ impl Controller {
         }
 
         // Drive backpressure with drop rate error
-        self.apply_pid(Param::BackpressureShedThreshold, drop_error, snap.drop_rate, dt, now);
+        self.apply_pid(
+            Param::BackpressureShedThreshold,
+            drop_error,
+            snap.drop_rate,
+            dt,
+            now,
+        );
 
         // Drive dedup TTL with cache hit rate error (higher hit rate → increase TTL)
         let cache_error = snap.cache_hit_rate - 0.5; // target 50% cache hits
         self.apply_pid(Param::DedupTtlMs, cache_error, snap.cache_hit_rate, dt, now);
 
         // Drive hash buckets with dedup hit rate
-        let dedup_hit_rate = if snap.total_requests == 0 { 0.0 }
-            else { snap.total_dedup_hits as f64 / snap.total_requests as f64 };
+        let dedup_hit_rate = if snap.total_requests == 0 {
+            0.0
+        } else {
+            snap.total_dedup_hits as f64 / snap.total_requests as f64
+        };
         let dedup_error = dedup_hit_rate - 0.05; // target 5% dedup rate
-        self.apply_pid(Param::DedupHashBuckets, dedup_error, dedup_hit_rate, dt, now);
+        self.apply_pid(
+            Param::DedupHashBuckets,
+            dedup_error,
+            dedup_hit_rate,
+            dt,
+            now,
+        );
 
         // Drive rate limiter with latency + queue pressure
         let queue_pressure_error = 0.5 - snap.queue_fill_frac; // target 50% queue fill
-        self.apply_pid(Param::RateLimiterRefillRate, queue_pressure_error, snap.queue_fill_frac, dt, now);
+        self.apply_pid(
+            Param::RateLimiterRefillRate,
+            queue_pressure_error,
+            snap.queue_fill_frac,
+            dt,
+            now,
+        );
 
         // Drive circuit breaker timeout with latency
-        self.apply_pid(Param::CircuitBreakerTimeoutMs, latency_error, snap.avg_latency_us, dt, now);
+        self.apply_pid(
+            Param::CircuitBreakerTimeoutMs,
+            latency_error,
+            snap.avg_latency_us,
+            dt,
+            now,
+        );
 
         // Circuit breaker thresholds are driven by error rate
-        let error_rate = if snap.total_requests == 0 { 0.0 }
-            else { snap.total_errors as f64 / snap.total_requests as f64 };
+        let error_rate = if snap.total_requests == 0 {
+            0.0
+        } else {
+            snap.total_errors as f64 / snap.total_requests as f64
+        };
         let error_rate_error = 0.05 - error_rate; // target <5% error rate
-        self.apply_pid(Param::CircuitBreakerFailureThreshold, error_rate_error, error_rate, dt, now);
-        self.apply_pid(Param::CircuitBreakerSuccessRate, -error_rate_error, error_rate, dt, now);
+        self.apply_pid(
+            Param::CircuitBreakerFailureThreshold,
+            error_rate_error,
+            error_rate,
+            dt,
+            now,
+        );
+        self.apply_pid(
+            Param::CircuitBreakerSuccessRate,
+            -error_rate_error,
+            error_rate,
+            dt,
+            now,
+        );
     }
 
     /// The audit log of all adjustments made, newest last.
@@ -410,19 +466,15 @@ impl Controller {
 
     // --- private ---
 
-    fn apply_pid(
-        &mut self,
-        param: Param,
-        error: f64,
-        trigger_metric: f64,
-        dt: f64,
-        now: Instant,
-    ) {
+    fn apply_pid(&mut self, param: Param, error: f64, trigger_metric: f64, dt: f64, now: Instant) {
         let spec = match self.specs.get(&param) {
             Some(s) => s.clone(),
             None => return,
         };
-        let last = self.last_adjusted.get(&param).copied()
+        let last = self
+            .last_adjusted
+            .get(&param)
+            .copied()
             .unwrap_or_else(|| now - Duration::from_secs(3_600));
 
         if now.duration_since(last) < spec.cooldown {
@@ -433,12 +485,20 @@ impl Controller {
         let raw_output = pid_state.update(error, &spec, dt);
 
         // Only apply if the adjustment is at least one step in magnitude
-        if raw_output.abs() < spec.step { return; }
+        if raw_output.abs() < spec.step {
+            return;
+        }
 
-        let current = self.values.get(&param).copied().unwrap_or(default_value(param));
+        let current = self
+            .values
+            .get(&param)
+            .copied()
+            .unwrap_or(default_value(param));
         let candidate = spec.snap(current + raw_output);
 
-        if (candidate - current).abs() < spec.step * 0.5 { return; }
+        if (candidate - current).abs() < spec.step * 0.5 {
+            return;
+        }
 
         // Install a rollback guard before mutating
         self.rollback_guards.push(RollbackGuard {
@@ -493,7 +553,10 @@ impl Controller {
         });
 
         for guard in to_rollback {
-            let current = self.values.get(&guard.param).copied()
+            let current = self
+                .values
+                .get(&guard.param)
+                .copied()
                 .unwrap_or(default_value(guard.param));
             self.values.insert(guard.param, guard.value_before);
             // Reset PID integral to prevent wind-up after rollback
@@ -535,52 +598,84 @@ fn default_spec(p: Param) -> ParameterSpec {
         | Param::PriorityChannelBuf
         | Param::CacheChannelBuf
         | Param::InferenceChannelBuf => ParameterSpec {
-            min: 16.0, max: 4096.0, step: 16.0,
+            min: 16.0,
+            max: 4096.0,
+            step: 16.0,
             cooldown: Duration::from_secs(10),
             rollback_threshold: 0.10,
-            kp: 0.001, ki: 0.0001, kd: 0.0005,
+            kp: 0.001,
+            ki: 0.0001,
+            kd: 0.0005,
         },
         Param::BackpressureShedThreshold => ParameterSpec {
-            min: 0.05, max: 1.0, step: 0.01,
+            min: 0.05,
+            max: 1.0,
+            step: 0.01,
             cooldown: Duration::from_secs(15),
             rollback_threshold: 0.20,
-            kp: 0.5, ki: 0.05, kd: 0.1,
+            kp: 0.5,
+            ki: 0.05,
+            kd: 0.1,
         },
         Param::CircuitBreakerFailureThreshold => ParameterSpec {
-            min: 1.0, max: 50.0, step: 1.0,
+            min: 1.0,
+            max: 50.0,
+            step: 1.0,
             cooldown: Duration::from_secs(30),
             rollback_threshold: 0.10,
-            kp: 2.0, ki: 0.1, kd: 0.5,
+            kp: 2.0,
+            ki: 0.1,
+            kd: 0.5,
         },
         Param::CircuitBreakerSuccessRate => ParameterSpec {
-            min: 0.10, max: 1.0, step: 0.05,
+            min: 0.10,
+            max: 1.0,
+            step: 0.05,
             cooldown: Duration::from_secs(30),
             rollback_threshold: 0.10,
-            kp: 0.5, ki: 0.05, kd: 0.1,
+            kp: 0.5,
+            ki: 0.05,
+            kd: 0.1,
         },
         Param::CircuitBreakerTimeoutMs => ParameterSpec {
-            min: 100.0, max: 30_000.0, step: 100.0,
+            min: 100.0,
+            max: 30_000.0,
+            step: 100.0,
             cooldown: Duration::from_secs(20),
             rollback_threshold: 0.15,
-            kp: 0.0001, ki: 0.00001, kd: 0.00005,
+            kp: 0.0001,
+            ki: 0.00001,
+            kd: 0.00005,
         },
         Param::DedupTtlMs => ParameterSpec {
-            min: 100.0, max: 60_000.0, step: 100.0,
+            min: 100.0,
+            max: 60_000.0,
+            step: 100.0,
             cooldown: Duration::from_secs(20),
             rollback_threshold: 0.10,
-            kp: 100.0, ki: 10.0, kd: 20.0,
+            kp: 100.0,
+            ki: 10.0,
+            kd: 20.0,
         },
         Param::DedupHashBuckets => ParameterSpec {
-            min: 64.0, max: 65536.0, step: 64.0,
+            min: 64.0,
+            max: 65536.0,
+            step: 64.0,
             cooldown: Duration::from_secs(60),
             rollback_threshold: 0.10,
-            kp: 1000.0, ki: 50.0, kd: 200.0,
+            kp: 1000.0,
+            ki: 50.0,
+            kd: 200.0,
         },
         Param::RateLimiterRefillRate => ParameterSpec {
-            min: 1.0, max: 10_000.0, step: 1.0,
+            min: 1.0,
+            max: 10_000.0,
+            step: 1.0,
             cooldown: Duration::from_secs(5),
             rollback_threshold: 0.15,
-            kp: 10.0, ki: 1.0, kd: 2.0,
+            kp: 10.0,
+            ki: 1.0,
+            kd: 2.0,
         },
     }
 }
@@ -635,7 +730,11 @@ mod tests {
     }
 
     fn snap_with(avg_latency_us: f64, drop_rate: f64) -> TelemetrySnapshot {
-        TelemetrySnapshot { avg_latency_us, drop_rate, ..snap_zero() }
+        TelemetrySnapshot {
+            avg_latency_us,
+            drop_rate,
+            ..snap_zero()
+        }
     }
 
     fn default_controller() -> Controller {
@@ -646,46 +745,78 @@ mod tests {
 
     #[test]
     fn test_spec_clamp_below_min() {
-        let spec = ParameterSpec { min: 10.0, max: 100.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 10.0,
+            max: 100.0,
+            ..Default::default()
+        };
         assert_eq!(spec.clamp(5.0), 10.0);
     }
 
     #[test]
     fn test_spec_clamp_above_max() {
-        let spec = ParameterSpec { min: 10.0, max: 100.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 10.0,
+            max: 100.0,
+            ..Default::default()
+        };
         assert_eq!(spec.clamp(200.0), 100.0);
     }
 
     #[test]
     fn test_spec_clamp_in_range() {
-        let spec = ParameterSpec { min: 10.0, max: 100.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 10.0,
+            max: 100.0,
+            ..Default::default()
+        };
         assert_eq!(spec.clamp(50.0), 50.0);
     }
 
     #[test]
     fn test_spec_snap_rounds_to_nearest_step() {
-        let spec = ParameterSpec { min: 0.0, max: 1000.0, step: 16.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 0.0,
+            max: 1000.0,
+            step: 16.0,
+            ..Default::default()
+        };
         // 18 → nearest multiple of 16 is 16
         assert_eq!(spec.snap(18.0), 16.0);
     }
 
     #[test]
     fn test_spec_snap_rounds_up() {
-        let spec = ParameterSpec { min: 0.0, max: 1000.0, step: 16.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 0.0,
+            max: 1000.0,
+            step: 16.0,
+            ..Default::default()
+        };
         // 25 → nearest multiple of 16 is 32
         assert_eq!(spec.snap(25.0), 32.0);
     }
 
     #[test]
     fn test_spec_snap_clamps_after_snap() {
-        let spec = ParameterSpec { min: 0.0, max: 100.0, step: 16.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 0.0,
+            max: 100.0,
+            step: 16.0,
+            ..Default::default()
+        };
         // 99 snaps to 96 (within max)
         assert_eq!(spec.snap(99.0), 96.0);
     }
 
     #[test]
     fn test_spec_snap_zero_step_just_clamps() {
-        let spec = ParameterSpec { min: 0.0, max: 100.0, step: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 0.0,
+            max: 100.0,
+            step: 0.0,
+            ..Default::default()
+        };
         assert_eq!(spec.snap(77.7), 77.7);
     }
 
@@ -702,7 +833,12 @@ mod tests {
     #[test]
     fn test_pid_positive_error_positive_output() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { kp: 1.0, ki: 0.0, kd: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            kp: 1.0,
+            ki: 0.0,
+            kd: 0.0,
+            ..Default::default()
+        };
         let out = pid.update(10.0, &spec, 1.0);
         assert!(out > 0.0);
     }
@@ -710,7 +846,12 @@ mod tests {
     #[test]
     fn test_pid_negative_error_negative_output() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { kp: 1.0, ki: 0.0, kd: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            kp: 1.0,
+            ki: 0.0,
+            kd: 0.0,
+            ..Default::default()
+        };
         let out = pid.update(-10.0, &spec, 1.0);
         assert!(out < 0.0);
     }
@@ -718,7 +859,12 @@ mod tests {
     #[test]
     fn test_pid_integral_accumulates() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { kp: 0.0, ki: 1.0, kd: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            kp: 0.0,
+            ki: 1.0,
+            kd: 0.0,
+            ..Default::default()
+        };
         pid.update(5.0, &spec, 1.0);
         pid.update(5.0, &spec, 1.0);
         // integral = 5+5 = 10; ki=1 → output = 10
@@ -729,7 +875,14 @@ mod tests {
     #[test]
     fn test_pid_integral_wind_up_clamped() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { min: 0.0, max: 100.0, kp: 0.0, ki: 1.0, kd: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            min: 0.0,
+            max: 100.0,
+            kp: 0.0,
+            ki: 1.0,
+            kd: 0.0,
+            ..Default::default()
+        };
         for _ in 0..10_000 {
             pid.update(1.0, &spec, 1.0);
         }
@@ -740,7 +893,12 @@ mod tests {
     #[test]
     fn test_pid_derivative_term() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { kp: 0.0, ki: 0.0, kd: 1.0, ..Default::default() };
+        let spec = ParameterSpec {
+            kp: 0.0,
+            ki: 0.0,
+            kd: 1.0,
+            ..Default::default()
+        };
         pid.update(10.0, &spec, 1.0); // prev_error = 10
         let out = pid.update(5.0, &spec, 1.0); // deriv = (5-10)/1 = -5
         assert!((out - (-5.0)).abs() < 1e-9);
@@ -749,7 +907,12 @@ mod tests {
     #[test]
     fn test_pid_reset_clears_state() {
         let mut pid = PidState::default();
-        let spec = ParameterSpec { kp: 1.0, ki: 1.0, kd: 0.0, ..Default::default() };
+        let spec = ParameterSpec {
+            kp: 1.0,
+            ki: 1.0,
+            kd: 0.0,
+            ..Default::default()
+        };
         pid.update(100.0, &spec, 1.0);
         pid.reset();
         assert_eq!(pid.integral, 0.0);
@@ -873,7 +1036,12 @@ mod tests {
         let ctrl = default_controller();
         for &p in Param::all() {
             let v = ctrl.get(p);
-            assert!(v > 0.0, "default value for {:?} should be > 0, got {}", p, v);
+            assert!(
+                v > 0.0,
+                "default value for {:?} should be > 0, got {}",
+                p,
+                v
+            );
         }
     }
 
@@ -918,16 +1086,26 @@ mod tests {
         });
         // Override specs with aggressive gains and no cooldown
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 0.10,
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 0.10,
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         // Very high latency → large error → PID output should exceed step
         ctrl.observe(&snap_with(50_000.0, 0.0));
-        assert!(!ctrl.audit_log().is_empty(), "expected at least one adjustment");
+        assert!(
+            !ctrl.audit_log().is_empty(),
+            "expected at least one adjustment"
+        );
     }
 
     #[test]
@@ -937,12 +1115,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 0.10,
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 0.10,
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         ctrl.observe(&snap_with(50_000.0, 0.0));
         for rec in ctrl.audit_log() {
@@ -955,12 +1140,19 @@ mod tests {
         let mut ctrl = default_controller();
         // Set a very long cooldown
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_secs(3_600),
-                rollback_threshold: 0.10,
-                kp: 100.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_secs(3_600),
+                    rollback_threshold: 0.10,
+                    kp: 100.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         ctrl.observe(&snap_with(50_000.0, 0.0));
         let count_after_first = ctrl.audit_log().len();
@@ -977,12 +1169,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 0.10,
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 0.10,
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         // First observe triggers adjustments + rollback guards
         ctrl.observe(&snap_with(50_000.0, 0.0));
@@ -992,7 +1191,10 @@ mod tests {
         // Second observe with WORSE latency → should trigger rollbacks
         ctrl.observe(&snap_with(100_000.0, 0.0));
         let rollbacks: Vec<_> = ctrl.audit_log().iter().filter(|r| r.is_rollback).collect();
-        assert!(!rollbacks.is_empty(), "expected rollback entries in audit log");
+        assert!(
+            !rollbacks.is_empty(),
+            "expected rollback entries in audit log"
+        );
     }
 
     #[test]
@@ -1003,12 +1205,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 0.10,
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 0.10,
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
 
         let before = ctrl.get(Param::DedupChannelBuf);
@@ -1016,7 +1225,9 @@ mod tests {
 
         // Confirm an adjustment was recorded
         let adj: Vec<_> = ctrl.audit_log().iter().filter(|r| !r.is_rollback).collect();
-        if adj.is_empty() { return; } // no adjustment to roll back — test not applicable
+        if adj.is_empty() {
+            return;
+        } // no adjustment to roll back — test not applicable
 
         // Trigger rollback by worsening latency
         ctrl.observe(&snap_with(200_000.0, 0.0));
@@ -1026,8 +1237,12 @@ mod tests {
         assert!(!rb.is_empty(), "expected a rollback record in audit log");
         let rb_entry = rb.iter().find(|r| r.param == Param::DedupChannelBuf);
         if let Some(rb_entry) = rb_entry {
-            assert!((rb_entry.after - before).abs() < 1.0,
-                "rollback `after` should equal original {}, got {}", before, rb_entry.after);
+            assert!(
+                (rb_entry.after - before).abs() < 1.0,
+                "rollback `after` should equal original {}, got {}",
+                before,
+                rb_entry.after
+            );
         }
     }
 
@@ -1039,12 +1254,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 1.0, // disable rollbacks
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 1.0, // disable rollbacks
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         for _ in 0..10 {
             ctrl.observe(&snap_with(50_000.0, 0.0));
@@ -1059,12 +1281,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 1.0, max: 100_000.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 1.0,
-                kp: 10.0, ki: 0.0, kd: 0.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 1.0,
+                    max: 100_000.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 1.0,
+                    kp: 10.0,
+                    ki: 0.0,
+                    kd: 0.0,
+                },
+            );
         }
         ctrl.observe(&snap_with(50_000.0, 0.0));
         ctrl.clear_audit_log();
@@ -1074,7 +1303,10 @@ mod tests {
     #[test]
     fn test_controller_set_spec_overrides_default() {
         let mut ctrl = default_controller();
-        let custom = ParameterSpec { max: 42.0, ..Default::default() };
+        let custom = ParameterSpec {
+            max: 42.0,
+            ..Default::default()
+        };
         ctrl.set_spec(Param::DedupTtlMs, custom);
         assert_eq!(ctrl.specs[&Param::DedupTtlMs].max, 42.0);
     }
@@ -1100,8 +1332,14 @@ mod tests {
         for &p in Param::all() {
             let v = default_value(p);
             let s = default_spec(p);
-            assert!(v >= s.min && v <= s.max,
-                "default value {} out of [{}, {}] for {:?}", v, s.min, s.max, p);
+            assert!(
+                v >= s.min && v <= s.max,
+                "default value {} out of [{}, {}] for {:?}",
+                v,
+                s.min,
+                s.max,
+                p
+            );
         }
     }
 
@@ -1138,12 +1376,19 @@ mod tests {
             ..Default::default()
         });
         for &p in Param::all() {
-            ctrl.set_spec(p, ParameterSpec {
-                min: 10.0, max: 500.0, step: 1.0,
-                cooldown: Duration::from_millis(0),
-                rollback_threshold: 1.0,
-                kp: 100.0, ki: 10.0, kd: 5.0,
-            });
+            ctrl.set_spec(
+                p,
+                ParameterSpec {
+                    min: 10.0,
+                    max: 500.0,
+                    step: 1.0,
+                    cooldown: Duration::from_millis(0),
+                    rollback_threshold: 1.0,
+                    kp: 100.0,
+                    ki: 10.0,
+                    kd: 5.0,
+                },
+            );
         }
         // Drive with extreme latencies to exercise clamping
         for i in 0..20 {
@@ -1152,8 +1397,12 @@ mod tests {
         }
         for &p in Param::all() {
             let v = ctrl.get(p);
-            assert!(v >= 10.0 && v <= 500.0,
-                "param {:?} out of bounds: {}", p, v);
+            assert!(
+                v >= 10.0 && v <= 500.0,
+                "param {:?} out of bounds: {}",
+                p,
+                v
+            );
         }
     }
 }

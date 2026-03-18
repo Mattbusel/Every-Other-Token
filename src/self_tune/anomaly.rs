@@ -48,8 +48,8 @@ pub enum Severity {
 impl std::fmt::Display for Severity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Severity::Info     => write!(f, "info"),
-            Severity::Warn     => write!(f, "warn"),
+            Severity::Info => write!(f, "info"),
+            Severity::Warn => write!(f, "warn"),
             Severity::Critical => write!(f, "critical"),
         }
     }
@@ -66,8 +66,8 @@ pub enum DetectorKind {
 impl std::fmt::Display for DetectorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DetectorKind::ZScore         => write!(f, "z_score"),
-            DetectorKind::Cusum          => write!(f, "cusum"),
+            DetectorKind::ZScore => write!(f, "z_score"),
+            DetectorKind::Cusum => write!(f, "cusum"),
             DetectorKind::IsolationForest => write!(f, "isolation_forest"),
         }
     }
@@ -108,7 +108,12 @@ pub struct ZScoreDetector {
 impl ZScoreDetector {
     pub fn new(window: usize, warn_threshold: f64, critical_threshold: f64) -> Self {
         assert!(window >= 2, "ZScoreDetector window must be >= 2");
-        Self { window, warn_threshold, critical_threshold, samples: Vec::with_capacity(window) }
+        Self {
+            window,
+            warn_threshold,
+            critical_threshold,
+            samples: Vec::with_capacity(window),
+        }
     }
 
     /// Feed a new observation. Returns an anomaly if the z-score exceeds a threshold.
@@ -119,19 +124,26 @@ impl ZScoreDetector {
         self.samples.push(value);
 
         // Need a full window before scoring
-        if self.samples.len() < self.window { return None; }
+        if self.samples.len() < self.window {
+            return None;
+        }
 
         // Compute mean and sample std-dev from the window (excluding the new value)
         // so the score reflects whether `value` is an outlier vs the history.
         let history = &self.samples[..self.samples.len() - 1];
         let n = history.len() as f64;
-        if n < 2.0 { return None; }
+        if n < 2.0 {
+            return None;
+        }
 
         let mean: f64 = history.iter().sum::<f64>() / n;
-        let variance: f64 = history.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0);
+        let variance: f64 =
+            history.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0);
         let std_dev = variance.sqrt();
 
-        if std_dev < 1e-10 { return None; } // history is constant — no reference variance
+        if std_dev < 1e-10 {
+            return None;
+        } // history is constant — no reference variance
 
         let z = (value - mean) / std_dev;
         let z_abs = z.abs();
@@ -150,8 +162,13 @@ impl ZScoreDetector {
             message: format!(
                 "z-score {:.2} exceeds threshold {:.1} (mean={:.1}, std={:.1})",
                 z_abs,
-                if severity == Severity::Critical { self.critical_threshold } else { self.warn_threshold },
-                mean, std_dev,
+                if severity == Severity::Critical {
+                    self.critical_threshold
+                } else {
+                    self.warn_threshold
+                },
+                mean,
+                std_dev,
             ),
             metric_value: value,
             score: z_abs,
@@ -160,11 +177,15 @@ impl ZScoreDetector {
     }
 
     pub fn mean(&self) -> f64 {
-        if self.samples.is_empty() { return 0.0; }
+        if self.samples.is_empty() {
+            return 0.0;
+        }
         self.samples.iter().sum::<f64>() / self.samples.len() as f64
     }
 
-    pub fn sample_count(&self) -> usize { self.samples.len() }
+    pub fn sample_count(&self) -> usize {
+        self.samples.len()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,10 +234,12 @@ impl CusumDetector {
 
         // CUSUM update
         self.s_high = (self.s_high + (value - self.target) - self.slack).max(0.0);
-        self.s_low  = (self.s_low  - (value - self.target) - self.slack).max(0.0);
+        self.s_low = (self.s_low - (value - self.target) - self.slack).max(0.0);
 
         let score = self.s_high.max(self.s_low);
-        if score < self.threshold { return None; }
+        if score < self.threshold {
+            return None;
+        }
 
         let severity = if score >= self.critical_threshold {
             Severity::Critical
@@ -224,11 +247,15 @@ impl CusumDetector {
             Severity::Warn
         };
 
-        let direction = if self.s_high >= self.s_low { "upward" } else { "downward" };
+        let direction = if self.s_high >= self.s_low {
+            "upward"
+        } else {
+            "downward"
+        };
 
         // Reset after signal
         self.s_high = 0.0;
-        self.s_low  = 0.0;
+        self.s_low = 0.0;
 
         Some(Anomaly {
             severity,
@@ -247,11 +274,15 @@ impl CusumDetector {
     pub fn update_target(&mut self, new_target: f64) {
         self.target = new_target;
         self.s_high = 0.0;
-        self.s_low  = 0.0;
+        self.s_low = 0.0;
     }
 
-    pub fn s_high(&self) -> f64 { self.s_high }
-    pub fn s_low(&self)  -> f64 { self.s_low  }
+    pub fn s_high(&self) -> f64 {
+        self.s_high
+    }
+    pub fn s_low(&self) -> f64 {
+        self.s_low
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +298,7 @@ enum ITree {
     Split {
         feature: usize,
         split_value: f64,
-        left:  Box<ITree>,
+        left: Box<ITree>,
         right: Box<ITree>,
     },
 }
@@ -291,8 +322,12 @@ impl ITree {
         let mut fmax = f64::NEG_INFINITY;
         for row in data {
             let v = row[feature];
-            if v < fmin { fmin = v; }
-            if v > fmax { fmax = v; }
+            if v < fmin {
+                fmin = v;
+            }
+            if v > fmax {
+                fmax = v;
+            }
         }
         if (fmax - fmin).abs() < 1e-10 {
             return ITree::Leaf { size: data.len() };
@@ -311,7 +346,7 @@ impl ITree {
         ITree::Split {
             feature,
             split_value: t,
-            left:  Box::new(ITree::build(&left_data,  max_depth - 1, rng)),
+            left: Box::new(ITree::build(&left_data, max_depth - 1, rng)),
             right: Box::new(ITree::build(&right_data, max_depth - 1, rng)),
         }
     }
@@ -319,10 +354,13 @@ impl ITree {
     /// Path length to isolate `point` in this tree.
     fn path_length(&self, point: &[f64], current_depth: usize) -> f64 {
         match self {
-            ITree::Leaf { size } => {
-                current_depth as f64 + c_factor(*size)
-            }
-            ITree::Split { feature, split_value, left, right } => {
+            ITree::Leaf { size } => current_depth as f64 + c_factor(*size),
+            ITree::Split {
+                feature,
+                split_value,
+                left,
+                right,
+            } => {
                 if point[*feature] < *split_value {
                     left.path_length(point, current_depth + 1)
                 } else {
@@ -335,7 +373,9 @@ impl ITree {
 
 /// Average path length of unsuccessful search in a BST (normalisation factor).
 fn c_factor(n: usize) -> f64 {
-    if n <= 1 { return 0.0; }
+    if n <= 1 {
+        return 0.0;
+    }
     let n = n as f64;
     2.0 * (n.ln() + 0.5772156649) - 2.0 * (n - 1.0) / n
 }
@@ -347,15 +387,21 @@ pub struct SimpleRng {
 }
 
 impl SimpleRng {
-    pub fn new(seed: u64) -> Self { Self { state: seed | 1 } }
+    pub fn new(seed: u64) -> Self {
+        Self { state: seed | 1 }
+    }
 
     pub fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(6364136223846793005)
+        self.state = self
+            .state
+            .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
         self.state
     }
 
-    pub fn next_usize(&mut self) -> usize { self.next_u64() as usize }
+    pub fn next_usize(&mut self) -> usize {
+        self.next_u64() as usize
+    }
 
     /// Returns a value in [0, 1).
     pub fn next_f64(&mut self) -> f64 {
@@ -427,7 +473,9 @@ impl IsolationForestDetector {
             // (tracked implicitly via the trained flag cycling)
         }
 
-        if self.forest.is_empty() { return None; }
+        if self.forest.is_empty() {
+            return None;
+        }
 
         let score = self.anomaly_score(&features);
         let severity = if score >= self.critical_threshold {
@@ -455,7 +503,9 @@ impl IsolationForestDetector {
     pub fn rebuild_forest(&mut self) {
         self.forest.clear();
         let cap = self.subsample_size.min(self.window.len());
-        if cap < 2 { return; }
+        if cap < 2 {
+            return;
+        }
 
         for _ in 0..self.n_trees {
             // Subsample without replacement (approximate: random picks)
@@ -464,7 +514,8 @@ impl IsolationForestDetector {
                 let idx = self.rng.next_usize() % self.window.len();
                 sample.push(self.window[idx].clone());
             }
-            self.forest.push(ITree::build(&sample, self.max_depth, &mut self.rng));
+            self.forest
+                .push(ITree::build(&sample, self.max_depth, &mut self.rng));
         }
         self.trained = true;
     }
@@ -472,22 +523,33 @@ impl IsolationForestDetector {
     /// Anomaly score for a feature vector in [0, 1].
     /// Values close to 1 indicate anomalies; close to 0.5 indicate normal.
     pub fn anomaly_score(&self, features: &[f64]) -> f64 {
-        if self.forest.is_empty() { return 0.5; }
-        let avg_path: f64 = self.forest
+        if self.forest.is_empty() {
+            return 0.5;
+        }
+        let avg_path: f64 = self
+            .forest
             .iter()
             .map(|t| t.path_length(features, 0))
             .sum::<f64>()
             / self.forest.len() as f64;
 
         let c = c_factor(self.subsample_size);
-        if c <= 0.0 { return 0.5; }
+        if c <= 0.0 {
+            return 0.5;
+        }
         let exponent = -avg_path / c;
         2.0f64.powf(exponent)
     }
 
-    pub fn is_trained(&self) -> bool { self.trained }
-    pub fn forest_size(&self) -> usize { self.forest.len() }
-    pub fn window_len(&self) -> usize { self.window.len() }
+    pub fn is_trained(&self) -> bool {
+        self.trained
+    }
+    pub fn forest_size(&self) -> usize {
+        self.forest.len()
+    }
+    pub fn window_len(&self) -> usize {
+        self.window.len()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -520,7 +582,7 @@ impl Default for DetectorConfig {
             zscore_window: 60,
             zscore_warn_threshold: 2.5,
             zscore_critical_threshold: 4.0,
-            cusum_slack: 500.0,       // μs
+            cusum_slack: 500.0, // μs
             cusum_threshold: 3_000.0,
             cusum_critical_threshold: 10_000.0,
             if_n_trees: 10,
@@ -549,21 +611,34 @@ impl AnomalyDetector {
     pub fn new(cfg: DetectorConfig) -> Self {
         Self {
             zscore_latency: ZScoreDetector::new(
-                cfg.zscore_window, cfg.zscore_warn_threshold, cfg.zscore_critical_threshold,
+                cfg.zscore_window,
+                cfg.zscore_warn_threshold,
+                cfg.zscore_critical_threshold,
             ),
             zscore_drop_rate: ZScoreDetector::new(
-                cfg.zscore_window, cfg.zscore_warn_threshold, cfg.zscore_critical_threshold,
+                cfg.zscore_window,
+                cfg.zscore_warn_threshold,
+                cfg.zscore_critical_threshold,
             ),
             cusum_latency: CusumDetector::new(
-                0.0, cfg.cusum_slack, cfg.cusum_threshold, cfg.cusum_critical_threshold,
+                0.0,
+                cfg.cusum_slack,
+                cfg.cusum_threshold,
+                cfg.cusum_critical_threshold,
             ),
             cusum_drop_rate: CusumDetector::new(
-                0.0, cfg.cusum_slack / 10_000.0, cfg.cusum_threshold / 10_000.0,
+                0.0,
+                cfg.cusum_slack / 10_000.0,
+                cfg.cusum_threshold / 10_000.0,
                 cfg.cusum_critical_threshold / 10_000.0,
             ),
             isolation_forest: IsolationForestDetector::new(
-                cfg.if_n_trees, cfg.if_subsample_size, cfg.if_window_cap,
-                cfg.if_warn_threshold, cfg.if_critical_threshold, cfg.if_seed,
+                cfg.if_n_trees,
+                cfg.if_subsample_size,
+                cfg.if_window_cap,
+                cfg.if_warn_threshold,
+                cfg.if_critical_threshold,
+                cfg.if_seed,
             ),
         }
     }
@@ -658,7 +733,10 @@ mod tests {
     fn test_detector_kind_display() {
         assert_eq!(DetectorKind::ZScore.to_string(), "z_score");
         assert_eq!(DetectorKind::Cusum.to_string(), "cusum");
-        assert_eq!(DetectorKind::IsolationForest.to_string(), "isolation_forest");
+        assert_eq!(
+            DetectorKind::IsolationForest.to_string(),
+            "isolation_forest"
+        );
     }
 
     // ===== SimpleRng =====
@@ -743,16 +821,22 @@ mod tests {
     #[test]
     fn test_zscore_sample_count_correct() {
         let mut d = ZScoreDetector::new(5, 2.0, 4.0);
-        d.observe(1.0); d.observe(2.0); d.observe(3.0);
+        d.observe(1.0);
+        d.observe(2.0);
+        d.observe(3.0);
         assert_eq!(d.sample_count(), 3);
-        d.observe(4.0); d.observe(5.0); d.observe(6.0); // 6th triggers eviction
+        d.observe(4.0);
+        d.observe(5.0);
+        d.observe(6.0); // 6th triggers eviction
         assert_eq!(d.sample_count(), 5);
     }
 
     #[test]
     fn test_zscore_mean_tracks_data() {
         let mut d = ZScoreDetector::new(100, 3.0, 5.0);
-        for _ in 0..20 { d.observe(50.0); }
+        for _ in 0..20 {
+            d.observe(50.0);
+        }
         assert!((d.mean() - 50.0).abs() < 1.0);
     }
 
@@ -772,7 +856,10 @@ mod tests {
         let mut d = CusumDetector::new(0.0, 1.0, 10.0, 100.0);
         let mut detected = false;
         for _ in 0..50 {
-            if d.observe(5.0).is_some() { detected = true; break; }
+            if d.observe(5.0).is_some() {
+                detected = true;
+                break;
+            }
         }
         assert!(detected, "CUSUM should detect sustained upward drift");
     }
@@ -782,7 +869,10 @@ mod tests {
         let mut d = CusumDetector::new(0.0, 1.0, 10.0, 100.0);
         let mut detected = false;
         for _ in 0..50 {
-            if d.observe(-5.0).is_some() { detected = true; break; }
+            if d.observe(-5.0).is_some() {
+                detected = true;
+                break;
+            }
         }
         assert!(detected, "CUSUM should detect sustained downward drift");
     }
@@ -795,20 +885,29 @@ mod tests {
         for _ in 0..50 {
             if d.observe(5.0).is_some() {
                 // Right after the signal fires, CUSUM resets to 0
-                assert_eq!(d.s_high(), 0.0, "s_high should be 0 immediately after signal");
-                assert_eq!(d.s_low(),  0.0, "s_low should be 0 immediately after signal");
+                assert_eq!(
+                    d.s_high(),
+                    0.0,
+                    "s_high should be 0 immediately after signal"
+                );
+                assert_eq!(d.s_low(), 0.0, "s_low should be 0 immediately after signal");
                 signaled = true;
                 break;
             }
         }
-        assert!(signaled, "CUSUM should have signaled within 50 observations");
+        assert!(
+            signaled,
+            "CUSUM should have signaled within 50 observations"
+        );
     }
 
     #[test]
     fn test_cusum_update_target_resets() {
         let mut d = CusumDetector::new(0.0, 1.0, 10.0, 100.0);
-        for _ in 0..5 { d.observe(5.0); } // accumulate
-        d.update_target(5.0);              // new target = current value
+        for _ in 0..5 {
+            d.observe(5.0);
+        } // accumulate
+        d.update_target(5.0); // new target = current value
         assert_eq!(d.s_high(), 0.0);
         assert_eq!(d.s_low(), 0.0);
     }
@@ -817,7 +916,9 @@ mod tests {
     fn test_cusum_severity_critical_when_above_critical_threshold() {
         let mut d = CusumDetector::new(0.0, 0.0, 5.0, 10.0);
         let mut last = None;
-        for _ in 0..200 { last = d.observe(1.0); }
+        for _ in 0..200 {
+            last = d.observe(1.0);
+        }
         // At some point it crosses critical
         if let Some(a) = last {
             assert!(a.severity >= Severity::Warn);
@@ -864,8 +965,12 @@ mod tests {
         let normal_score = d.anomaly_score(&[0.5, 0.5]);
         let outlier_score = d.anomaly_score(&[100.0, -100.0]);
         // Outlier should have a higher anomaly score
-        assert!(outlier_score >= normal_score,
-            "outlier={} should >= normal={}", outlier_score, normal_score);
+        assert!(
+            outlier_score >= normal_score,
+            "outlier={} should >= normal={}",
+            outlier_score,
+            normal_score
+        );
     }
 
     #[test]
@@ -924,7 +1029,9 @@ mod tests {
         let mut any_anomaly = false;
         for _ in 0..10 {
             let snaps = d.observe(&make_snap(5_000.0, 0.01));
-            if !snaps.is_empty() { any_anomaly = true; }
+            if !snaps.is_empty() {
+                any_anomaly = true;
+            }
         }
         // Stable data should produce no anomalies in first few observations
         // (z-score needs window to fill, CUSUM needs accumulation)
@@ -947,10 +1054,14 @@ mod tests {
         }
         // Inject a spike
         let anomalies = d.observe(&make_snap(500_000.0, 0.01));
-        let z_anomalies: Vec<_> = anomalies.iter()
+        let z_anomalies: Vec<_> = anomalies
+            .iter()
             .filter(|a| a.detector == DetectorKind::ZScore)
             .collect();
-        assert!(!z_anomalies.is_empty(), "expected z-score anomaly on large spike");
+        assert!(
+            !z_anomalies.is_empty(),
+            "expected z-score anomaly on large spike"
+        );
     }
 
     #[test]
@@ -965,7 +1076,10 @@ mod tests {
         };
         assert!(AnomalyDetector::has_critical(&[anomaly.clone()]));
 
-        let warn = Anomaly { severity: Severity::Warn, ..anomaly };
+        let warn = Anomaly {
+            severity: Severity::Warn,
+            ..anomaly
+        };
         assert!(!AnomalyDetector::has_critical(&[warn]));
     }
 

@@ -22,8 +22,8 @@
 use std::sync::Mutex;
 
 use crate::self_modify::gate::{
-    BenchmarkSample, CheckResult, CheckRunner, RecommendedAction, StagingMetric,
-    ValidationGate, ValidationReport,
+    BenchmarkSample, CheckResult, CheckRunner, RecommendedAction, StagingMetric, ValidationGate,
+    ValidationReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -168,7 +168,10 @@ pub struct StagedDeploymentPipeline {
 impl StagedDeploymentPipeline {
     /// Create a new pipeline with the given gate and no targets.
     pub fn new(gate: ValidationGate) -> Self {
-        Self { gate, targets: Vec::new() }
+        Self {
+            gate,
+            targets: Vec::new(),
+        }
     }
 
     /// Register a new deployment target.
@@ -228,7 +231,10 @@ impl StagedDeploymentPipeline {
                     DeploymentError::TargetFailed { target, reason } => (target, reason),
                     other => (target.name().to_string(), other.to_string()),
                 };
-                return DeploymentOutcome::TargetError { target: target_name, reason };
+                return DeploymentOutcome::TargetError {
+                    target: target_name,
+                    reason,
+                };
             }
         }
 
@@ -270,7 +276,10 @@ pub struct InMemoryParamTarget {
 impl InMemoryParamTarget {
     /// Create a new in-memory target with the given name.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), applied: Mutex::new(Vec::new()) }
+        Self {
+            name: name.into(),
+            applied: Mutex::new(Vec::new()),
+        }
     }
 
     /// Clone and return all changes that have been applied so far.
@@ -365,7 +374,9 @@ impl FailAllCheckRunner {
     /// Construct a new `FailAllCheckRunner` that uses `reason` as the failure
     /// message for every check.
     pub fn new(reason: impl Into<String>) -> Self {
-        Self { reason: reason.into() }
+        Self {
+            reason: reason.into(),
+        }
     }
 }
 
@@ -433,9 +444,7 @@ impl CheckRunner for CargoCheckRunner {
             .current_dir(&self.workspace)
             .output()
         {
-            Ok(output) if output.status.success() => {
-                CheckResult::passed("tests", start.elapsed())
-            }
+            Ok(output) if output.status.success() => CheckResult::passed("tests", start.elapsed()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let reason = if stderr.len() > 500 {
@@ -445,9 +454,7 @@ impl CheckRunner for CargoCheckRunner {
                 };
                 CheckResult::failed("tests", reason, start.elapsed())
             }
-            Err(e) => {
-                CheckResult::failed("tests", format!("spawn error: {e}"), start.elapsed())
-            }
+            Err(e) => CheckResult::failed("tests", format!("spawn error: {e}"), start.elapsed()),
         }
     }
 
@@ -455,7 +462,10 @@ impl CheckRunner for CargoCheckRunner {
         let start = std::time::Instant::now();
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let (program, args) = if parts.is_empty() {
-            ("cargo", vec!["clippy", "--all-features", "--", "-D", "warnings"])
+            (
+                "cargo",
+                vec!["clippy", "--all-features", "--", "-D", "warnings"],
+            )
         } else {
             (parts[0], parts[1..].to_vec())
         };
@@ -465,9 +475,7 @@ impl CheckRunner for CargoCheckRunner {
             .current_dir(&self.workspace)
             .output()
         {
-            Ok(output) if output.status.success() => {
-                CheckResult::passed("clippy", start.elapsed())
-            }
+            Ok(output) if output.status.success() => CheckResult::passed("clippy", start.elapsed()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let reason = if stderr.len() > 500 {
@@ -477,9 +485,7 @@ impl CheckRunner for CargoCheckRunner {
                 };
                 CheckResult::failed("clippy", reason, start.elapsed())
             }
-            Err(e) => {
-                CheckResult::failed("clippy", format!("spawn error: {e}"), start.elapsed())
-            }
+            Err(e) => CheckResult::failed("clippy", format!("spawn error: {e}"), start.elapsed()),
         }
     }
 
@@ -501,16 +507,16 @@ impl CheckRunner for CargoCheckRunner {
             .current_dir(&self.workspace)
             .output()
         {
-            Ok(output) if output.status.success() => {
-                CheckResult::passed("smoke", start.elapsed())
-            }
+            Ok(output) if output.status.success() => CheckResult::passed("smoke", start.elapsed()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                CheckResult::failed("smoke", format!("exit={}: {}", output.status, stderr), start.elapsed())
+                CheckResult::failed(
+                    "smoke",
+                    format!("exit={}: {}", output.status, stderr),
+                    start.elapsed(),
+                )
             }
-            Err(e) => {
-                CheckResult::failed("smoke", format!("spawn error: {e}"), start.elapsed())
-            }
+            Err(e) => CheckResult::failed("smoke", format!("spawn error: {e}"), start.elapsed()),
         }
     }
 
@@ -559,8 +565,16 @@ mod tests {
 
     fn sample_changes() -> Vec<ParamChange> {
         vec![
-            ParamChange { param_name: "temperature".into(), old_value: 0.7, new_value: 0.9 },
-            ParamChange { param_name: "top_p".into(), old_value: 0.9, new_value: 0.85 },
+            ParamChange {
+                param_name: "temperature".into(),
+                old_value: 0.7,
+                new_value: 0.9,
+            },
+            ParamChange {
+                param_name: "top_p".into(),
+                old_value: 0.9,
+                new_value: 0.85,
+            },
         ]
     }
 
@@ -660,10 +674,16 @@ mod tests {
 
     #[test]
     fn deployment_outcome_awaiting_review_equality() {
-        let a = DeploymentOutcome::AwaitingReview { change_id: "x".into() };
-        let b = DeploymentOutcome::AwaitingReview { change_id: "x".into() };
+        let a = DeploymentOutcome::AwaitingReview {
+            change_id: "x".into(),
+        };
+        let b = DeploymentOutcome::AwaitingReview {
+            change_id: "x".into(),
+        };
         assert_eq!(a, b);
-        let c = DeploymentOutcome::AwaitingReview { change_id: "y".into() };
+        let c = DeploymentOutcome::AwaitingReview {
+            change_id: "y".into(),
+        };
         assert_ne!(a, c);
     }
 
@@ -671,7 +691,11 @@ mod tests {
     fn awaiting_review_preserves_change_id() {
         let mut pipeline = StagedDeploymentPipeline::new(review_gate());
         pipeline.add_target(Box::new(InMemoryParamTarget::new("t")));
-        let outcome = pipeline.deploy("my-special-id", &PassAllCheckRunner::new(), &sample_changes());
+        let outcome = pipeline.deploy(
+            "my-special-id",
+            &PassAllCheckRunner::new(),
+            &sample_changes(),
+        );
         if let DeploymentOutcome::AwaitingReview { change_id } = outcome {
             assert_eq!(change_id, "my-special-id");
         } else {
@@ -719,7 +743,11 @@ mod tests {
         pipeline.add_target(Box::new(InMemoryParamTarget::new("t")));
         let changes = sample_changes();
         let outcome = pipeline.deploy("c", &PassAllCheckRunner::new(), &changes);
-        if let DeploymentOutcome::Deployed { changes_applied, targets_notified } = outcome {
+        if let DeploymentOutcome::Deployed {
+            changes_applied,
+            targets_notified,
+        } = outcome
+        {
             assert_eq!(changes_applied, 2);
             assert_eq!(targets_notified, 1);
         } else {
@@ -734,7 +762,10 @@ mod tests {
         pipeline.add_target(Box::new(InMemoryParamTarget::new("b")));
         pipeline.add_target(Box::new(InMemoryParamTarget::new("c")));
         let outcome = pipeline.deploy("c1", &PassAllCheckRunner::new(), &sample_changes());
-        if let DeploymentOutcome::Deployed { targets_notified, .. } = outcome {
+        if let DeploymentOutcome::Deployed {
+            targets_notified, ..
+        } = outcome
+        {
             assert_eq!(targets_notified, 3);
         } else {
             panic!("expected Deployed");
@@ -749,7 +780,11 @@ mod tests {
         pipeline.add_target(Box::new(InMemoryParamTarget::new("beta")));
         let changes = sample_changes();
         let outcome = pipeline.deploy("chg", &PassAllCheckRunner::new(), &changes);
-        if let DeploymentOutcome::Deployed { changes_applied, targets_notified } = outcome {
+        if let DeploymentOutcome::Deployed {
+            changes_applied,
+            targets_notified,
+        } = outcome
+        {
             assert_eq!(targets_notified, 2);
             assert_eq!(changes_applied, 2);
         } else {
@@ -762,7 +797,11 @@ mod tests {
         let mut pipeline = StagedDeploymentPipeline::new(auto_deploy_gate());
         pipeline.add_target(Box::new(InMemoryParamTarget::new("t")));
         let outcome = pipeline.deploy("c0", &PassAllCheckRunner::new(), &empty_changes());
-        if let DeploymentOutcome::Deployed { changes_applied, targets_notified } = outcome {
+        if let DeploymentOutcome::Deployed {
+            changes_applied,
+            targets_notified,
+        } = outcome
+        {
             assert_eq!(changes_applied, 0);
             assert_eq!(targets_notified, 1);
         } else {
@@ -772,19 +811,34 @@ mod tests {
 
     #[test]
     fn deployment_outcome_deployed_equality() {
-        let a = DeploymentOutcome::Deployed { changes_applied: 3, targets_notified: 2 };
-        let b = DeploymentOutcome::Deployed { changes_applied: 3, targets_notified: 2 };
+        let a = DeploymentOutcome::Deployed {
+            changes_applied: 3,
+            targets_notified: 2,
+        };
+        let b = DeploymentOutcome::Deployed {
+            changes_applied: 3,
+            targets_notified: 2,
+        };
         assert_eq!(a, b);
-        let c = DeploymentOutcome::Deployed { changes_applied: 1, targets_notified: 2 };
+        let c = DeploymentOutcome::Deployed {
+            changes_applied: 1,
+            targets_notified: 2,
+        };
         assert_ne!(a, c);
     }
 
     #[test]
     fn deployment_outcome_rejected_equality() {
-        let a = DeploymentOutcome::Rejected { failed_checks: vec!["tests".into()] };
-        let b = DeploymentOutcome::Rejected { failed_checks: vec!["tests".into()] };
+        let a = DeploymentOutcome::Rejected {
+            failed_checks: vec!["tests".into()],
+        };
+        let b = DeploymentOutcome::Rejected {
+            failed_checks: vec!["tests".into()],
+        };
         assert_eq!(a, b);
-        let c = DeploymentOutcome::Rejected { failed_checks: vec!["clippy".into()] };
+        let c = DeploymentOutcome::Rejected {
+            failed_checks: vec!["clippy".into()],
+        };
         assert_ne!(a, c);
     }
 
@@ -841,7 +895,11 @@ mod tests {
 
     #[test]
     fn param_change_clone_is_independent() {
-        let c = ParamChange { param_name: "x".into(), old_value: 1.0, new_value: 2.0 };
+        let c = ParamChange {
+            param_name: "x".into(),
+            old_value: 1.0,
+            new_value: 2.0,
+        };
         let mut c2 = c.clone();
         c2.param_name = "y".into();
         assert_eq!(c.param_name, "x");
@@ -883,8 +941,7 @@ mod tests {
 
     #[test]
     fn deployment_error_is_std_error() {
-        let e: Box<dyn std::error::Error> =
-            Box::new(DeploymentError::NoTargets);
+        let e: Box<dyn std::error::Error> = Box::new(DeploymentError::NoTargets);
         assert!(!e.to_string().is_empty());
     }
 
