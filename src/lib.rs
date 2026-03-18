@@ -261,7 +261,6 @@ async fn execute_with_retry(
                     && (status == 429 || status == 500 || status == 502 || status == 503)
                 {
                     tracing::warn!(status, attempt, "got retryable HTTP status");
-                    tracing::warn!(status, attempt, "got retryable HTTP status");
                     last_err = Some(format!("HTTP {status}"));
                     continue;
                 }
@@ -392,8 +391,18 @@ impl TokenInterceptor {
         &mut self,
         prompt: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Note: we log diagnostics here but do not hold an entered span across
+        // await points -- EnteredSpan is !Send and would prevent tokio::spawn.
+        tracing::info!(
+            provider = %self.provider,
+            model = %self.model,
+            prompt_len = prompt.len(),
+            "starting token stream interception",
+        );
+
         // ── Input validation (#11) ───────────────────────────────────────────
         if prompt.trim().is_empty() {
+            tracing::error!("prompt is empty — aborting");
             return Err("Prompt must not be empty".into());
         }
         // Rough guard against prompts that would exceed typical API limits.
