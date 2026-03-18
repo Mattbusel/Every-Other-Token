@@ -171,7 +171,9 @@ fn parse_stream_params(query: &std::collections::HashMap<String, String>) -> Str
 ///   `participant_update`, `vote_update`, `surgery`, `chat`, `record_started`,  
 ///   `record_stopped`, `replay_event`, `replay_done`, `stream_done`, `pong`, `error`
 pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    tracing::info!(port, "binding web UI server");
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    tracing::info!(port, "web UI server listening");
 
     eprintln!(
         "{}",

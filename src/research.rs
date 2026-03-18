@@ -134,6 +134,13 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
         Transform::from_str_loose(&transform_str).map_err(|e| format!("Invalid transform: {e}"))?;
     let model = crate::cli::resolve_model(&provider, &args.model);
 
+    tracing::info!(
+        runs = args.runs,
+        provider = %provider,
+        transform = %transform_str,
+        model = %model,
+        "starting research session",
+    );
     eprintln!(
         "[research] starting {} runs -- provider={} transform={} model={}",
         args.runs, provider, transform_str, model
@@ -175,6 +182,7 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     let mut runs: Vec<ResearchRun> = Vec::with_capacity(args.runs as usize);
 
     for i in 0..args.runs {
+        tracing::info!(run = i + 1, total = args.runs, "starting research run");
         eprintln!("[research] run {}/{}", i + 1, args.runs);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -559,10 +567,12 @@ pub async fn run_research_suite(args: &Args) -> Result<(), Box<dyn std::error::E
         .collect();
 
     if prompts.is_empty() {
+        tracing::warn!(path = %path, "no prompts found in prompt file");
         eprintln!("[suite] No prompts found in {}", path);
         return Ok(());
     }
 
+    tracing::info!(count = prompts.len(), path = %path, "running research suite");
     eprintln!("[suite] Running {} prompts from {}", prompts.len(), path);
     for (idx, prompt) in prompts.iter().enumerate() {
         eprintln!("[suite] Prompt {}/{}: {}", idx + 1, prompts.len(), prompt);
@@ -712,6 +722,7 @@ pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn st
     use crate::TokenInterceptor;
     use colored::*;
     use tokio::sync::mpsc;
+    tracing::info!("starting diff terminal: OpenAI vs Anthropic in parallel");
 
     let transform_openai = crate::transforms::Transform::from_str_loose(&args.transform)
         .map_err(|e| format!("Invalid transform: {e}"))?;

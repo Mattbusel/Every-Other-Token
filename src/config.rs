@@ -16,14 +16,27 @@
 
 use std::path::PathBuf;
 
+/// File-based configuration for the Every-Other-Token tool.
+///
+/// All fields are optional. When a field is absent the binary falls back to its
+/// hard-coded CLI default. The struct is loaded by [`EotConfig::load`] which
+/// merges `~/.eot.toml` (lower priority) with `./.eot.toml` (higher priority).
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct EotConfig {
+    /// LLM provider: `"openai"`, `"anthropic"`, or `"mock"`.
     pub provider: Option<String>,
+    /// Model name passed to the provider API (e.g. `"gpt-4o-mini"`).
     pub model: Option<String>,
+    /// Transform strategy applied to intercepted tokens (e.g. `"reverse"`).
     pub transform: Option<String>,
+    /// Fraction of tokens to transform, in `[0.0, 1.0]`. Out-of-range values
+    /// are clamped on load.
     pub rate: Option<f64>,
+    /// TCP port for the web UI server. Default is `8888`.
     pub port: Option<u16>,
+    /// Number of top log-probabilities to request from the provider API.
     pub top_logprobs: Option<u8>,
+    /// System prompt for provider A in a two-provider comparison run.
     pub system_a: Option<String>,
 }
 

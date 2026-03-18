@@ -10,13 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - Module-level `//!` doc comments on all previously undocumented public modules
   (`providers`, `transforms`, `store`, `web`, `research`, `heatmap`, `cli`).
 - Field-level `///` doc comments on `ResearchRun`, `ResearchOutput`, and
   `ResearchAggregate` structs.
 - `documentation` key in `Cargo.toml` pointing to `docs.rs`.
 - `crates.io` and `docs.rs` badges in `README.md`.
-- CHANGELOG.md `[Unreleased]` section (this entry).
 - `///` doc comments on `TokenInterceptor` struct, `TokenAlternative`,
   `TokenEvent`, `ResearchSession`, `HeatmapExporter::new`,
   `TokenInterceptor::print_header`, and `TokenInterceptor::print_footer`.
@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/workflows/release.yml`: release workflow that triggers on `v*.*.*`
   tags, builds release binaries for Linux (musl), macOS, and Windows, publishes
   a GitHub Release with attached binaries, and publishes to crates.io.
+- `EotConfig` struct and all its fields now carry `///` doc comments explaining
+  each configuration option and its valid range.
+- `make_test_interceptor` helper added to the `research_tests` module so
+  `with_rate` and `with_seed` tests can construct interceptors without importing
+  the private `tests` module helper.
+
+### Fixed
+
+- `eprintln!` calls in `config.rs` replaced with `tracing::warn!` structured log
+  events, matching the rest of the codebase's structured logging style.
+- `research_tests` module tests calling `make_test_interceptor` now resolve
+  correctly; the function is defined locally in that module.
 
 ### Changed
 - `README.md` rewritten: clearer description, feature table, complete quickstart,
