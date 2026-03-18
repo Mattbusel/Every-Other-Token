@@ -1,3 +1,18 @@
+//! Provider plugin system and SSE wire types.
+//!
+//! Each supported LLM provider is represented by a zero-sized struct that
+//! implements [`ProviderPlugin`].  The [`TokenInterceptor`](crate::TokenInterceptor)
+//! selects the appropriate plugin at construction time and uses it to build
+//! authenticated HTTP requests and parse streaming responses.
+//!
+//! ## Supported providers
+//!
+//! | Variant | Plugin | Endpoint |
+//! |---------|--------|----------|
+//! | `openai` | [`OpenAiPlugin`] | `https://api.openai.com/v1/chat/completions` |
+//! | `anthropic` | [`AnthropicPlugin`] | `https://api.anthropic.com/v1/messages` |
+//! | `mock` | (inline fixture) | n/a -- returns canned tokens for tests |
+
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
@@ -5,8 +20,15 @@ use serde::{Deserialize, Serialize};
 // Provider plugin trait
 // ---------------------------------------------------------------------------
 
+/// Trait implemented by each provider plug-in.
+///
+/// Concrete implementations ([`OpenAiPlugin`], [`AnthropicPlugin`]) supply the
+/// provider-specific details (URL, authentication header, request shape) so
+/// that the token interceptor can switch providers without branching.
 pub trait ProviderPlugin: Send + Sync {
+    /// Lowercase display name of the provider (e.g. `"openai"`, `"anthropic"`).
     fn name(&self) -> &str;
+    /// Default model string to use when the user has not explicitly chosen one.
     fn default_model(&self) -> &str;
     /// Base URL for the provider's streaming chat completions endpoint.
     ///
@@ -14,10 +36,13 @@ pub trait ProviderPlugin: Send + Sync {
     /// requests do not hard-code provider URLs and future providers only need
     /// to implement this single method.
     fn api_url(&self) -> &str;
+    /// Build a JSON request body for the provider's streaming chat API.
     fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value;
 }
 
+/// Provider plug-in for the OpenAI Chat Completions API.
 pub struct OpenAiPlugin;
+/// Provider plug-in for the Anthropic Messages API.
 pub struct AnthropicPlugin;
 
 impl ProviderPlugin for OpenAiPlugin {
@@ -100,10 +125,17 @@ pub struct OpenAIChunkLogprobs {
     pub content: Vec<OpenAILogprobContent>,
 }
 
+/// Selectable LLM provider.
+///
+/// Used as a CLI argument (`--provider`) and throughout the codebase to branch
+/// on provider-specific behaviour.
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum Provider {
+    /// OpenAI Chat Completions API (GPT-3.5, GPT-4, etc.).
     Openai,
+    /// Anthropic Messages API (Claude family).
     Anthropic,
+    /// In-process mock provider for tests and dry-run mode.
     Mock,
 }
 
@@ -132,116 +164,170 @@ impl std::str::FromStr for Provider {
 
 // -- OpenAI SSE types -------------------------------------------------------
 
+/// A single message in an OpenAI chat request (role + content pair).
 #[derive(Debug, Serialize)]
 pub struct OpenAIChatMessage {
+    /// Role of the message author: `"system"`, `"user"`, or `"assistant"`.
     pub role: String,
+    /// Text content of the message.
     pub content: String,
 }
 
+/// Full JSON body for an OpenAI streaming chat completions request.
 #[derive(Debug, Serialize)]
 pub struct OpenAIChatRequest {
+    /// Model identifier (e.g. `"gpt-4"`).
     pub model: String,
+    /// Conversation history including the current user turn.
     pub messages: Vec<OpenAIChatMessage>,
+    /// Must be `true` to enable SSE streaming.
     pub stream: bool,
+    /// Sampling temperature (0.0–2.0).
     pub temperature: f32,
+    /// Whether to include per-token log probabilities in the response.
     pub logprobs: bool,
+    /// Number of top alternative tokens per position (0–20).
     pub top_logprobs: u8,
 }
 
+/// Incremental content fragment within a streaming choice delta.
 #[derive(Debug, Deserialize)]
 pub struct OpenAIDelta {
+    /// Text fragment, absent on the final chunk where `finish_reason` is set.
     pub content: Option<String>,
 }
 
+/// One streaming choice from an OpenAI chunk event.
 #[derive(Debug, Deserialize)]
 pub struct OpenAIChoice {
+    /// Incremental content delta for this chunk.
     pub delta: OpenAIDelta,
+    /// Populated on the final chunk (`"stop"`, `"length"`, etc.).
     #[allow(dead_code)]
     pub finish_reason: Option<String>,
+    /// Log probability data, present when `logprobs=true` was requested.
     #[serde(default)]
     pub logprobs: Option<OpenAIChunkLogprobs>,
 }
 
+/// One server-sent event chunk from the OpenAI streaming API.
 #[derive(Debug, Deserialize)]
 pub struct OpenAIChunk {
+    /// List of choice objects (typically one entry for non-parallel requests).
     pub choices: Vec<OpenAIChoice>,
 }
 
 // -- Anthropic SSE types ----------------------------------------------------
 
+/// A single message in an Anthropic Messages API request.
 #[derive(Debug, Serialize)]
 pub struct AnthropicMessage {
+    /// Role: `"user"` or `"assistant"`.
     pub role: String,
+    /// Text content of the message.
     pub content: String,
 }
 
+/// Full JSON body for an Anthropic streaming messages request.
 #[derive(Debug, Serialize)]
 pub struct AnthropicRequest {
+    /// Model identifier (e.g. `"claude-sonnet-4-6"`).
     pub model: String,
+    /// Conversation messages.
     pub messages: Vec<AnthropicMessage>,
+    /// Maximum tokens to generate.
     pub max_tokens: u32,
+    /// Must be `true` to enable SSE streaming.
     pub stream: bool,
+    /// Sampling temperature (0.0–1.0 for Anthropic).
     pub temperature: f32,
+    /// Optional system prompt prepended before the conversation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
 }
 
+/// Incremental text delta from an Anthropic `content_block_delta` event.
 #[derive(Debug, Deserialize)]
 pub struct AnthropicContentDelta {
+    /// New text fragment, present only on `text_delta` sub-events.
     #[serde(default)]
     pub text: Option<String>,
 }
 
+/// One server-sent event from the Anthropic streaming API.
 #[derive(Debug, Deserialize)]
 pub struct AnthropicStreamEvent {
+    /// Event type: `"content_block_delta"`, `"message_start"`, `"ping"`, etc.
     #[serde(rename = "type")]
     pub event_type: String,
+    /// Content delta, present only on `content_block_delta` events.
     #[serde(default)]
     pub delta: Option<AnthropicContentDelta>,
 }
 
 // -- Orchestrator MCP types -------------------------------------------------
 
+/// JSON-RPC 2.0 request sent to the MCP orchestrator (`tools/call infer`).
 #[derive(Debug, Serialize)]
 pub struct McpInferRequest {
+    /// Always `"2.0"`.
     pub jsonrpc: String,
+    /// Always `"tools/call"`.
     pub method: String,
+    /// Caller-assigned request identifier.
     pub id: u64,
+    /// Typed parameters block.
     pub params: McpInferParams,
 }
 
+/// Parameters block for an MCP `tools/call` request.
 #[derive(Debug, Serialize)]
 pub struct McpInferParams {
+    /// Tool name to invoke (e.g. `"infer"`).
     pub name: String,
+    /// Arguments forwarded to the tool.
     pub arguments: McpInferArguments,
 }
 
+/// Arguments forwarded to the MCP `infer` tool.
 #[derive(Debug, Serialize)]
 pub struct McpInferArguments {
+    /// Text prompt to enrich or process.
     pub prompt: String,
+    /// Target worker backend (e.g. `"llama_cpp"`).
     pub worker: String,
 }
 
+/// JSON-RPC 2.0 response returned by the MCP orchestrator.
 #[derive(Debug, Deserialize)]
 pub struct McpInferResponse {
+    /// Protocol version echo, always `"2.0"` when present.
     #[allow(dead_code)]
     pub jsonrpc: Option<String>,
+    /// Successful result payload; mutually exclusive with `error`.
     pub result: Option<McpInferResult>,
+    /// Error payload; mutually exclusive with `result`.
     pub error: Option<McpError>,
 }
 
+/// Successful result from an MCP `infer` call.
 #[derive(Debug, Deserialize)]
 pub struct McpInferResult {
+    /// List of content items returned by the tool.
     pub content: Vec<McpContent>,
 }
 
+/// A single content item within an MCP tool result.
 #[derive(Debug, Deserialize)]
 pub struct McpContent {
+    /// Text value of this content item, or `None` for non-text items.
     pub text: Option<String>,
 }
 
+/// Error payload from an MCP JSON-RPC response.
 #[derive(Debug, Deserialize)]
 pub struct McpError {
+    /// Human-readable error message.
     pub message: String,
 }
 

@@ -1,7 +1,21 @@
+//! Per-position token confidence heatmap exporter.
+//!
+//! [`HeatmapExporter`] accumulates per-position confidence values across
+//! multiple research runs and exports the matrix as a CSV file.  The CSV
+//! has one row per token position and one column per run, plus a leading
+//! `position` column.  Rows below a configurable mean-confidence threshold
+//! are omitted, and rows can optionally be sorted by descending mean confidence.
+
 use crate::TokenEvent;
 use std::io::Write;
 
-/// Accumulates per-position confidence data across runs.
+/// Accumulates per-position token confidence data across multiple research runs
+/// and exports the result as a CSV file.
+///
+/// Each call to [`HeatmapExporter::record_run`] stores one run's confidence
+/// values by token position.  Runs of different lengths are handled by
+/// extending position slots on demand.  After all runs have been recorded,
+/// call [`HeatmapExporter::export_csv`] to write the matrix to disk.
 pub struct HeatmapExporter {
     /// data[position][run] = confidence value (if available)
     data: Vec<Vec<Option<f32>>>,

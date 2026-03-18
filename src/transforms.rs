@@ -1,3 +1,23 @@
+//! Token transform pipeline.
+//!
+//! This module defines the [`Transform`] enum and associated helpers used to
+//! mutate individual tokens in the live LLM stream.  Transforms can be stacked
+//! via [`Transform::Chain`] or selected randomly via [`Transform::Chaos`].
+//!
+//! ## Available transforms
+//!
+//! | Name | Effect |
+//! |------|--------|
+//! | `reverse` | Reverses the characters of the token |
+//! | `uppercase` | Converts the token to uppercase |
+//! | `mock` | Applies alternating lower/upper case per character |
+//! | `noise` | Appends a random symbol from `* + ~ @ # $ %` |
+//! | `chaos` | Randomly selects one of the above per call |
+//! | `scramble` | Fisher-Yates shuffles the token's characters |
+//! | `delete` | Replaces the token with the empty string |
+//! | `synonym` | Substitutes the token with a static synonym, if known |
+//! | `delay:N` | Passes the token through after an N-millisecond pause |
+
 use colored::*;
 use once_cell::sync::Lazy;
 use rand::Rng;
@@ -208,21 +228,62 @@ static SYNONYM_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m
 });
 
+/// The set of token mutation strategies available at the interception layer.
+///
+/// Each variant describes a different way to perturb a token in the stream.
+/// The transform is applied only at odd-indexed positions (i.e., every other
+/// token, starting from index 1) unless the caller overrides the rate.
+///
+/// ## Strategies
+///
+/// | Variant | Behaviour |
+/// |---------|-----------|
+/// | `Reverse` | Reverses the Unicode characters of the token: `"hello"` -> `"olleh"`. |
+/// | `Uppercase` | Uppercases every character: `"hello"` -> `"HELLO"`. |
+/// | `Mock` | Alternates lowercase/uppercase per character position: `"hello"` -> `"hElLo"`. |
+/// | `Noise` | Appends one random symbol from `* + ~ @ # $ %`: `"hello"` -> `"hello*"`. |
+/// | `Chaos` | Randomly picks one of Reverse, Uppercase, Mock, or Noise per token. |
+/// | `Scramble` | Fisher-Yates shuffles the characters: same characters, random order. |
+/// | `Delete` | Drops the token entirely, returning an empty string. |
+/// | `Synonym` | Replaces the token with a synonym from the built-in 200-entry map; passes through unchanged if no entry exists. |
+/// | `Delay(ms)` | Returns the token unmodified after the given delay in milliseconds. Useful for pacing experiments. |
+/// | `Chain(vec)` | Applies a sequence of transforms in order; label is the individual labels joined by `+`. |
 #[derive(Debug, Clone)]
 pub enum Transform {
+    /// Reverse the Unicode characters of the token.
     Reverse,
+    /// Uppercase every character of the token.
     Uppercase,
+    /// Alternate lowercase/uppercase per character position (sPoNgEbOb case).
     Mock,
+    /// Append one random symbol from the noise character set.
     Noise,
+    /// Randomly select one of Reverse, Uppercase, Mock, or Noise for each token.
     Chaos,
+    /// Shuffle the characters of the token using Fisher-Yates.
     Scramble,
+    /// Return an empty string, effectively deleting the token from the stream.
     Delete,
+    /// Replace the token with a built-in synonym; pass through unchanged if not found.
     Synonym,
+    /// Return the token unchanged after sleeping for the given number of milliseconds.
     Delay(u64),
+    /// Apply a sequence of transforms in order, chaining their effects.
     Chain(Vec<Transform>),
 }
 
 impl Transform {
+    /// Parse a transform name (case-insensitive) or a comma-separated chain.
+    ///
+    /// Recognised single names: `reverse`, `uppercase`, `mock`, `noise`, `chaos`,
+    /// `scramble`, `delete`, `synonym`, `delay`, `delay:N` (where N is milliseconds).
+    ///
+    /// Comma-separated input like `"reverse,uppercase"` produces a `Chain` variant.
+    /// A single-element comma-separated string is unwrapped to the plain variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` if any component name is unrecognised.
     pub fn from_str_loose(s: &str) -> Result<Self, String> {
         // Handle comma-separated chain: "reverse,uppercase"
         if s.contains(',') {
@@ -232,7 +293,9 @@ impl Transform {
                 .collect();
             let transforms = parts?;
             if transforms.len() == 1 {
-                return Ok(transforms.into_iter().next().unwrap());
+                // len == 1 is checked above, so into_iter().next() is always Some.
+                return Ok(transforms.into_iter().next()
+                    .ok_or_else(|| "internal: empty transform list".to_string())?);
             }
             return Ok(Transform::Chain(transforms));
         }
@@ -329,6 +392,9 @@ impl Transform {
         self.apply_with_label_rng(token, &mut rand::thread_rng())
     }
 
+    /// Apply the transform and return only the resulting string.
+    ///
+    /// Convenience wrapper around [`apply_with_label`](Self::apply_with_label).
     pub fn apply(&self, token: &str) -> String {
         self.apply_with_label(token).0
     }

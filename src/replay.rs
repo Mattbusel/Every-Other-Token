@@ -54,15 +54,24 @@ impl Default for Recorder {
     }
 }
 
+/// Loads and replays previously recorded [`ReplayRecord`] streams.
 pub struct Replayer;
 
 impl Replayer {
+    /// Deserialise a replay file from `path` into a list of [`ReplayRecord`]s.
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be read or JSON parsing fails.
     pub fn load(path: &str) -> Result<Vec<ReplayRecord>, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let records: Vec<ReplayRecord> = serde_json::from_str(&content)?;
         Ok(records)
     }
 
+    /// Send all records into `tx` in order, as fast as the receiver can consume them.
+    ///
+    /// # Errors
+    /// Returns an error if the channel is closed before all records are sent.
     pub fn replay_to_channel(
         records: Vec<ReplayRecord>,
         tx: UnboundedSender<TokenEvent>,
