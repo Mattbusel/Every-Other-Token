@@ -25,7 +25,7 @@ allow = [
     "CC0-1.0",
 ]
 copyleft = "warn"
-allow-osi-fsf-free = "neither"
+allow-osi-fsf-free = "none"
 default = "deny"
 confidence-threshold = 0.8
 

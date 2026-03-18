@@ -38,7 +38,7 @@ jobs:
     name: Test (${{ matrix.rust }})
     strategy:
       matrix:
-        rust: [stable, "1.75"]
+        rust: [stable, "1.81"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
