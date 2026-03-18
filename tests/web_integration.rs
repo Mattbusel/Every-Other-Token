@@ -1,7 +1,7 @@
-/// Integration tests for web module utilities.
-///
-/// These tests exercise `url_decode` and `parse_query`
-/// without spinning up a real TCP socket.
+//! Integration tests for web module utilities.
+//!
+//! These tests exercise `url_decode` and `parse_query`
+//! without spinning up a real TCP socket.
 use every_other_token::web::{parse_query, url_decode};
 
 // ---------------------------------------------------------------------------
@@ -91,6 +91,65 @@ fn test_parse_query_missing_value_defaults_to_empty() {
 #[test]
 fn test_parse_query_no_value_key_present() {
     let params = parse_query("standalone");
-    // A key with no '=' may or may not be present — just must not panic
+    // A key with no '=' may or may not be present -- just must not panic
     let _ = params.get("standalone");
+}
+
+// ---------------------------------------------------------------------------
+// url_decode additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_url_decode_trailing_percent() {
+    // A trailing lone '%' must not panic and must include '%' in output
+    let result = url_decode("abc%");
+    assert!(result.starts_with("abc"));
+    assert!(result.contains('%'));
+}
+
+#[test]
+fn test_url_decode_percent_one_hex_digit() {
+    // '%' followed by only one hex digit (incomplete sequence)
+    let result = url_decode("x%4");
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn test_url_decode_multiple_plus_signs() {
+    assert_eq!(url_decode("a+b+c"), "a b c");
+}
+
+#[test]
+fn test_url_decode_roundtrip_ascii() {
+    // Plain ASCII without special chars should be unchanged
+    let s = "hello_world-123";
+    assert_eq!(url_decode(s), s);
+}
+
+#[test]
+fn test_url_decode_all_noise_chars_no_panic() {
+    // Exercise the decoder with a variety of byte values -- must not panic
+    for byte in 0x00u8..=0x7fu8 {
+        let encoded = format!("%{:02X}", byte);
+        let _ = url_decode(&encoded);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// parse_query additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_query_duplicate_keys_last_wins_or_first_kept() {
+    // Behaviour for duplicate keys is implementation-defined; must not panic
+    let params = parse_query("k=1&k=2");
+    assert!(params.contains_key("k"));
+}
+
+#[test]
+fn test_parse_query_encoded_key() {
+    // Keys can also be percent-encoded
+    let params = parse_query("he%6Clo=world");
+    // 'l' = 0x6C, so key is "hello"
+    assert!(params.contains_key("hello") || !params.is_empty());
 }

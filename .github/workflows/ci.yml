@@ -80,3 +80,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-deny --locked
       - run: cargo deny check
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+      - name: Run coverage
+        run: cargo tarpaulin --out Xml --engine llvm --timeout 120
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: cobertura.xml
+          fail_ci_if_error: false
