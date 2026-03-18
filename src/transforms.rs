@@ -294,10 +294,10 @@ impl Transform {
             let transforms = parts?;
             if transforms.len() == 1 {
                 // len == 1 is checked above, so into_iter().next() is always Some.
-                return Ok(transforms
+                return transforms
                     .into_iter()
                     .next()
-                    .ok_or_else(|| "internal: empty transform list".to_string())?);
+                    .ok_or_else(|| "internal: empty transform list".to_string());
             }
             return Ok(Transform::Chain(transforms));
         }
