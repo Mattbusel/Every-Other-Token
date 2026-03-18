@@ -77,10 +77,10 @@ fn load_file(path: &PathBuf) -> EotConfig {
             // Validate rate is in [0.0, 1.0]; warn and clamp if out of range.
             if let Some(r) = cfg.rate {
                 if !(0.0..=1.0).contains(&r) {
-                    eprintln!(
-                        "[config] warning: rate={} in {} is out of range [0.0, 1.0]; clamping",
-                        r,
-                        path.display()
+                    tracing::warn!(
+                        rate = r,
+                        path = %path.display(),
+                        "config rate out of range [0.0, 1.0]; clamping"
                     );
                     cfg.rate = Some(r.clamp(0.0, 1.0));
                 }
@@ -88,10 +88,10 @@ fn load_file(path: &PathBuf) -> EotConfig {
             cfg
         }
         Err(e) => {
-            eprintln!(
-                "[config] warning: failed to parse {}: {}",
-                path.display(),
-                e
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "failed to parse config file; using defaults"
             );
             EotConfig::default()
         }
