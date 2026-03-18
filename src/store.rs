@@ -58,16 +58,26 @@ impl Storage for ExperimentStore {
     }
 }
 
-/// Flat data record for a single research run, passed to `insert_run`.
+/// Flat data record for a single research run, passed to [`ExperimentStore::insert_run`].
 pub struct RunRecord {
+    /// Zero-based index of this run within its experiment session.
     pub run_index: u32,
+    /// Total number of tokens in the streamed response.
     pub token_count: usize,
+    /// Number of tokens mutated by the active transform.
     pub transformed_count: usize,
+    /// Mean per-token model confidence (0.0–1.0), or `None` if unavailable.
     pub avg_confidence: Option<f64>,
+    /// Mean per-token perplexity, or `None` if unavailable.
     pub avg_perplexity: Option<f64>,
+    /// Vocabulary diversity score (unique tokens / total tokens).
     pub vocab_diversity: f64,
 }
 
+/// SQLite-backed persistence for experiment sessions and per-run metrics.
+///
+/// Open with [`ExperimentStore::open`]; pass `":memory:"` for tests.
+/// Implements [`Storage`] so it can be used behind `&dyn Storage`.
 pub struct ExperimentStore {
     conn: Connection,
 }
@@ -101,6 +111,38 @@ impl ExperimentStore {
             );",
         )?;
         Ok(ExperimentStore { conn })
+    }
+
+    /// Insert an experiment and its first run atomically so a crash between the
+    /// two writes cannot leave an orphaned experiment row with no associated run.
+    pub fn insert_experiment_with_run(
+        &self,
+        created_at: &str,
+        prompt: &str,
+        provider: &str,
+        transform: &str,
+        model: &str,
+        run: &RunRecord,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        self.conn.execute("BEGIN", [])?;
+        let result: Result<i64, Box<dyn std::error::Error>> = (|| {
+            self.conn.execute(
+                "INSERT INTO experiments (created_at, prompt, provider, transform, model) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![created_at, prompt, provider, transform, model],
+            )?;
+            let exp_id = self.conn.last_insert_rowid();
+            self.conn.execute(
+                "INSERT INTO runs (experiment_id, run_index, token_count, transformed_count, avg_confidence, avg_perplexity, vocab_diversity)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![exp_id, run.run_index, run.token_count as i64, run.transformed_count as i64,
+                        run.avg_confidence, run.avg_perplexity, run.vocab_diversity],
+            )?;
+            Ok(exp_id)
+        })();
+        match result {
+            Ok(id) => { self.conn.execute("COMMIT", [])?; Ok(id) }
+            Err(e) => { let _ = self.conn.execute("ROLLBACK", []); Err(e) }
+        }
     }
 
     pub fn insert_experiment(
@@ -345,5 +387,68 @@ mod tests {
         let result = store.dedup_check("fp3", 1_000_000, 300_000);
         assert!(result.is_none());
         std::fs::remove_file(&tmp).ok();
+    }
+
+    // -- Transactional insert tests (#3) --
+
+    #[test]
+    fn test_insert_experiment_with_run_atomic() {
+        let store = ExperimentStore::open(":memory:").expect("open");
+        let exp_id = store.insert_experiment_with_run(
+            "2026-01-01T00:00:00Z", "hello", "openai", "reverse", "gpt-4",
+            &RunRecord {
+                run_index: 0,
+                token_count: 10,
+                transformed_count: 5,
+                avg_confidence: Some(0.8),
+                avg_perplexity: Some(1.5),
+                vocab_diversity: 0.9,
+            },
+        ).expect("transactional insert");
+        assert!(exp_id > 0);
+        let exps = store.query_experiments();
+        assert_eq!(exps.len(), 1);
+    }
+
+    #[test]
+    fn test_insert_experiment_with_run_run_is_linked() {
+        let store = ExperimentStore::open(":memory:").expect("open");
+        let exp_id = store.insert_experiment_with_run(
+            "2026-01-01T00:00:00Z", "test", "anthropic", "uppercase", "claude-sonnet-4-6",
+            &RunRecord {
+                run_index: 0,
+                token_count: 20,
+                transformed_count: 10,
+                avg_confidence: None,
+                avg_perplexity: None,
+                vocab_diversity: 0.5,
+            },
+        ).expect("insert");
+        // The returned id must be positive and the experiment must be queryable
+        assert!(exp_id > 0);
+        let exps = store.query_experiments();
+        assert_eq!(exps[0]["transform"], "uppercase");
+    }
+
+    // -- prepare_cached correctness test (#9) --
+
+    #[test]
+    fn test_load_runs_by_transform_cached_stmt() {
+        let store = ExperimentStore::open(":memory:").expect("open");
+        let exp_id = store.insert_experiment("now", "p", "openai", "noise", "gpt-4").expect("exp");
+        store.insert_run(exp_id, &RunRecord {
+            run_index: 0,
+            token_count: 3,
+            transformed_count: 1,
+            avg_confidence: Some(0.6),
+            avg_perplexity: Some(2.0),
+            vocab_diversity: 0.7,
+        }).expect("run");
+        // Call twice to exercise prepare_cached reuse
+        let r1 = store.load_runs_by_transform("p", "noise").expect("q1");
+        let r2 = store.load_runs_by_transform("p", "noise").expect("q2");
+        assert_eq!(r1.len(), 1);
+        assert_eq!(r2.len(), 1);
+        assert_eq!(r1[0].token_count, 3);
     }
 }

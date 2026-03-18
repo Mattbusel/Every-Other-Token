@@ -24,7 +24,15 @@ pub enum ConfidenceBand {
 }
 
 impl ConfidenceBand {
-    /// Classify a raw confidence in `[0.0, 1.0]`.
+    /// Classify a raw confidence value in `[0.0, 1.0]`.
+    ///
+    /// # Examples
+    /// ```
+    /// use every_other_token::render::ConfidenceBand;
+    /// assert_eq!(ConfidenceBand::from_confidence(0.9), ConfidenceBand::High);
+    /// assert_eq!(ConfidenceBand::from_confidence(0.5), ConfidenceBand::Mid);
+    /// assert_eq!(ConfidenceBand::from_confidence(0.1), ConfidenceBand::Low);
+    /// ```
     pub fn from_confidence(c: f32) -> Self {
         if c >= 0.7 {
             ConfidenceBand::High
@@ -52,6 +60,14 @@ impl ConfidenceBand {
 /// Map a token importance score (0.0–1.0) to a discrete heat level 0–4.
 ///
 /// Level 4 = hottest (most important), 0 = cold.
+///
+/// # Examples
+/// ```
+/// use every_other_token::render::importance_to_heat;
+/// assert_eq!(importance_to_heat(1.0), 4);
+/// assert_eq!(importance_to_heat(0.5), 2);
+/// assert_eq!(importance_to_heat(0.0), 0);
+/// ```
 #[inline]
 pub fn importance_to_heat(importance: f64) -> u8 {
     if importance >= 0.8 { 4 }

@@ -1189,4 +1189,56 @@ mod tests {
         }
         assert!(seen.len() >= 1, "scramble of two chars should work");
     }
+
+    // ---- rstest parameterized tests ----
+
+    mod param_tests {
+        use super::super::Transform;
+        use rstest::rstest;
+
+        #[rstest]
+        #[case("reverse",   "olleh")]
+        #[case("uppercase", "HELLO")]
+        #[case("mock",      "hElLo")]
+        #[case("delete",    "")]
+        fn test_deterministic_transforms(#[case] name: &str, #[case] expected: &str) {
+            let t = Transform::from_str_loose(name).expect("valid transform");
+            assert_eq!(t.apply("hello"), expected, "transform={name}");
+        }
+
+        #[rstest]
+        #[case("reverse")]
+        #[case("uppercase")]
+        #[case("mock")]
+        #[case("noise")]
+        #[case("chaos")]
+        #[case("scramble")]
+        #[case("delete")]
+        #[case("synonym")]
+        #[case("delay")]
+        fn test_all_transforms_parse(#[case] name: &str) {
+            assert!(
+                Transform::from_str_loose(name).is_ok(),
+                "expected '{name}' to parse"
+            );
+        }
+
+        #[rstest]
+        #[case("REVERSE")]
+        #[case("Uppercase")]
+        #[case("MOCK")]
+        #[case("NOISE")]
+        fn test_case_insensitive_parse(#[case] name: &str) {
+            assert!(Transform::from_str_loose(name).is_ok(), "expected '{name}' to parse case-insensitively");
+        }
+
+        #[rstest]
+        #[case("")]
+        #[case("invalid")]
+        #[case("REVERSED")]
+        #[case("upper case")]
+        fn test_invalid_transforms_error(#[case] name: &str) {
+            assert!(Transform::from_str_loose(name).is_err(), "expected '{name}' to fail");
+        }
+    }
 }
