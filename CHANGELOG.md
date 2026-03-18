@@ -46,12 +46,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctly; the function is defined locally in that module.
 
 ### Changed
-- `README.md` rewritten: clearer description, feature table, complete quickstart,
-  architecture ASCII diagram, contributing guide with development commands.
-- `.github/workflows/ci.yml`: added `self-tune`, `self-modify`, and `helix-bridge`
-  Clippy/test jobs; named all jobs; moved `RUSTDOCFLAGS` to workflow-level env.
+- `README.md` comprehensively rewritten: what it does, architectural pipeline
+  diagram, feature flag table, detailed quickstart with all common invocations,
+  full CLI reference table, library API examples, performance notes, contributing
+  guide with all dev commands, and annotated project layout tree.
+- `.github/workflows/ci.yml`: added `self-tune`, `self-modify`, `helix-bridge`
+  Clippy/test jobs; `release-build` job verifying the release binary is produced
+  on every push; `--all-features` Clippy pass; multi-feature doc build; named all
+  jobs; moved `RUSTDOCFLAGS` to workflow-level env.
 - `Cargo.toml`: added `documentation` field; extended `categories` to include
-  `development-tools`; updated `keywords` to include `interpretability`.
+  `development-tools`; updated `keywords` to include `interpretability`; added
+  `opt-level = 3` and `strip = true` to `[profile.release]`.
+
+### Added (production hardening — 2026-03-18)
+- External integration test suites `tests/transforms_tests.rs` and
+  `tests/store_heatmap_replay_tests.rs` covering `Transform`, `ExperimentStore`,
+  `HeatmapExporter`, `Recorder`, and `Replayer` from outside the crate boundary.
+- `tracing::info_span!` on `TokenInterceptor::intercept_stream` entry point with
+  provider, model, transform, and rate as structured span fields.
+- `tracing::info!` / `tracing::warn!` in `research::run_research`,
+  `run_research_suite`, and `run_diff_terminal`; `tracing::info!` in `web::serve`.
+- `release-build` CI job: verifies `cargo build --release` succeeds on every push.
+- `[profile.release]` now includes `opt-level = 3` and `strip = true`.
+
+### Fixed (2026-03-18)
+- Removed duplicate `tracing::warn!` call in `execute_with_retry` that emitted the
+  same warning twice per retryable HTTP status (copy-paste regression).
 
 ---
 

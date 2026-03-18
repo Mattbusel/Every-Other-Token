@@ -1,6 +1,7 @@
 //! External integration tests for the `transforms` module public API.
 
 use every_other_token::transforms::Transform;
+use rand::SeedableRng;
 
 // ---------------------------------------------------------------------------
 // from_str_loose — parsing
@@ -175,8 +176,12 @@ fn test_calculate_token_importance_range() {
 
 #[test]
 fn test_calculate_token_importance_deterministic() {
-    use every_other_token::transforms::calculate_token_importance;
-    let a = calculate_token_importance("word", 5);
-    let b = calculate_token_importance("word", 5);
+    // calculate_token_importance uses thread_rng() for jitter, so two calls
+    // for the same input can differ.  Use the seeded variant for determinism.
+    use every_other_token::transforms::calculate_token_importance_rng;
+    let mut rng1 = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng2 = rand::rngs::StdRng::seed_from_u64(0);
+    let a = calculate_token_importance_rng("word", 5, &mut rng1);
+    let b = calculate_token_importance_rng("word", 5, &mut rng2);
     assert!((a - b).abs() < 1e-12);
 }
