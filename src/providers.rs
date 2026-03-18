@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 pub trait ProviderPlugin: Send + Sync {
     fn name(&self) -> &str;
     fn default_model(&self) -> &str;
+    /// Base URL for the provider's streaming chat completions endpoint.
+    ///
+    /// This centralises API endpoint knowledge so that callers building HTTP
+    /// requests do not hard-code provider URLs and future providers only need
+    /// to implement this single method.
+    fn api_url(&self) -> &str;
     fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value;
 }
 
@@ -20,6 +26,9 @@ impl ProviderPlugin for OpenAiPlugin {
     }
     fn default_model(&self) -> &str {
         "gpt-3.5-turbo"
+    }
+    fn api_url(&self) -> &str {
+        "https://api.openai.com/v1/chat/completions"
     }
     fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value {
         let mut messages = Vec::new();
@@ -44,6 +53,9 @@ impl ProviderPlugin for AnthropicPlugin {
     }
     fn default_model(&self) -> &str {
         "claude-sonnet-4-6"
+    }
+    fn api_url(&self) -> &str {
+        "https://api.anthropic.com/v1/messages"
     }
     fn build_request(&self, prompt: &str, system: Option<&str>, model: &str) -> serde_json::Value {
         let mut req = serde_json::json!({
@@ -98,6 +110,19 @@ impl std::fmt::Display for Provider {
             Provider::Openai => write!(f, "openai"),
             Provider::Anthropic => write!(f, "anthropic"),
             Provider::Mock => write!(f, "mock"),
+        }
+    }
+}
+
+impl std::str::FromStr for Provider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "openai" => Ok(Provider::Openai),
+            "anthropic" => Ok(Provider::Anthropic),
+            "mock" => Ok(Provider::Mock),
+            other => Err(format!("unknown provider: '{}' (expected openai, anthropic, or mock)", other)),
         }
     }
 }
@@ -521,5 +546,47 @@ mod tests {
         let json = serde_json::to_string(&t).expect("serialize");
         assert!(json.contains("\"token\":\"bar\""));
         assert!(json.contains("\"logprob\":-2.0"));
+    }
+
+    // ---- ProviderPlugin api_url() tests ----
+
+    #[test]
+    fn test_openai_plugin_api_url_https() {
+        assert!(OpenAiPlugin.api_url().starts_with("https://"));
+    }
+
+    #[test]
+    fn test_anthropic_plugin_api_url_https() {
+        assert!(AnthropicPlugin.api_url().starts_with("https://"));
+    }
+
+    #[test]
+    fn test_openai_plugin_api_url_contains_openai() {
+        assert!(OpenAiPlugin.api_url().contains("openai.com"));
+    }
+
+    #[test]
+    fn test_anthropic_plugin_api_url_contains_anthropic() {
+        assert!(AnthropicPlugin.api_url().contains("anthropic.com"));
+    }
+
+    #[test]
+    fn test_openai_plugin_name_matches_display() {
+        assert_eq!(OpenAiPlugin.name(), Provider::Openai.to_string());
+    }
+
+    #[test]
+    fn test_anthropic_plugin_name_matches_display() {
+        assert_eq!(AnthropicPlugin.name(), Provider::Anthropic.to_string());
+    }
+
+    #[test]
+    fn test_openai_plugin_default_model_nonempty() {
+        assert!(!OpenAiPlugin.default_model().is_empty());
+    }
+
+    #[test]
+    fn test_anthropic_plugin_default_model_nonempty() {
+        assert!(!AnthropicPlugin.default_model().is_empty());
     }
 }

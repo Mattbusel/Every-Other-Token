@@ -218,6 +218,7 @@ fn test_token_event_serializes_all_fields() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -241,6 +242,7 @@ fn test_token_event_roundtrip() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -264,6 +266,7 @@ fn test_token_event_zero_importance() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":0.0"));
@@ -282,6 +285,7 @@ fn test_token_event_max_importance() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
     };
     let json = serde_json::to_string(&event).expect("serialize");
     assert!(json.contains("\"importance\":1.0"));
@@ -300,6 +304,7 @@ fn test_token_event_clone() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
     };
     let cloned = event.clone();
     assert_eq!(cloned.text, event.text);
@@ -322,6 +327,7 @@ fn test_multiple_token_events_serialize_as_array() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
         },
         every_other_token::TokenEvent {
             text: "dlrow".to_string(),
@@ -334,6 +340,7 @@ fn test_multiple_token_events_serialize_as_array() {
         confidence: None,
         perplexity: None,
         alternatives: vec![],
+        is_error: false,
         },
     ];
     let json = serde_json::to_string(&events).expect("serialize");

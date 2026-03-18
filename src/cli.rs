@@ -77,6 +77,14 @@ pub struct Args {
     #[arg(long)]
     pub heatmap_export: Option<String>,
 
+    /// Minimum average confidence to include a position in heatmap CSV export (0.0–1.0)
+    #[arg(long, default_value = "0.0")]
+    pub heatmap_min_confidence: f32,
+
+    /// Sort heatmap CSV rows by "position" (default) or "confidence"
+    #[arg(long, default_value = "position")]
+    pub heatmap_sort_by: String,
+
     /// Record token events to a JSON replay file at this path
     #[arg(long)]
     pub record: Option<String>,
@@ -129,6 +137,38 @@ pub struct Args {
     #[cfg(feature = "helix-bridge")]
     #[arg(long)]
     pub helix_url: Option<String>,
+
+    /// Rate range for stochastic experiments, e.g. "0.3-0.7". When set, the
+    /// interceptor randomly picks a rate in [min, max] for each run.
+    /// Overrides --rate when provided. Format: "MIN-MAX" (e.g. "0.2-0.8").
+    #[arg(long)]
+    pub rate_range: Option<String>,
+
+    /// Dry-run mode: show what transforms would be applied without calling any API.
+    /// Applies the configured transform to a sample token list and prints results.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Prompt template with {input} placeholder. When set, the positional prompt
+    /// is substituted into the template. Example: "Answer this: {input}"
+    #[arg(long)]
+    pub template: Option<String>,
+
+    /// Only transform tokens whose API confidence is below this threshold.
+    /// Tokens with confidence >= threshold are passed through unchanged.
+    /// When no confidence data is available (Anthropic), falls back to rate-based selection.
+    /// Range: 0.0–1.0. Example: --min-confidence 0.8
+    #[arg(long)]
+    pub min_confidence: Option<f64>,
+
+    /// Output format for research mode: "json" (default), "jsonl" (one JSON object per line).
+    #[arg(long, default_value = "json")]
+    pub format: String,
+
+    /// Number of consecutive low-confidence tokens to consider a "collapse" in research mode.
+    /// Default: 5.
+    #[arg(long, default_value = "5")]
+    pub collapse_window: usize,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -139,6 +179,71 @@ pub fn resolve_model(provider: &Provider, model: &str) -> String {
         Provider::Mock => "mock-fixture-v1".to_string(),
         _ => model.to_string(),
     }
+}
+
+/// Known-good model identifiers for basic validation (#18).
+///
+/// This list is non-exhaustive — new models are released regularly.
+/// An unknown model string produces a warning, not an error.
+const KNOWN_OPENAI_MODELS: &[&str] = &[
+    "gpt-3.5-turbo",
+    "gpt-3.5-turbo-0125",
+    "gpt-4",
+    "gpt-4-turbo",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "o1",
+    "o1-mini",
+    "o3",
+    "o3-mini",
+];
+
+const KNOWN_ANTHROPIC_MODELS: &[&str] = &[
+    "claude-3-haiku-20240307",
+    "claude-3-sonnet-20240229",
+    "claude-3-opus-20240229",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+];
+
+/// Warn if `model` does not match any known model for `provider`.
+/// Never errors — unknown models are still forwarded to the API.
+pub fn validate_model(provider: &Provider, model: &str) {
+    let known: &[&str] = match provider {
+        Provider::Openai => KNOWN_OPENAI_MODELS,
+        Provider::Anthropic => KNOWN_ANTHROPIC_MODELS,
+        Provider::Mock => return,
+    };
+    if !known.contains(&model) {
+        eprintln!(
+            "[warn] '{}' is not in the known {} model list — verify the model name is correct",
+            model,
+            provider
+        );
+    }
+}
+
+/// Parse "MIN-MAX" rate range string. Returns (min, max) or None on error.
+pub fn parse_rate_range(s: &str) -> Option<(f64, f64)> {
+    let parts: Vec<&str> = s.splitn(2, '-').collect();
+    if parts.len() == 2 {
+        let min = parts[0].parse::<f64>().ok()?;
+        let max = parts[1].parse::<f64>().ok()?;
+        if min <= max && min >= 0.0 && max <= 1.0 {
+            return Some((min, max));
+        }
+    }
+    None
+}
+
+/// Apply template substitution: replace "{input}" with the prompt.
+pub fn apply_template(template: &str, prompt: &str) -> String {
+    template.replace("{input}", prompt)
 }
 
 #[cfg(test)]
@@ -361,5 +466,109 @@ mod tests {
     fn test_args_helix_url_set() {
         let args = Args::parse_from(["eot", "prompt", "--helix-url", "http://127.0.0.1:8080"]);
         assert_eq!(args.helix_url.as_deref(), Some("http://127.0.0.1:8080"));
+    }
+
+    #[test]
+    fn test_parse_rate_range_valid() {
+        assert_eq!(parse_rate_range("0.3-0.7"), Some((0.3, 0.7)));
+    }
+
+    #[test]
+    fn test_parse_rate_range_equal() {
+        assert_eq!(parse_rate_range("0.5-0.5"), Some((0.5, 0.5)));
+    }
+
+    #[test]
+    fn test_parse_rate_range_invalid() {
+        assert_eq!(parse_rate_range("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_rate_range_min_greater_than_max() {
+        assert_eq!(parse_rate_range("0.8-0.2"), None);
+    }
+
+    #[test]
+    fn test_apply_template_with_placeholder() {
+        assert_eq!(apply_template("Answer: {input}", "hello"), "Answer: hello");
+    }
+
+    #[test]
+    fn test_apply_template_no_placeholder() {
+        assert_eq!(apply_template("No placeholder", "hello"), "No placeholder");
+    }
+
+    #[test]
+    fn test_args_dry_run_flag() {
+        let args = Args::parse_from(["eot", "prompt", "--dry-run"]);
+        assert!(args.dry_run);
+    }
+
+    #[test]
+    fn test_args_min_confidence() {
+        let args = Args::parse_from(["eot", "prompt", "--min-confidence", "0.8"]);
+        assert_eq!(args.min_confidence, Some(0.8));
+    }
+
+    #[test]
+    fn test_args_collapse_window() {
+        let args = Args::parse_from(["eot", "prompt", "--collapse-window", "10"]);
+        assert_eq!(args.collapse_window, 10);
+    }
+
+    #[test]
+    fn test_args_format_jsonl() {
+        let args = Args::parse_from(["eot", "prompt", "--format", "jsonl"]);
+        assert_eq!(args.format, "jsonl");
+    }
+
+    // -- validate_model tests (#18) --
+
+    #[test]
+    fn test_validate_model_known_openai_no_warn() {
+        // Should not panic; just verifying the function runs without error
+        validate_model(&Provider::Openai, "gpt-4");
+        validate_model(&Provider::Openai, "gpt-3.5-turbo");
+        validate_model(&Provider::Openai, "gpt-4o");
+    }
+
+    #[test]
+    fn test_validate_model_known_anthropic_no_warn() {
+        validate_model(&Provider::Anthropic, "claude-sonnet-4-6");
+        validate_model(&Provider::Anthropic, "claude-opus-4-6");
+        validate_model(&Provider::Anthropic, "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn test_validate_model_unknown_does_not_panic() {
+        // Unknown models emit a warning but must not panic
+        validate_model(&Provider::Openai, "gpt-9-turbo-ultra");
+        validate_model(&Provider::Anthropic, "claude-99");
+    }
+
+    #[test]
+    fn test_validate_model_mock_always_silent() {
+        // Mock provider skips validation entirely
+        validate_model(&Provider::Mock, "any-model-string");
+    }
+
+    #[test]
+    fn test_known_openai_models_nonempty() {
+        assert!(!KNOWN_OPENAI_MODELS.is_empty());
+    }
+
+    #[test]
+    fn test_known_anthropic_models_nonempty() {
+        assert!(!KNOWN_ANTHROPIC_MODELS.is_empty());
+    }
+
+    #[test]
+    fn test_known_openai_models_contain_gpt4() {
+        assert!(KNOWN_OPENAI_MODELS.contains(&"gpt-4"));
+    }
+
+    #[test]
+    fn test_known_anthropic_models_contain_sonnet() {
+        assert!(KNOWN_ANTHROPIC_MODELS.contains(&"claude-sonnet-4-6"));
     }
 }

@@ -7,6 +7,7 @@ const NOISE_CHARS: [char; 7] = ['*', '+', '~', '@', '#', '$', '%'];
 
 static SYNONYM_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
+    // Original 30 entries
     m.insert("good", "great");
     m.insert("bad", "poor");
     m.insert("fast", "quick");
@@ -37,6 +38,173 @@ static SYNONYM_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("give", "provide");
     m.insert("find", "locate");
     m.insert("tell", "inform");
+    // Adjectives
+    m.insert("bright", "vivid");
+    m.insert("dark", "dim");
+    m.insert("clean", "pure");
+    m.insert("dirty", "grimy");
+    m.insert("strong", "powerful");
+    m.insert("weak", "frail");
+    m.insert("rich", "wealthy");
+    m.insert("young", "youthful");
+    m.insert("pretty", "beautiful");
+    m.insert("ugly", "hideous");
+    m.insert("loud", "noisy");
+    m.insert("quiet", "silent");
+    m.insert("angry", "furious");
+    m.insert("calm", "serene");
+    m.insert("brave", "courageous");
+    m.insert("scared", "frightened");
+    m.insert("funny", "amusing");
+    m.insert("serious", "solemn");
+    m.insert("kind", "gentle");
+    m.insert("cruel", "harsh");
+    m.insert("empty", "hollow");
+    m.insert("full", "packed");
+    m.insert("rough", "coarse");
+    m.insert("smooth", "sleek");
+    m.insert("sharp", "keen");
+    m.insert("dull", "blunt");
+    m.insert("deep", "profound");
+    m.insert("shallow", "superficial");
+    m.insert("wide", "broad");
+    m.insert("narrow", "slim");
+    m.insert("long", "lengthy");
+    m.insert("short", "brief");
+    m.insert("heavy", "weighty");
+    m.insert("light", "featherweight");
+    m.insert("warm", "heated");
+    m.insert("frozen", "icy");
+    m.insert("luminous", "bright");
+    m.insert("gloomy", "dreary");
+    m.insert("lively", "energetic");
+    m.insert("tired", "weary");
+    m.insert("healthy", "robust");
+    m.insert("sick", "ill");
+    m.insert("safe", "secure");
+    m.insert("dangerous", "hazardous");
+    m.insert("important", "crucial");
+    m.insert("trivial", "minor");
+    m.insert("simple", "plain");
+    m.insert("complex", "intricate");
+    m.insert("rare", "scarce");
+    m.insert("common", "ordinary");
+    m.insert("strange", "peculiar");
+    m.insert("normal", "typical");
+    m.insert("ancient", "archaic");
+    m.insert("modern", "contemporary");
+    m.insert("local", "regional");
+    m.insert("distant", "remote");
+    // Verbs
+    m.insert("walk", "stroll");
+    m.insert("run", "sprint");
+    m.insert("eat", "consume");
+    m.insert("drink", "sip");
+    m.insert("write", "compose");
+    m.insert("read", "peruse");
+    m.insert("speak", "articulate");
+    m.insert("listen", "hear");
+    m.insert("look", "glance");
+    m.insert("touch", "feel");
+    m.insert("help", "assist");
+    m.insert("stop", "halt");
+    m.insert("try", "attempt");
+    m.insert("fail", "falter");
+    m.insert("win", "triumph");
+    m.insert("forfeit", "lose");
+    m.insert("buy", "purchase");
+    m.insert("sell", "trade");
+    m.insert("build", "construct");
+    m.insert("break", "shatter");
+    m.insert("fix", "repair");
+    m.insert("cut", "slice");
+    m.insert("push", "shove");
+    m.insert("pull", "tug");
+    m.insert("throw", "toss");
+    m.insert("catch", "grab");
+    m.insert("jump", "leap");
+    m.insert("fall", "plunge");
+    m.insert("rise", "ascend");
+    m.insert("drop", "descend");
+    m.insert("open", "unlock");
+    m.insert("close", "shut");
+    m.insert("move", "shift");
+    m.insert("stay", "remain");
+    m.insert("change", "alter");
+    m.insert("grow", "expand");
+    m.insert("shrink", "diminish");
+    m.insert("show", "display");
+    m.insert("hide", "conceal");
+    m.insert("choose", "select");
+    m.insert("allow", "permit");
+    m.insert("prevent", "hinder");
+    m.insert("need", "require");
+    m.insert("want", "desire");
+    m.insert("like", "enjoy");
+    m.insert("hate", "despise");
+    m.insert("fear", "dread");
+    m.insert("love", "adore");
+    m.insert("send", "dispatch");
+    m.insert("receive", "accept");
+    m.insert("keep", "retain");
+    m.insert("misplace", "lose");
+    m.insert("follow", "pursue");
+    m.insert("lead", "guide");
+    m.insert("wait", "linger");
+    m.insert("hurry", "rush");
+    m.insert("agree", "concur");
+    m.insert("refuse", "decline");
+    // Nouns
+    m.insert("house", "dwelling");
+    m.insert("car", "vehicle");
+    m.insert("book", "volume");
+    m.insert("friend", "companion");
+    m.insert("work", "labor");
+    m.insert("time", "duration");
+    m.insert("way", "method");
+    m.insert("place", "location");
+    m.insert("thing", "object");
+    m.insert("part", "component");
+    m.insert("life", "existence");
+    m.insert("day", "period");
+    m.insert("man", "person");
+    m.insert("woman", "individual");
+    m.insert("child", "youth");
+    m.insert("world", "realm");
+    m.insert("school", "institution");
+    m.insert("country", "nation");
+    m.insert("city", "metropolis");
+    m.insert("family", "household");
+    m.insert("group", "collective");
+    m.insert("system", "framework");
+    m.insert("problem", "issue");
+    m.insert("idea", "concept");
+    m.insert("question", "inquiry");
+    m.insert("result", "outcome");
+    m.insert("road", "path");
+    m.insert("tree", "plant");
+    m.insert("water", "liquid");
+    m.insert("fire", "flame");
+    m.insert("glow", "light");
+    m.insert("sound", "noise");
+    m.insert("food", "nourishment");
+    m.insert("money", "currency");
+    m.insert("power", "strength");
+    m.insert("mind", "intellect");
+    m.insert("heart", "soul");
+    m.insert("hand", "palm");
+    m.insert("eye", "gaze");
+    m.insert("word", "term");
+    m.insert("story", "tale");
+    m.insert("truth", "fact");
+    m.insert("dream", "vision");
+    m.insert("goal", "objective");
+    m.insert("plan", "strategy");
+    m.insert("step", "stage");
+    m.insert("rule", "law");
+    m.insert("right", "privilege");
+    m.insert("choice", "option");
+    m.insert("chance", "opportunity");
     m
 });
 
@@ -51,10 +219,27 @@ pub enum Transform {
     Delete,
     Synonym,
     Delay(u64),
+    Chain(Vec<Transform>),
 }
 
 impl Transform {
     pub fn from_str_loose(s: &str) -> Result<Self, String> {
+        // Handle comma-separated chain: "reverse,uppercase"
+        if s.contains(',') {
+            let parts: Result<Vec<Transform>, String> = s
+                .split(',')
+                .map(|part| Transform::from_str_single(part.trim()))
+                .collect();
+            let transforms = parts?;
+            if transforms.len() == 1 {
+                return Ok(transforms.into_iter().next().unwrap());
+            }
+            return Ok(Transform::Chain(transforms));
+        }
+        Transform::from_str_single(s)
+    }
+
+    fn from_str_single(s: &str) -> Result<Self, String> {
         let lower = s.to_lowercase();
         // Handle "delay:NNN" or "delay" forms
         if lower.starts_with("delay:") {
@@ -82,14 +267,14 @@ impl Transform {
     /// For Chaos, the sub-transform is chosen via `rng`; for others the label
     /// equals the transform name.  Prefer this over `apply_with_label` in hot
     /// paths to avoid per-call `thread_rng()` TLS lookups.
-    pub fn apply_with_label_rng<R: Rng>(&self, token: &str, rng: &mut R) -> (String, &'static str) {
+    pub fn apply_with_label_rng<R: Rng>(&self, token: &str, rng: &mut R) -> (String, String) {
         match self {
-            Transform::Reverse => (token.chars().rev().collect(), "reverse"),
-            Transform::Uppercase => (token.to_uppercase(), "uppercase"),
-            Transform::Mock => (apply_mock(token), "mock"),
+            Transform::Reverse => (token.chars().rev().collect(), "reverse".to_string()),
+            Transform::Uppercase => (token.to_uppercase(), "uppercase".to_string()),
+            Transform::Mock => (apply_mock(token), "mock".to_string()),
             Transform::Noise => {
                 let noise_char = NOISE_CHARS[rng.gen_range(0..NOISE_CHARS.len())];
-                (format!("{}{}", token, noise_char), "noise")
+                (format!("{}{}", token, noise_char), "noise".to_string())
             }
             Transform::Scramble => {
                 let mut chars: Vec<char> = token.chars().collect();
@@ -99,27 +284,37 @@ impl Transform {
                     let j = rng.gen_range(0..=i);
                     chars.swap(i, j);
                 }
-                (chars.into_iter().collect(), "scramble")
+                (chars.into_iter().collect(), "scramble".to_string())
             }
-            Transform::Delete => (String::new(), "delete"),
+            Transform::Delete => (String::new(), "delete".to_string()),
             Transform::Synonym => {
                 let lower = token.to_lowercase();
                 let result = SYNONYM_MAP
                     .get(lower.as_str())
                     .copied()
                     .unwrap_or(token);
-                (result.to_string(), "synonym")
+                (result.to_string(), "synonym".to_string())
             }
-            Transform::Delay(_) => (token.to_string(), "delay"),
+            Transform::Delay(_) => (token.to_string(), "delay".to_string()),
             Transform::Chaos => match rng.gen_range(0u8..4) {
-                0 => (token.chars().rev().collect(), "reverse"),
-                1 => (token.to_uppercase(), "uppercase"),
-                2 => (apply_mock(token), "mock"),
+                0 => (token.chars().rev().collect(), "reverse".to_string()),
+                1 => (token.to_uppercase(), "uppercase".to_string()),
+                2 => (apply_mock(token), "mock".to_string()),
                 _ => {
                     let noise_char = NOISE_CHARS[rng.gen_range(0..NOISE_CHARS.len())];
-                    (format!("{}{}", token, noise_char), "noise")
+                    (format!("{}{}", token, noise_char), "noise".to_string())
                 }
             },
+            Transform::Chain(transforms) => {
+                let mut current = token.to_string();
+                let mut labels: Vec<String> = Vec::new();
+                for t in transforms {
+                    let (next, label) = t.apply_with_label_rng(&current, rng);
+                    current = next;
+                    labels.push(label);
+                }
+                (current, labels.join("+"))
+            }
         }
     }
 
@@ -130,7 +325,7 @@ impl Transform {
 
     /// Apply the transform and return `(result, label)`.  Creates a one-shot
     /// `thread_rng()`; use `apply_with_label_rng` in hot paths.
-    pub fn apply_with_label(&self, token: &str) -> (String, &'static str) {
+    pub fn apply_with_label(&self, token: &str) -> (String, String) {
         self.apply_with_label_rng(token, &mut rand::thread_rng())
     }
 
@@ -154,13 +349,35 @@ fn apply_mock(token: &str) -> String {
         .collect()
 }
 
+/// Returns true if `ch` should be treated as a word-boundary punctuation character
+/// (split out as a single-char token, just like ASCII punctuation).
+fn is_word_boundary_punct(ch: char) -> bool {
+    ch.is_ascii_punctuation()
+        || matches!(
+            ch,
+            '\u{2014}' // em dash —
+            | '\u{2013}' // en dash –
+            | '\u{2026}' // ellipsis …
+            | '«'
+            | '»'
+            | '\u{201C}' // left double quote "
+            | '\u{201D}' // right double quote "
+            | '\u{2018}' // left single quote '
+            | '\u{2019}' // right single quote '
+            | '„'
+            | '‹'
+            | '›'
+            | '·'
+        )
+}
+
 /// Split text into tokens (words, punctuation, whitespace).
 pub fn tokenize(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current_token = String::new();
 
     for ch in text.chars() {
-        if ch.is_whitespace() || ch.is_ascii_punctuation() {
+        if ch.is_whitespace() || is_word_boundary_punct(ch) {
             if !current_token.is_empty() {
                 tokens.push(current_token.clone());
                 current_token.clear();
@@ -183,9 +400,14 @@ pub fn tokenize(text: &str) -> Vec<String> {
     tokens
 }
 
-/// Calculate simulated token importance (0.0 to 1.0) based on length,
-/// position, content type, and random jitter.
-pub fn calculate_token_importance(token: &str, position: usize) -> f64 {
+/// Calculate simulated token importance (0.0 to 1.0) using a caller-supplied RNG.
+/// Identical to `calculate_token_importance` but takes an explicit RNG parameter
+/// for deterministic/seeded use.
+pub fn calculate_token_importance_rng<R: rand::Rng>(
+    token: &str,
+    position: usize,
+    rng: &mut R,
+) -> f64 {
     let mut importance = 0.0;
 
     importance += (token.len() as f64 / 20.0).min(0.3);
@@ -239,10 +461,17 @@ pub fn calculate_token_importance(token: &str, position: usize) -> f64 {
         importance *= 0.1;
     }
 
-    let mut rng = rand::thread_rng();
     importance += rng.gen_range(-0.1..0.1);
 
     importance.clamp(0.0, 1.0)
+}
+
+/// Calculate simulated token importance (0.0 to 1.0) based on length,
+/// position, content type, and random jitter.
+/// Uses `thread_rng()` for jitter; for deterministic output use
+/// `calculate_token_importance_rng`.
+pub fn calculate_token_importance(token: &str, position: usize) -> f64 {
+    calculate_token_importance_rng(token, position, &mut rand::thread_rng())
 }
 
 /// Map an importance score to a terminal heatmap color.
@@ -650,7 +879,7 @@ mod tests {
         let known = ["reverse", "uppercase", "mock", "noise"];
         for _ in 0..50 {
             let (_text, label) = Transform::Chaos.apply_with_label("hello");
-            assert!(known.contains(&label), "unexpected label: {}", label);
+            assert!(known.contains(&label.as_str()), "unexpected label: {}", label);
         }
     }
 
@@ -667,7 +896,7 @@ mod tests {
         // Noise appends 1 char, others keep length 0; either way no panic
         let (_text, label) = Transform::Chaos.apply_with_label("");
         let known = ["reverse", "uppercase", "mock", "noise"];
-        assert!(known.contains(&label));
+        assert!(known.contains(&label.as_str()));
     }
 
     #[test]
@@ -801,5 +1030,163 @@ mod tests {
             Transform::from_str_loose("synonym"),
             Ok(Transform::Synonym)
         ));
+    }
+
+    // -- Chain transform tests (Change 1) --
+
+    #[test]
+    fn test_chain_reverse_uppercase() {
+        let chain = Transform::Chain(vec![Transform::Reverse, Transform::Uppercase]);
+        assert_eq!(chain.apply("hello"), "OLLEH");
+    }
+
+    #[test]
+    fn test_chain_mock_noise_label() {
+        let chain = Transform::Chain(vec![Transform::Mock, Transform::Noise]);
+        let (result, label) = chain.apply_with_label("hello");
+        assert!(result.starts_with("hElLo"), "expected mock applied: {}", result);
+        assert_eq!(label, "mock+noise");
+    }
+
+    #[test]
+    fn test_chain_from_str_loose_two() {
+        let t = Transform::from_str_loose("reverse,uppercase").expect("parse ok");
+        assert!(matches!(t, Transform::Chain(_)));
+        assert_eq!(t.apply("hello"), "OLLEH");
+    }
+
+    #[test]
+    fn test_chain_from_str_loose_single_no_chain() {
+        let t = Transform::from_str_loose("reverse").expect("parse ok");
+        assert!(matches!(t, Transform::Reverse));
+    }
+
+    #[test]
+    fn test_chain_label_joined_with_plus() {
+        let chain = Transform::Chain(vec![Transform::Reverse, Transform::Uppercase]);
+        let (_, label) = chain.apply_with_label("hi");
+        assert_eq!(label, "reverse+uppercase");
+    }
+
+    // -- Unicode punctuation tokenize tests (Change 2) --
+
+    #[test]
+    fn test_tokenize_em_dash() {
+        let tokens = tokenize("word\u{2014}another");
+        assert!(tokens.contains(&"word".to_string()));
+        assert!(tokens.contains(&"\u{2014}".to_string()));
+        assert!(tokens.contains(&"another".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_smart_quotes() {
+        let tokens = tokenize("\u{201C}hello\u{201D}");
+        assert!(tokens.contains(&"\u{201C}".to_string()));
+        assert!(tokens.contains(&"hello".to_string()));
+        assert!(tokens.contains(&"\u{201D}".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_ellipsis_unicode() {
+        let tokens = tokenize("wait\u{2026}done");
+        assert!(tokens.contains(&"\u{2026}".to_string()));
+        assert!(tokens.contains(&"wait".to_string()));
+        assert!(tokens.contains(&"done".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_en_dash() {
+        let tokens = tokenize("2020\u{2013}2021");
+        assert!(tokens.contains(&"\u{2013}".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_unicode_punct_preserves_all_chars() {
+        let input = "hello\u{2014}world";
+        assert_eq!(tokenize(input).join(""), input);
+    }
+
+    // -- Seeded RNG importance tests (Change 3) --
+
+    #[test]
+    fn test_importance_rng_same_seed_same_output() {
+        use rand::SeedableRng;
+        let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
+        let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
+        let v1 = calculate_token_importance_rng("hello", 10, &mut rng1);
+        let v2 = calculate_token_importance_rng("hello", 10, &mut rng2);
+        assert_eq!(v1, v2, "same seed must produce same result");
+    }
+
+    #[test]
+    fn test_importance_rng_different_seeds_differ() {
+        use rand::SeedableRng;
+        let mut results: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        for seed in 0u64..50 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let v = calculate_token_importance_rng("test", 10, &mut rng);
+            results.insert(v.to_bits());
+        }
+        assert!(results.len() > 1, "different seeds should sometimes differ");
+    }
+
+    #[test]
+    fn test_importance_rng_in_range() {
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(123);
+        let v = calculate_token_importance_rng("algorithm", 5, &mut rng);
+        assert!(v >= 0.0 && v <= 1.0);
+    }
+
+    // -- Scramble and Delete extended tests (Improvement 7) --
+
+    #[test]
+    fn test_scramble_empty_string() {
+        assert_eq!(Transform::Scramble.apply(""), "");
+    }
+
+    #[test]
+    fn test_scramble_single_char() {
+        for _ in 0..10 {
+            assert_eq!(Transform::Scramble.apply("a"), "a");
+        }
+    }
+
+    #[test]
+    fn test_scramble_preserves_chars() {
+        let input = "hello";
+        for _ in 0..20 {
+            let result = Transform::Scramble.apply(input);
+            let mut orig: Vec<char> = input.chars().collect();
+            let mut res: Vec<char> = result.chars().collect();
+            orig.sort();
+            res.sort();
+            assert_eq!(orig, res, "scramble should preserve the same characters");
+        }
+    }
+
+    #[test]
+    fn test_scramble_produces_variety() {
+        let mut results = std::collections::HashSet::new();
+        for _ in 0..50 {
+            results.insert(Transform::Scramble.apply("hello"));
+        }
+        assert!(results.len() >= 2, "scramble should produce different orderings");
+    }
+
+    #[test]
+    fn test_delete_always_returns_empty() {
+        for input in &["hello", "world", "test", "a", "abc123", ""] {
+            assert_eq!(Transform::Delete.apply(input), "");
+        }
+    }
+
+    #[test]
+    fn test_scramble_two_chars_both_permutations() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            seen.insert(Transform::Scramble.apply("ab"));
+        }
+        assert!(seen.len() >= 1, "scramble of two chars should work");
     }
 }
