@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `documentation` key in `Cargo.toml` pointing to `docs.rs`.
 - `crates.io` and `docs.rs` badges in `README.md`.
 - CHANGELOG.md `[Unreleased]` section (this entry).
+- `///` doc comments on `TokenInterceptor` struct, `TokenAlternative`,
+  `TokenEvent`, `ResearchSession`, `HeatmapExporter::new`,
+  `TokenInterceptor::print_header`, and `TokenInterceptor::print_footer`.
+- Field-level `///` doc comments on all public fields of `TokenAlternative`,
+  `TokenEvent`, and `ResearchSession`.
+- Unit tests for `TokenInterceptor::with_rate` covering clamping at 0.0 and 1.0
+  and Bresenham-spread behaviour at the boundary rates.
+- Unit tests for `TokenInterceptor::with_seed` verifying deterministic output
+  from the Noise transform when the same seed is supplied twice.
+- Async unit tests for `run_research_headless` using the Mock provider (no API
+  key required): empty-prompt error path, multi-run accumulation, vocab
+  diversity bounds, and citation string format.
+- `.github/workflows/release.yml`: release workflow that triggers on `v*.*.*`
+  tags, builds release binaries for Linux (musl), macOS, and Windows, publishes
+  a GitHub Release with attached binaries, and publishes to crates.io.
 
 ### Changed
 - `README.md` rewritten: clearer description, feature table, complete quickstart,

@@ -76,21 +76,37 @@ pub struct RecordedEvent {
     pub payload: serde_json::Value,
 }
 
-/// A collaboration room.
+/// An active collaboration room shared by one host and zero or more guests.
+///
+/// Rooms are created via [`create_room`] and stored in a [`RoomStore`].
+/// Each room owns a `tokio::sync::broadcast` channel; subscribers receive all
+/// events dispatched to the room until they are evicted by [`evict_idle_rooms`].
 pub struct Room {
+    /// Unique 6-character uppercase room code.
     pub code: String,
+    /// Participant `id` of the room host (set when the first participant joins with `is_host=true`).
     pub host_id: String,
+    /// All participants currently in the room.
     pub participants: Vec<Participant>,
+    /// Number of token events that have been broadcast to the room.
     pub token_count: usize,
+    /// Ordered log of all surgery edits applied during the session.
     pub surgery_log: Vec<SurgeryEdit>,
+    /// Ordered log of all chat messages sent during the session.
     pub chat_log: Vec<ChatMessage>,
-    /// transform name → (upvotes, downvotes)
+    /// Transform vote tallies: transform name → (upvotes, downvotes).
     pub votes: HashMap<String, (u32, u32)>,
+    /// Whether the room is currently recording events to `recorded_events`.
     pub is_recording: bool,
+    /// Wall-clock ms timestamp when recording started, or `None` if not recording.
     pub recording_start_ms: Option<u64>,
+    /// Accumulated recorded events (capped at `recording_cap`).
     pub recorded_events: Vec<RecordedEvent>,
+    /// Wall-clock ms timestamp when the room was created.
     pub created_at_ms: u64,
+    /// Wall-clock ms timestamp of the most recent write to this room.
     pub last_activity_ms: u64,
+    /// Maximum number of events to retain in `recorded_events`.
     pub recording_cap: usize,
     /// Broadcast sender — clone to get a Receiver for a new subscriber.
     pub broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
@@ -216,6 +232,11 @@ pub fn leave_room(
 }
 
 /// Broadcast a raw JSON message to every subscriber of the room's channel.
+/// Send `msg` to all current subscribers of the room identified by `code`.
+///
+/// Silently does nothing if the room does not exist or the store lock is
+/// poisoned.  Lagging receivers that have fallen behind will have their
+/// oldest unread messages overwritten (tokio broadcast semantics).
 pub fn broadcast(store: &RoomStore, code: &str, msg: serde_json::Value) {
     if let Ok(guard) = store.lock() {
         if let Some(room) = guard.get(code) {
@@ -745,7 +766,7 @@ mod tests {
     #[test]
     fn test_new_room_store_is_empty() {
         let store = new_room_store();
-        assert!(store.lock().unwrap().is_empty());
+        assert!(store.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
     }
 
     #[test]
@@ -766,7 +787,7 @@ mod tests {
     fn test_create_room_inserts_into_store() {
         let store = new_room_store();
         let code = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.contains_key(&code));
     }
 
@@ -776,7 +797,7 @@ mod tests {
         let c1 = create_room(&store);
         let c2 = create_room(&store);
         let c3 = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.contains_key(&c1));
         assert!(guard.contains_key(&c2));
         assert!(guard.contains_key(&c3));
@@ -787,7 +808,7 @@ mod tests {
     fn test_create_room_starts_not_recording() {
         let store = new_room_store();
         let code = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
         assert!(!room.is_recording);
     }
@@ -796,7 +817,7 @@ mod tests {
     fn test_create_room_starts_with_empty_participants() {
         let store = new_room_store();
         let code = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
         assert!(room.participants.is_empty());
     }
@@ -805,7 +826,7 @@ mod tests {
     fn test_create_room_starts_with_empty_logs() {
         let store = new_room_store();
         let code = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
         assert!(room.surgery_log.is_empty());
         assert!(room.chat_log.is_empty());
@@ -819,7 +840,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         let (p, _rx) = join_room(&store, &code, "Alice", true).unwrap();
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().host_id, p.id);
     }
 
@@ -829,7 +850,7 @@ mod tests {
         let code = create_room(&store);
         let (host, _rx1) = join_room(&store, &code, "Host", true).unwrap();
         let (_guest, _rx2) = join_room(&store, &code, "Guest", false).unwrap();
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().host_id, host.id);
     }
 
@@ -838,7 +859,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         join_room(&store, &code, "Alice", true).unwrap();
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().participants.len(), 1);
     }
 
@@ -849,7 +870,7 @@ mod tests {
         join_room(&store, &code, "Alice", true).unwrap();
         join_room(&store, &code, "Bob", false).unwrap();
         join_room(&store, &code, "Carol", false).unwrap();
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().participants.len(), 3);
     }
 
@@ -912,7 +933,7 @@ mod tests {
         let code = create_room(&store);
         let (p, _) = join_room(&store, &code, "Alice", true).unwrap();
         leave_room(&store, &code, &p.id);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().participants.is_empty());
     }
 
@@ -949,7 +970,7 @@ mod tests {
         let (p1, _) = join_room(&store, &code, "Alice", true).unwrap();
         let (_p2, _) = join_room(&store, &code, "Bob", false).unwrap();
         leave_room(&store, &code, &p1.id);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
         assert_eq!(room.participants.len(), 1);
         assert_eq!(room.participants[0].name, "Bob");
@@ -963,7 +984,7 @@ mod tests {
         let code = create_room(&store);
         // Create a receiver before broadcasting
         let mut rx = {
-            let guard = store.lock().unwrap();
+            let guard = store.lock().unwrap_or_else(|e| e.into_inner());
             guard.get(&code).unwrap().broadcast_tx.subscribe()
         };
         let msg = serde_json::json!({"type": "test", "value": 42});
@@ -998,7 +1019,7 @@ mod tests {
             timestamp_ms: now_ms(),
         };
         apply_surgery(&store, &code, edit);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().surgery_log.len(), 1);
     }
 
@@ -1016,7 +1037,7 @@ mod tests {
             timestamp_ms: 12345,
         };
         apply_surgery(&store, &code, edit);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let stored = &guard.get(&code).unwrap().surgery_log[0];
         assert_eq!(stored.token_index, 7);
         assert_eq!(stored.new_text, "new");
@@ -1055,7 +1076,7 @@ mod tests {
                 timestamp_ms: i as u64,
             });
         }
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().surgery_log.len(), 5);
     }
 
@@ -1075,7 +1096,7 @@ mod tests {
             timestamp_ms: now_ms(),
         };
         add_chat(&store, &code, msg);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().chat_log.len(), 1);
     }
 
@@ -1092,7 +1113,7 @@ mod tests {
             token_index: Some(5),
             timestamp_ms: 0,
         });
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let stored = &guard.get(&code).unwrap().chat_log[0];
         assert_eq!(stored.text, "Nice token!");
         assert_eq!(stored.token_index, Some(5));
@@ -1128,7 +1149,7 @@ mod tests {
                 timestamp_ms: i as u64,
             });
         }
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().chat_log.len(), 3);
     }
 
@@ -1204,7 +1225,7 @@ mod tests {
         let code = create_room(&store);
         // Manually set votes to near u32::MAX
         {
-            let mut guard = store.lock().unwrap();
+            let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             let room = guard.get_mut(&code).unwrap();
             room.votes.insert("reverse".to_string(), (u32::MAX, 0));
         }
@@ -1263,7 +1284,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         start_recording(&store, &code);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().is_recording);
     }
 
@@ -1272,7 +1293,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         start_recording(&store, &code);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().recording_start_ms.is_some());
     }
 
@@ -1284,7 +1305,7 @@ mod tests {
         maybe_record(&store, &code, serde_json::json!({"type": "token"}));
         // Start again — should clear
         start_recording(&store, &code);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().recorded_events.is_empty());
     }
 
@@ -1294,7 +1315,7 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
         stop_recording(&store, &code);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(!guard.get(&code).unwrap().is_recording);
     }
 
@@ -1316,7 +1337,7 @@ mod tests {
         start_recording(&store, &code);
         maybe_record(&store, &code, serde_json::json!({"type": "chat"}));
         stop_recording(&store, &code);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().recorded_events.is_empty());
     }
 
@@ -1334,7 +1355,7 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         maybe_record(&store, &code, serde_json::json!({"type": "token"}));
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.get(&code).unwrap().recorded_events.is_empty());
     }
 
@@ -1344,7 +1365,7 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
         maybe_record(&store, &code, serde_json::json!({"type": "token"}));
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().recorded_events.len(), 1);
     }
 
@@ -1354,7 +1375,7 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
         maybe_record(&store, &code, serde_json::json!({"type": "chat", "text": "hello"}));
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let ev = &guard.get(&code).unwrap().recorded_events[0];
         assert_eq!(ev.payload["type"], "chat");
         assert_eq!(ev.payload["text"], "hello");
@@ -1366,7 +1387,7 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
         maybe_record(&store, &code, serde_json::json!({"type": "token"}));
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let ev = &guard.get(&code).unwrap().recorded_events[0];
         // offset_ms must be >= 0 (it's u64, always true) and < 1000ms for a test
         assert!(ev.offset_ms < 1000, "offset_ms should be small in a fast test: {}", ev.offset_ms);
@@ -1380,7 +1401,7 @@ mod tests {
         for i in 0..5 {
             maybe_record(&store, &code, serde_json::json!({"seq": i}));
         }
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let events = &guard.get(&code).unwrap().recorded_events;
         assert_eq!(events.len(), 5);
         for (i, ev) in events.iter().enumerate() {
@@ -1400,7 +1421,7 @@ mod tests {
         let store = new_room_store();
         let code = "CAPWRN".to_string();
         {
-            let mut guard = store.lock().unwrap();
+            let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             let (tx, _) = tokio::sync::broadcast::channel(16);
             let mut room = Room {
                 code: code.clone(),
@@ -1424,7 +1445,7 @@ mod tests {
 
         // Subscribe to broadcast before recording events
         let mut rx = {
-            let guard = store.lock().unwrap();
+            let guard = store.lock().unwrap_or_else(|e| e.into_inner());
             guard.get(&code).unwrap().broadcast_tx.subscribe()
         };
 
@@ -1445,7 +1466,7 @@ mod tests {
         assert!(got_truncated, "expected record_truncated broadcast when cap is exceeded");
 
         // Verify only cap events remain
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().recorded_events.len(), 2);
     }
 
@@ -1794,12 +1815,12 @@ mod tests {
         let code = create_room(&store);
         // Manually set last_activity_ms to far in the past
         {
-            let mut guard = store.lock().unwrap();
+            let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             let room = guard.get_mut(&code).unwrap();
             room.last_activity_ms = 0; // epoch zero — definitely idle
         }
         evict_idle_rooms(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(!guard.contains_key(&code), "stale room should have been evicted");
     }
 
@@ -1809,7 +1830,7 @@ mod tests {
         let code = create_room(&store);
         // last_activity_ms was just set to now_ms() in create_room
         evict_idle_rooms(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.contains_key(&code), "recently active room should not be evicted");
     }
 
@@ -1819,11 +1840,11 @@ mod tests {
         let code_active = create_room(&store);
         let code_stale = create_room(&store);
         {
-            let mut guard = store.lock().unwrap();
+            let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             guard.get_mut(&code_stale).unwrap().last_activity_ms = 0;
         }
         evict_idle_rooms(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert!(guard.contains_key(&code_active));
         assert!(!guard.contains_key(&code_stale));
     }
@@ -1832,7 +1853,7 @@ mod tests {
     fn test_evict_idle_rooms_empty_store_is_noop() {
         let store = new_room_store();
         evict_idle_rooms(&store); // must not panic
-        assert!(store.lock().unwrap().is_empty());
+        assert!(store.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
     }
 
     // -- recording_cap -------------------------------------------------------
@@ -1843,14 +1864,14 @@ mod tests {
         let code = create_room(&store);
         // Lower the cap to a small value for testing
         {
-            let mut guard = store.lock().unwrap();
+            let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             guard.get_mut(&code).unwrap().recording_cap = 5;
         }
         start_recording(&store, &code);
         for i in 0..10 {
             maybe_record(&store, &code, serde_json::json!({"seq": i}));
         }
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
         assert_eq!(room.recorded_events.len(), 5, "cap should limit buffer to 5 events");
         // The oldest events should have been dropped (FIFO trim)
@@ -1862,7 +1883,7 @@ mod tests {
     fn test_recording_cap_default_is_ten_thousand() {
         let store = new_room_store();
         let code = create_room(&store);
-        let guard = store.lock().unwrap();
+        let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().recording_cap, DEFAULT_RECORDING_CAP);
     }
 

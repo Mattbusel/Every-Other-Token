@@ -100,9 +100,15 @@ use transforms::{apply_heatmap_color, calculate_token_importance, tokenize, Tran
 // ---------------------------------------------------------------------------
 
 /// One alternative token and its probability (for top-K logprob display).
+///
+/// Returned in the `alternatives` field of a [`TokenEvent`] when the provider
+/// supports `top_logprobs` (currently OpenAI only).  Probabilities have already
+/// been converted from log-space via `exp(logprob)` and clamped to `[0.0, 1.0]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenAlternative {
+    /// The alternative token string (may include leading whitespace, e.g. `" world"`).
     pub token: String,
+    /// Linear probability in `[0.0, 1.0]`, computed as `exp(logprob)`.
     pub probability: f32,
 }
 
@@ -110,13 +116,24 @@ pub struct TokenAlternative {
 // Token event (for web UI streaming)
 // ---------------------------------------------------------------------------
 
-/// A single processed token, sent as an SSE event to the web UI.
+/// A single processed token emitted by the streaming pipeline.
+///
+/// Every token the interceptor produces — whether transformed or not — is
+/// represented as a `TokenEvent`.  Events are sent over the `web_tx` channel
+/// for SSE fan-out to the web UI, written as JSON lines in `--json-stream`
+/// mode, or recorded to a replay file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenEvent {
+    /// The (possibly transformed) token text shown to the user.
     pub text: String,
+    /// The original token text before any transform was applied.
     pub original: String,
+    /// Zero-based position of this token in the full response.
     pub index: usize,
+    /// Whether the active transform was applied to this token.
     pub transformed: bool,
+    /// Scalar token importance in `[0.0, 1.0]` — derived from API confidence
+    /// when available, otherwise computed by the heuristic importance scorer.
     pub importance: f64,
     /// For Chaos transform: which sub-transform was applied. None for other transforms.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,6 +159,19 @@ pub struct TokenEvent {
 // TokenInterceptor — multi-provider streaming engine
 // ---------------------------------------------------------------------------
 
+/// The core streaming engine that sits between the caller and the LLM.
+///
+/// `TokenInterceptor` manages the HTTP connection to the configured provider,
+/// iterates the server-sent-event (SSE) stream, applies the active [`Transform`]
+/// to every N-th token (controlled by `rate`), attaches per-token confidence and
+/// perplexity from API logprobs, and routes enriched [`TokenEvent`]s to one of
+/// three output sinks:
+///
+/// - **Terminal** — ANSI-colored text written to stdout.
+/// - **Web UI** — events sent over the `web_tx` unbounded channel for SSE fan-out.
+/// - **JSON stream** — one JSON line per token written to stdout (`json_stream = true`).
+///
+/// Construct with [`TokenInterceptor::new`] then call [`TokenInterceptor::intercept_stream`].
 pub struct TokenInterceptor {
     client: Client,
     api_key: String,
@@ -984,6 +1014,11 @@ impl TokenInterceptor {
         }
     }
 
+    /// Print a formatted session header to stdout.
+    ///
+    /// Displays provider, transform, model, and prompt. When `visual_mode` or
+    /// `heatmap_mode` is active, additional legend lines are printed.
+    /// This method is a no-op when `web_tx` is set (web mode handles its own header).
     pub fn print_header(&self, prompt: &str) {
         println!("{}", "EVERY OTHER TOKEN INTERCEPTOR".bright_cyan().bold());
         println!(
@@ -1028,6 +1063,9 @@ impl TokenInterceptor {
         println!();
     }
 
+    /// Print a summary footer to stdout after a streaming session completes.
+    ///
+    /// Reports total token count and how many tokens were transformed.
     pub fn print_footer(&self) {
         println!("\n{}", "=".repeat(50).bright_blue());
         println!("Complete! Processed {} tokens.", self.token_count);
@@ -1040,21 +1078,39 @@ impl TokenInterceptor {
 // ---------------------------------------------------------------------------
 
 /// Aggregated statistics from one or more headless inference runs.
+///
+/// Produced by [`run_research_headless`].  Fields summarise token-level metrics
+/// across all runs; fields that require logprob data are `Option` because not
+/// all providers expose logprobs (Anthropic does not).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ResearchSession {
+    /// The prompt submitted to the provider for all runs in this session.
     pub prompt: String,
+    /// Provider identifier (`"openai"`, `"anthropic"`, or `"mock"`).
     pub provider: String,
+    /// Model identifier used for all runs (e.g. `"gpt-4"`).
     pub model: String,
+    /// Transform applied to intercepted tokens (e.g. `"reverse"`).
     pub transform: String,
+    /// Number of inference runs executed.
     pub runs: u32,
+    /// Total tokens streamed across all runs.
     pub total_tokens: usize,
+    /// Total tokens that had a transform applied across all runs.
     pub total_transformed: usize,
+    /// Unique-token fraction: `unique_tokens / total_tokens`.
     pub vocabulary_diversity: f64,
+    /// Mean character length of all original (pre-transform) tokens.
     pub mean_token_length: f64,
+    /// Mean per-token perplexity across all runs, or `None` when unavailable.
     pub mean_perplexity: Option<f64>,
+    /// Mean per-token model confidence across all runs, or `None` when unavailable.
     pub mean_confidence: Option<f64>,
+    /// The 10 tokens with the highest perplexity values (most uncertain positions).
     pub top_perplexity_tokens: Vec<String>,
+    /// Rough cost estimate in USD based on token count and GPT-3.5 pricing.
     pub estimated_cost_usd: f64,
+    /// Human-readable citation string recording key run parameters for reproducibility.
     pub citation: String,
 }
 
@@ -2136,6 +2192,211 @@ mod research_tests {
     fn test_research_session_transform_field() {
         let s = make_session(10, None, None);
         assert_eq!(s.transform, "Reverse");
+    }
+
+    // -- with_rate tests --
+
+    #[test]
+    fn test_with_rate_sets_rate() {
+        let mut i = make_test_interceptor();
+        i = i.with_rate(0.3);
+        assert!((i.rate - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_with_rate_clamps_above_one() {
+        let mut i = make_test_interceptor();
+        i = i.with_rate(1.5);
+        assert_eq!(i.rate, 1.0);
+    }
+
+    #[test]
+    fn test_with_rate_clamps_below_zero() {
+        let mut i = make_test_interceptor();
+        i = i.with_rate(-0.5);
+        assert_eq!(i.rate, 0.0);
+    }
+
+    #[test]
+    fn test_with_rate_zero_transforms_no_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i = i.with_rate(0.0);
+        i.web_tx = Some(tx);
+        i.process_content("hello world foo bar");
+        let mut transformed = 0usize;
+        while let Ok(ev) = rx.try_recv() {
+            if ev.transformed {
+                transformed += 1;
+            }
+        }
+        assert_eq!(transformed, 0, "rate=0 should transform no tokens");
+    }
+
+    #[test]
+    fn test_with_rate_one_transforms_all_tokens() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i = make_test_interceptor();
+        i = i.with_rate(1.0);
+        i.web_tx = Some(tx);
+        i.process_content("hello world foo bar baz");
+        let mut total = 0usize;
+        let mut transformed = 0usize;
+        while let Ok(ev) = rx.try_recv() {
+            total += 1;
+            if ev.transformed {
+                transformed += 1;
+            }
+        }
+        assert!(total > 0);
+        assert_eq!(transformed, total, "rate=1.0 should transform every token");
+    }
+
+    // -- with_seed tests --
+
+    #[test]
+    fn test_with_seed_produces_deterministic_noise_output() {
+        // Two interceptors with the same seed and Noise transform should produce
+        // the same transformed tokens.
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i1 = make_test_interceptor();
+        i1.transform = Transform::Noise;
+        i1 = i1.with_seed(12345);
+        i1.web_tx = Some(tx1);
+        i1.process_content("hello world");
+
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i2 = make_test_interceptor();
+        i2.transform = Transform::Noise;
+        i2 = i2.with_seed(12345);
+        i2.web_tx = Some(tx2);
+        i2.process_content("hello world");
+
+        let events1: Vec<TokenEvent> = std::iter::from_fn(|| rx1.try_recv().ok()).collect();
+        let events2: Vec<TokenEvent> = std::iter::from_fn(|| rx2.try_recv().ok()).collect();
+
+        assert_eq!(events1.len(), events2.len());
+        for (e1, e2) in events1.iter().zip(events2.iter()) {
+            assert_eq!(e1.text, e2.text, "seeded runs should produce identical output");
+        }
+    }
+
+    #[test]
+    fn test_with_seed_different_seeds_may_differ() {
+        // Different seeds should (in practice) produce at least one different token
+        // for the Noise transform over a sufficiently long sequence.
+        let (tx1, mut rx1) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i1 = make_test_interceptor();
+        i1.transform = Transform::Noise;
+        i1 = i1.with_seed(1);
+        i1.web_tx = Some(tx1);
+        i1.process_content("alpha beta gamma delta epsilon zeta eta theta iota kappa");
+
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut i2 = make_test_interceptor();
+        i2.transform = Transform::Noise;
+        i2 = i2.with_seed(999999);
+        i2.web_tx = Some(tx2);
+        i2.process_content("alpha beta gamma delta epsilon zeta eta theta iota kappa");
+
+        let texts1: Vec<String> = std::iter::from_fn(|| rx1.try_recv().ok())
+            .map(|e| e.text)
+            .collect();
+        let texts2: Vec<String> = std::iter::from_fn(|| rx2.try_recv().ok())
+            .map(|e| e.text)
+            .collect();
+
+        // At minimum, both should produce some output
+        assert!(!texts1.is_empty());
+        assert!(!texts2.is_empty());
+    }
+
+    // -- run_research_headless tests (Mock provider, no API key required) --
+
+    #[tokio::test]
+    async fn test_run_research_headless_mock_returns_session() {
+        let session = run_research_headless(
+            "test prompt",
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            1,
+        )
+        .await
+        .expect("run_research_headless with Mock should not fail");
+        assert_eq!(session.runs, 1);
+        assert_eq!(session.prompt, "test prompt");
+        assert_eq!(session.provider, "mock");
+    }
+
+    #[tokio::test]
+    async fn test_run_research_headless_mock_token_count_positive() {
+        let session = run_research_headless(
+            "hello",
+            Provider::Mock,
+            Transform::Uppercase,
+            "mock-fixture-v1".to_string(),
+            1,
+        )
+        .await
+        .expect("should succeed");
+        assert!(session.total_tokens > 0, "mock provider should emit tokens");
+    }
+
+    #[tokio::test]
+    async fn test_run_research_headless_mock_multiple_runs_accumulate() {
+        let session = run_research_headless(
+            "hello",
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            3,
+        )
+        .await
+        .expect("should succeed");
+        assert_eq!(session.runs, 3);
+    }
+
+    #[tokio::test]
+    async fn test_run_research_headless_mock_vocab_diversity_in_bounds() {
+        let session = run_research_headless(
+            "test",
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            1,
+        )
+        .await
+        .expect("should succeed");
+        assert!(session.vocabulary_diversity >= 0.0);
+        assert!(session.vocabulary_diversity <= 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_run_research_headless_mock_transform_label_in_citation() {
+        let session = run_research_headless(
+            "sample",
+            Provider::Mock,
+            Transform::Uppercase,
+            "mock-fixture-v1".to_string(),
+            1,
+        )
+        .await
+        .expect("should succeed");
+        assert!(session.citation.contains("Every Other Token"));
+    }
+
+    #[tokio::test]
+    async fn test_run_research_headless_empty_prompt_returns_error() {
+        let result = run_research_headless(
+            "",
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            1,
+        )
+        .await;
+        assert!(result.is_err(), "empty prompt should produce an error");
     }
 }
 

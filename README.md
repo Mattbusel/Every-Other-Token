@@ -1,6 +1,7 @@
 # every-other-token
 
 [![CI](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/Mattbusel/Every-Other-Token/branch/main/graph/badge.svg)](https://codecov.io/gh/Mattbusel/Every-Other-Token)
 [![crates.io](https://img.shields.io/crates/v/every-other-token.svg)](https://crates.io/crates/every-other-token)
 [![docs.rs](https://docs.rs/every-other-token/badge.svg)](https://docs.rs/every-other-token)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -216,3 +217,7 @@ MIT -- see [LICENSE](LICENSE).
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) -- the orchestration layer that uses Every-Other-Token telemetry to drive HelixRouter adaptation
 - [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) -- companion tool for output-level reliability analysis
 - [Token-Visualizer](https://github.com/Mattbusel/Token-Visualizer) -- interactive tokenizer and prompt-engineering visualization tool
+
+---
+
+See [CHANGELOG.md](CHANGELOG.md) for release history and migration notes.

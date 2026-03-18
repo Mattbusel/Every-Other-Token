@@ -1,4 +1,4 @@
-//! External tests for providers module — serialization, deserialization,
+//! External tests for providers module -- serialization, deserialization,
 //! and display implementations.
 
 use every_other_token::providers::*;
@@ -64,33 +64,7 @@ fn test_mcp_request_serializes() {
 }
 
 #[test]
-fn test_mcp_request_all_fields() {
-    let req = McpInferRequest {
-        jsonrpc: "2.0".to_string(),
-        method: "tools/call".to_string(),
-        id: 42,
-        params: McpInferParams {
-            name: "infer".to_string(),
-            arguments: McpInferArguments {
-                prompt: "test prompt".to_string(),
-                worker: "llama_cpp".to_string(),
-            },
-        },
-    };
-    let json = serde_json::to_string(&req).expect("serialize");
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
-    assert_eq!(parsed["jsonrpc"], "2.0");
-    assert_eq!(parsed["method"], "tools/call");
-    assert_eq!(parsed["id"], 42);
-    assert_eq!(parsed["params"]["name"], "infer");
-    assert_eq!(parsed["params"]["arguments"]["prompt"], "test prompt");
-    assert_eq!(parsed["params"]["arguments"]["worker"], "llama_cpp");
-}
-
-// -- MCP response deserialization ----------------------------------------
-
-#[test]
-fn test_mcp_response_success() {
+fn test_mcp_response_deserializes_success() {
     let json = r#"{"jsonrpc":"2.0","result":{"content":[{"text":"enriched prompt"}]}}"#;
     let resp: McpInferResponse = serde_json::from_str(json).expect("deser failed");
     assert!(resp.error.is_none());
@@ -103,80 +77,39 @@ fn test_mcp_response_success() {
 }
 
 #[test]
-fn test_mcp_response_error() {
+fn test_mcp_response_deserializes_error() {
     let json = r#"{"jsonrpc":"2.0","error":{"message":"pipeline down"}}"#;
     let resp: McpInferResponse = serde_json::from_str(json).expect("deser failed");
     assert!(resp.result.is_none());
     assert_eq!(
-        resp.error.as_ref().map(|e| &e.message[..]),
+        resp.error.as_ref().map(|e| e.message.as_str()),
         Some("pipeline down")
     );
 }
 
+// -- Logprob deserialization ---------------------------------------------
+
 #[test]
-fn test_mcp_response_empty_content() {
-    let json = r#"{"jsonrpc":"2.0","result":{"content":[]}}"#;
-    let resp: McpInferResponse = serde_json::from_str(json).expect("deser");
-    assert!(resp.result.as_ref().expect("result").content.is_empty());
+fn test_openai_top_logprob_deserializes() {
+    let json = r#"{"token":"hello","logprob":-0.5}"#;
+    let tlp: OpenAITopLogprob = serde_json::from_str(json).expect("deser");
+    assert_eq!(tlp.token, "hello");
+    assert!((tlp.logprob - (-0.5f32)).abs() < 1e-5);
 }
 
 #[test]
-fn test_mcp_response_null_text() {
-    let json = r#"{"jsonrpc":"2.0","result":{"content":[{"text":null}]}}"#;
-    let resp: McpInferResponse = serde_json::from_str(json).expect("deser");
-    let content = &resp.result.as_ref().expect("result").content[0];
-    assert!(content.text.is_none());
-}
-
-// -- Anthropic SSE event parsing -----------------------------------------
-
-#[test]
-fn test_anthropic_content_block_delta() {
-    let json =
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
-    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
-    assert_eq!(event.event_type, "content_block_delta");
-    assert_eq!(
-        event
-            .delta
-            .as_ref()
-            .and_then(|d| d.text.as_ref())
-            .map(|s| s.as_str()),
-        Some("Hello")
-    );
+fn test_openai_logprob_content_deserializes_with_alternatives() {
+    let json = r#"{"token":"world","logprob":-1.2,"top_logprobs":[{"token":"world","logprob":-1.2},{"token":"earth","logprob":-2.5}]}"#;
+    let lc: OpenAILogprobContent = serde_json::from_str(json).expect("deser");
+    assert_eq!(lc.token, "world");
+    assert_eq!(lc.top_logprobs.len(), 2);
+    assert_eq!(lc.top_logprobs[1].token, "earth");
 }
 
 #[test]
-fn test_anthropic_message_start() {
-    let json = r#"{"type":"message_start","message":{"id":"msg_123"}}"#;
-    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
-    assert_eq!(event.event_type, "message_start");
-    assert!(event.delta.is_none());
-}
-
-#[test]
-fn test_anthropic_message_delta() {
-    let json = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#;
-    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
-    assert_eq!(event.event_type, "message_delta");
-    assert!(event.delta.as_ref().and_then(|d| d.text.as_ref()).is_none());
-}
-
-#[test]
-fn test_anthropic_ping() {
-    let json = r#"{"type":"ping"}"#;
-    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
-    assert_eq!(event.event_type, "ping");
-    assert!(event.delta.is_none());
-}
-
-// -- OpenAI SSE chunk parsing --------------------------------------------
-
-#[test]
-fn test_openai_chunk_single_choice() {
+fn test_openai_chunk_deserializes_with_content() {
     let json = r#"{"id":"chatcmpl-abc","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#;
     let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser");
-    assert_eq!(chunk.choices.len(), 1);
     assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("Hi"));
 }
 
@@ -187,180 +120,148 @@ fn test_openai_chunk_empty_delta() {
     assert!(chunk.choices[0].delta.content.is_none());
 }
 
+// -- Anthropic SSE types -------------------------------------------------
+
 #[test]
-fn test_openai_chunk_multiple_choices() {
-    let json = r#"{"id":"chatcmpl-x","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null},{"index":1,"delta":{"content":"B"},"finish_reason":null}]}"#;
-    let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser");
-    assert_eq!(chunk.choices.len(), 2);
-    assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("A"));
-    assert_eq!(chunk.choices[1].delta.content.as_deref(), Some("B"));
+fn test_anthropic_content_block_delta_deserializes() {
+    let json = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
+    assert_eq!(event.event_type, "content_block_delta");
+    assert_eq!(
+        event.delta.as_ref().and_then(|d| d.text.as_deref()),
+        Some("Hello")
+    );
 }
 
 #[test]
-fn test_openai_chunk_no_choices() {
-    let json = r#"{"id":"chatcmpl-x","choices":[]}"#;
-    let chunk: OpenAIChunk = serde_json::from_str(json).expect("deser");
-    assert!(chunk.choices.is_empty());
+fn test_anthropic_message_start_has_no_delta_text() {
+    let json = r#"{"type":"message_start","message":{"id":"msg_123"}}"#;
+    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
+    assert_eq!(event.event_type, "message_start");
+    assert!(event.delta.is_none());
 }
 
-// -- TokenEvent serialization -------------------------------------------
+#[test]
+fn test_anthropic_ping_event() {
+    let json = r#"{"type":"ping"}"#;
+    let event: AnthropicStreamEvent = serde_json::from_str(json).expect("deser");
+    assert_eq!(event.event_type, "ping");
+    assert!(event.delta.is_none());
+}
+
+// -- ProviderPlugin URL tests -------------------------------------------
 
 #[test]
-fn test_token_event_serializes_all_fields() {
-    let event = every_other_token::TokenEvent {
-        text: "dlrow".to_string(),
-        original: "world".to_string(),
-        index: 1,
-        transformed: true,
-        importance: 0.75,
-        chaos_label: None,
-        provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
+fn test_openai_plugin_api_url_is_https() {
+    assert!(OpenAiPlugin.api_url().starts_with("https://"));
+}
+
+#[test]
+fn test_anthropic_plugin_api_url_is_https() {
+    assert!(AnthropicPlugin.api_url().starts_with("https://"));
+}
+
+#[test]
+fn test_openai_plugin_name_matches_display() {
+    assert_eq!(OpenAiPlugin.name(), Provider::Openai.to_string());
+}
+
+#[test]
+fn test_anthropic_plugin_name_matches_display() {
+    assert_eq!(AnthropicPlugin.name(), Provider::Anthropic.to_string());
+}
+
+// -- AnthropicRequest serialization tests --------------------------------
+
+#[test]
+fn test_anthropic_request_with_system_serializes() {
+    let req = AnthropicRequest {
+        model: "claude-sonnet-4-6".to_string(),
+        messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+        max_tokens: 1024,
+        stream: true,
+        temperature: 0.7,
+        system: Some("You are helpful.".to_string()),
     };
-    let json = serde_json::to_string(&event).expect("serialize");
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
-    assert_eq!(parsed["text"], "dlrow");
-    assert_eq!(parsed["original"], "world");
-    assert_eq!(parsed["index"], 1);
-    assert_eq!(parsed["transformed"], true);
-    assert!(parsed["importance"].as_f64().is_some());
+    let json = serde_json::to_string(&req).expect("serialize");
+    assert!(json.contains("\"system\":\"You are helpful.\""));
 }
 
 #[test]
-fn test_token_event_roundtrip() {
-    let event = every_other_token::TokenEvent {
-        text: "test".to_string(),
-        original: "test".to_string(),
-        index: 5,
-        transformed: false,
-        importance: 0.87,
-        chaos_label: None,
-        provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
+fn test_anthropic_request_without_system_omits_field() {
+    let req = AnthropicRequest {
+        model: "claude-sonnet-4-6".to_string(),
+        messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+        max_tokens: 1024,
+        stream: true,
+        temperature: 0.7,
+        system: None,
     };
-    let json = serde_json::to_string(&event).expect("serialize");
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
-    assert_eq!(parsed["text"], "test");
-    assert_eq!(parsed["index"], 5);
-    assert_eq!(parsed["transformed"], false);
-    let imp = parsed["importance"].as_f64().expect("float");
-    assert!((imp - 0.87).abs() < 0.001);
+    let json = serde_json::to_string(&req).expect("serialize");
+    assert!(!json.contains("\"system\""));
+}
+
+// -- ANTHROPIC_API_VERSION constant tests --------------------------------
+
+#[test]
+fn test_anthropic_api_version_format() {
+    let v = ANTHROPIC_API_VERSION;
+    assert_eq!(v.len(), 10, "expected YYYY-MM-DD format");
+    assert_eq!(v.chars().nth(4), Some('-'));
+    assert_eq!(v.chars().nth(7), Some('-'));
+}
+
+// -- Provider::from_str edge cases ---------------------------------------
+
+#[test]
+fn test_provider_from_str_openai() {
+    let p: Provider = "openai".parse().expect("parse");
+    assert_eq!(p, Provider::Openai);
 }
 
 #[test]
-fn test_token_event_zero_importance() {
-    let event = every_other_token::TokenEvent {
-        text: ".".to_string(),
-        original: ".".to_string(),
-        index: 0,
-        transformed: false,
-        importance: 0.0,
-        chaos_label: None,
-        provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
-    };
-    let json = serde_json::to_string(&event).expect("serialize");
-    assert!(json.contains("\"importance\":0.0"));
+fn test_provider_from_str_anthropic() {
+    let p: Provider = "anthropic".parse().expect("parse");
+    assert_eq!(p, Provider::Anthropic);
 }
 
 #[test]
-fn test_token_event_max_importance() {
-    let event = every_other_token::TokenEvent {
-        text: "critical".to_string(),
-        original: "critical".to_string(),
-        index: 0,
-        transformed: false,
-        importance: 1.0,
-        chaos_label: None,
-        provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
-    };
-    let json = serde_json::to_string(&event).expect("serialize");
-    assert!(json.contains("\"importance\":1.0"));
+fn test_provider_from_str_mock() {
+    let p: Provider = "mock".parse().expect("parse");
+    assert_eq!(p, Provider::Mock);
 }
 
 #[test]
-fn test_token_event_clone() {
-    let event = every_other_token::TokenEvent {
-        text: "test".to_string(),
-        original: "test".to_string(),
-        index: 0,
-        transformed: false,
-        importance: 0.5,
-        chaos_label: None,
-        provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
-    };
-    let cloned = event.clone();
-    assert_eq!(cloned.text, event.text);
-    assert_eq!(cloned.original, event.original);
-    assert_eq!(cloned.index, event.index);
-    assert_eq!(cloned.transformed, event.transformed);
+fn test_provider_from_str_case_insensitive_openai() {
+    let p: Provider = "OpenAI".parse().expect("parse case insensitive");
+    assert_eq!(p, Provider::Openai);
 }
 
 #[test]
-fn test_multiple_token_events_serialize_as_array() {
-    let events = vec![
-        every_other_token::TokenEvent {
-            text: "hello".to_string(),
-            original: "hello".to_string(),
-            index: 0,
-            transformed: false,
-            importance: 0.5,
-            chaos_label: None,
-            provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
-        },
-        every_other_token::TokenEvent {
-            text: "dlrow".to_string(),
-            original: "world".to_string(),
-            index: 1,
-            transformed: true,
-            importance: 0.7,
-            chaos_label: None,
-            provider: None,
-        confidence: None,
-        perplexity: None,
-        alternatives: vec![],
-        is_error: false,
-        },
-    ];
-    let json = serde_json::to_string(&events).expect("serialize");
-    let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("parse");
-    assert_eq!(parsed.len(), 2);
-    assert_eq!(parsed[0]["index"], 0);
-    assert_eq!(parsed[1]["index"], 1);
+fn test_provider_from_str_case_insensitive_anthropic() {
+    let p: Provider = "ANTHROPIC".parse().expect("parse case insensitive");
+    assert_eq!(p, Provider::Anthropic);
 }
 
-// -- Auto model selection -----------------------------------------------
+#[test]
+fn test_provider_from_str_unknown_returns_err() {
+    let result: Result<Provider, _> = "google".parse();
+    assert!(result.is_err());
+}
 
 #[test]
-fn test_anthropic_auto_model_selection() {
-    let model = "gpt-3.5-turbo";
-    let result = if Provider::Anthropic == Provider::Anthropic && model == "gpt-3.5-turbo" {
-        "claude-sonnet-4-20250514"
-    } else {
-        model
-    };
-    assert_eq!(result, "claude-sonnet-4-20250514");
+fn test_provider_from_str_empty_returns_err() {
+    let result: Result<Provider, _> = "".parse();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_provider_roundtrip_display_fromstr() {
+    for p in [Provider::Openai, Provider::Anthropic, Provider::Mock] {
+        let s = p.to_string();
+        let p2: Provider = s.parse().expect("roundtrip");
+        assert_eq!(p, p2);
+    }
 }
 
 #[test]

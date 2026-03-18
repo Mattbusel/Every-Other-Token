@@ -23,6 +23,7 @@ pub struct HeatmapExporter {
 }
 
 impl HeatmapExporter {
+    /// Create an empty exporter with no recorded runs.
     pub fn new() -> Self {
         HeatmapExporter {
             data: Vec::new(),
