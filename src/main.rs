@@ -93,10 +93,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("[dry-run] Transform: {:?}", transform);
         println!("[dry-run] Rate: {}", args.rate);
         println!("[dry-run] Sample token transformations:");
-        let sample_tokens = ["The", " quick", " brown", " fox", " jumps", " over", " the", " lazy", " dog"];
+        let sample_tokens = [
+            "The", " quick", " brown", " fox", " jumps", " over", " the", " lazy", " dog",
+        ];
         for (i, token) in sample_tokens.iter().enumerate() {
             let (result, label) = transform.apply_with_label(token);
-            let marker = if (i % 2) == 1 { "→ TRANSFORMED" } else { "  (pass-through)" };
+            let marker = if (i % 2) == 1 {
+                "→ TRANSFORMED"
+            } else {
+                "  (pass-through)"
+            };
             println!("  [{}] {:15} {} {:?} ({})", i, token, marker, result, label);
         }
         return Ok(());
@@ -113,9 +119,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             use rand::Rng;
             let rate = rand::thread_rng().gen_range(min..=max);
             args.rate = rate;
-            eprintln!("[rate-range] Selected rate: {:.4} from range [{}, {}]", rate, min, max);
+            eprintln!(
+                "[rate-range] Selected rate: {:.4} from range [{}, {}]",
+                rate, min, max
+            );
         } else {
-            eprintln!("[rate-range] Warning: could not parse rate range '{}', using --rate value", range_str);
+            eprintln!(
+                "[rate-range] Warning: could not parse rate range '{}', using --rate value",
+                range_str
+            );
         }
     }
 

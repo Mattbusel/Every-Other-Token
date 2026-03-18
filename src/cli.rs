@@ -236,8 +236,7 @@ pub fn validate_model(provider: &Provider, model: &str) {
     if !known.contains(&model) {
         eprintln!(
             "[warn] '{}' is not in the known {} model list — verify the model name is correct",
-            model,
-            provider
+            model, provider
         );
     }
 }
@@ -617,7 +616,12 @@ mod tests {
 
     #[test]
     fn test_args_orchestrator_url_custom() {
-        let args = Args::parse_from(["eot", "prompt", "--orchestrator-url", "http://10.0.0.1:9000"]);
+        let args = Args::parse_from([
+            "eot",
+            "prompt",
+            "--orchestrator-url",
+            "http://10.0.0.1:9000",
+        ]);
         assert_eq!(args.orchestrator_url, "http://10.0.0.1:9000");
     }
 

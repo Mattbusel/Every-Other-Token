@@ -112,11 +112,7 @@ impl ChangelogEntry {
     /// Render this entry as a markdown section.
     pub fn to_markdown(&self) -> String {
         let ts = self.timestamp_secs;
-        let kept_str = if self.kept {
-            "Deployed"
-        } else {
-            "Rolled back"
-        };
+        let kept_str = if self.kept { "Deployed" } else { "Rolled back" };
         let mut md = format!(
             "## [{title}](#{id}) -- {kept}\n\n\
              - **ID**: `{id}`\n\
@@ -368,7 +364,7 @@ impl SelfDocGenerator {
               J --> K[Deployment]\n\
               K --> L[AgentMemory]\n\
             end"
-            .to_string();
+        .to_string();
 
         ArchitectureDiagram {
             mermaid_source: source,

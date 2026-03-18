@@ -61,7 +61,12 @@ impl HeatmapExporter {
     ///
     /// # Errors
     /// Returns an error if the output file cannot be created or written.
-    pub fn export_csv(&self, path: &str, min_confidence: f32, sort_by: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn export_csv(
+        &self,
+        path: &str,
+        min_confidence: f32,
+        sort_by: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut file = std::fs::File::create(path)?;
 
         // Header: position, run_0, run_1, ...
@@ -69,12 +74,24 @@ impl HeatmapExporter {
         writeln!(file, "position,{}", header_cols.join(","))?;
 
         // Compute (position, mean_confidence, row_string) tuples
-        let mut rows: Vec<(usize, f32, String)> = self.data.iter().enumerate()
+        let mut rows: Vec<(usize, f32, String)> = self
+            .data
+            .iter()
+            .enumerate()
             .map(|(pos, runs)| {
                 let vals: Vec<f32> = runs.iter().filter_map(|v| *v).collect();
-                let mean = if vals.is_empty() { 0.0f32 } else { vals.iter().sum::<f32>() / vals.len() as f32 };
+                let mean = if vals.is_empty() {
+                    0.0f32
+                } else {
+                    vals.iter().sum::<f32>() / vals.len() as f32
+                };
                 let cols: Vec<String> = (0..self.run_count)
-                    .map(|r| runs.get(r).and_then(|v| *v).map(|v| v.to_string()).unwrap_or_default())
+                    .map(|r| {
+                        runs.get(r)
+                            .and_then(|v| *v)
+                            .map(|v| v.to_string())
+                            .unwrap_or_default()
+                    })
                     .collect();
                 (pos, mean, format!("{},{}", pos, cols.join(",")))
             })
@@ -123,14 +140,13 @@ mod tests {
     #[test]
     fn test_record_and_export() {
         let mut exporter = HeatmapExporter::new();
-        let events = vec![
-            make_event(0, Some(0.9)),
-            make_event(1, Some(0.8)),
-        ];
+        let events = vec![make_event(0, Some(0.9)), make_event(1, Some(0.8))];
         exporter.record_run(&events);
 
         let tmp = std::env::temp_dir().join("heatmap_test.csv");
-        exporter.export_csv(tmp.to_str().unwrap(), 0.0, "position").expect("export");
+        exporter
+            .export_csv(tmp.to_str().unwrap(), 0.0, "position")
+            .expect("export");
         let content = std::fs::read_to_string(&tmp).expect("read");
         assert!(content.contains("position,run_0"));
         assert!(content.contains("0,0.9"));
@@ -141,7 +157,9 @@ mod tests {
     fn test_empty_exporter() {
         let exporter = HeatmapExporter::new();
         let tmp = std::env::temp_dir().join("heatmap_empty.csv");
-        exporter.export_csv(tmp.to_str().unwrap(), 0.0, "position").expect("export empty");
+        exporter
+            .export_csv(tmp.to_str().unwrap(), 0.0, "position")
+            .expect("export empty");
         std::fs::remove_file(&tmp).ok();
     }
 }

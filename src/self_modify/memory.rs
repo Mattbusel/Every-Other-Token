@@ -147,7 +147,9 @@ impl PerformanceBaseline {
 
     /// Fractional deviation from mean (positive = above, negative = below).
     pub fn deviation_fraction(&self, value: f64) -> f64 {
-        if self.mean == 0.0 { return 0.0; }
+        if self.mean == 0.0 {
+            return 0.0;
+        }
         (value - self.mean) / self.mean
     }
 }
@@ -387,18 +389,19 @@ impl AgentMemory {
         p99: f64,
         now_ms: u64,
     ) {
-        let entry = self.baselines.entry(metric.to_string()).or_insert_with(|| {
-            PerformanceBaseline {
-                metric: metric.to_string(),
-                p50,
-                p95,
-                p99,
-                mean: value,
-                std_dev: 0.0,
-                sample_count: 0,
-                updated_at_ms: now_ms,
-            }
-        });
+        let entry =
+            self.baselines
+                .entry(metric.to_string())
+                .or_insert_with(|| PerformanceBaseline {
+                    metric: metric.to_string(),
+                    p50,
+                    p95,
+                    p99,
+                    mean: value,
+                    std_dev: 0.0,
+                    sample_count: 0,
+                    updated_at_ms: now_ms,
+                });
 
         // Welford online update
         entry.sample_count += 1;
@@ -546,7 +549,9 @@ pub struct InMemoryBackend {
 
 impl InMemoryBackend {
     pub fn new(config: MemoryConfig) -> Self {
-        Self { inner: AgentMemory::new(config) }
+        Self {
+            inner: AgentMemory::new(config),
+        }
     }
 
     pub fn inner(&self) -> &AgentMemory {
@@ -568,7 +573,11 @@ impl MemoryBackend for InMemoryBackend {
     }
 
     fn recent_modifications(&self, n: usize) -> Vec<ModificationRecord> {
-        self.inner.recent_modifications(n).into_iter().cloned().collect()
+        self.inner
+            .recent_modifications(n)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     fn success_rate(&self) -> Option<f64> {
@@ -659,13 +668,21 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn test_outcome_display_success() { assert_eq!(Outcome::Success.to_string(), "success"); }
+    fn test_outcome_display_success() {
+        assert_eq!(Outcome::Success.to_string(), "success");
+    }
     #[test]
-    fn test_outcome_display_failure() { assert_eq!(Outcome::Failure.to_string(), "failure"); }
+    fn test_outcome_display_failure() {
+        assert_eq!(Outcome::Failure.to_string(), "failure");
+    }
     #[test]
-    fn test_outcome_display_rolled_back() { assert_eq!(Outcome::RolledBack.to_string(), "rolled_back"); }
+    fn test_outcome_display_rolled_back() {
+        assert_eq!(Outcome::RolledBack.to_string(), "rolled_back");
+    }
     #[test]
-    fn test_outcome_display_pending() { assert_eq!(Outcome::Pending.to_string(), "pending"); }
+    fn test_outcome_display_pending() {
+        assert_eq!(Outcome::Pending.to_string(), "pending");
+    }
 
     // -------------------------------------------------------------------
     // Modification records
@@ -846,9 +863,13 @@ mod tests {
         let mut m = mem();
         m.update_baseline(PerformanceBaseline {
             metric: "p95_latency_ms".to_string(),
-            p50: 20.0, p95: 50.0, p99: 80.0,
-            mean: 30.0, std_dev: 5.0,
-            sample_count: 100, updated_at_ms: 0,
+            p50: 20.0,
+            p95: 50.0,
+            p99: 80.0,
+            mean: 30.0,
+            std_dev: 5.0,
+            sample_count: 100,
+            updated_at_ms: 0,
         });
         let b = m.get_baseline("p95_latency_ms").unwrap();
         assert!((b.p95 - 50.0).abs() < 1e-9);
@@ -863,8 +884,14 @@ mod tests {
     #[test]
     fn test_baseline_is_normal_within_sigma() {
         let b = PerformanceBaseline {
-            metric: "x".into(), p50: 0.0, p95: 0.0, p99: 0.0,
-            mean: 100.0, std_dev: 10.0, sample_count: 50, updated_at_ms: 0,
+            metric: "x".into(),
+            p50: 0.0,
+            p95: 0.0,
+            p99: 0.0,
+            mean: 100.0,
+            std_dev: 10.0,
+            sample_count: 50,
+            updated_at_ms: 0,
         };
         assert!(b.is_normal(105.0, 2.0)); // 0.5σ
         assert!(!b.is_normal(130.0, 2.0)); // 3σ
@@ -873,8 +900,14 @@ mod tests {
     #[test]
     fn test_baseline_deviation_fraction() {
         let b = PerformanceBaseline {
-            metric: "x".into(), p50: 0.0, p95: 0.0, p99: 0.0,
-            mean: 100.0, std_dev: 10.0, sample_count: 50, updated_at_ms: 0,
+            metric: "x".into(),
+            p50: 0.0,
+            p95: 0.0,
+            p99: 0.0,
+            mean: 100.0,
+            std_dev: 10.0,
+            sample_count: 50,
+            updated_at_ms: 0,
         };
         assert!((b.deviation_fraction(110.0) - 0.1).abs() < 1e-9);
     }
@@ -973,12 +1006,21 @@ mod tests {
         m.record_modification(make_record("r1", Outcome::Success));
         m.store_pattern(make_pattern("p1", &[]));
         m.update_baseline(PerformanceBaseline {
-            metric: "x".into(), p50: 0.0, p95: 0.0, p99: 0.0,
-            mean: 1.0, std_dev: 0.0, sample_count: 1, updated_at_ms: 0,
+            metric: "x".into(),
+            p50: 0.0,
+            p95: 0.0,
+            p99: 0.0,
+            mean: 1.0,
+            std_dev: 0.0,
+            sample_count: 1,
+            updated_at_ms: 0,
         });
         m.record_dead_end(DeadEnd {
-            key: "d".into(), description: "".into(), reason: "".into(),
-            related_signals: vec![], recorded_at_ms: 0,
+            key: "d".into(),
+            description: "".into(),
+            reason: "".into(),
+            related_signals: vec![],
+            recorded_at_ms: 0,
         });
         let s = m.stats();
         assert_eq!(s.modification_count, 1);
@@ -1009,8 +1051,11 @@ mod tests {
     fn test_in_memory_backend_is_dead_end() {
         let mut b = InMemoryBackend::new(MemoryConfig::default());
         b.record_dead_end(DeadEnd {
-            key: "k".into(), description: "".into(), reason: "".into(),
-            related_signals: vec![], recorded_at_ms: 0,
+            key: "k".into(),
+            description: "".into(),
+            reason: "".into(),
+            related_signals: vec![],
+            recorded_at_ms: 0,
         });
         assert!(b.is_dead_end("k"));
     }

@@ -47,7 +47,7 @@ pub enum Variant {
 impl std::fmt::Display for Variant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Variant::Control   => write!(f, "control"),
+            Variant::Control => write!(f, "control"),
             Variant::Treatment => write!(f, "treatment"),
         }
     }
@@ -99,13 +99,19 @@ impl ExperimentSpec {
             return Err("experiment name must not be empty".into());
         }
         if !(0.0..=1.0).contains(&self.traffic_split) {
-            return Err(format!("traffic_split must be in [0, 1], got {}", self.traffic_split));
+            return Err(format!(
+                "traffic_split must be in [0, 1], got {}",
+                self.traffic_split
+            ));
         }
         if self.min_samples == 0 {
             return Err("min_samples must be >= 1".into());
         }
         if !(0.0..1.0).contains(&self.significance) {
-            return Err(format!("significance must be in [0, 1), got {}", self.significance));
+            return Err(format!(
+                "significance must be in [0, 1), got {}",
+                self.significance
+            ));
         }
         if self.max_samples == 0 {
             return Err("max_samples must be >= 1".into());
@@ -149,7 +155,10 @@ pub struct VariantStats {
 
 impl VariantStats {
     fn new(max_samples: usize) -> Self {
-        Self { max_samples, ..Default::default() }
+        Self {
+            max_samples,
+            ..Default::default()
+        }
     }
 
     /// Record a metric observation (lower is better — typically latency_us).
@@ -165,22 +174,31 @@ impl VariantStats {
         self.sum_sq += value * value;
     }
 
-    pub fn count(&self) -> usize { self.samples.len() }
+    pub fn count(&self) -> usize {
+        self.samples.len()
+    }
 
     pub fn mean(&self) -> f64 {
-        if self.samples.is_empty() { 0.0 }
-        else { self.sum / self.samples.len() as f64 }
+        if self.samples.is_empty() {
+            0.0
+        } else {
+            self.sum / self.samples.len() as f64
+        }
     }
 
     /// Sample variance (Bessel's correction).
     pub fn variance(&self) -> f64 {
         let n = self.samples.len();
-        if n < 2 { return 0.0; }
+        if n < 2 {
+            return 0.0;
+        }
         let m = self.mean();
         (self.sum_sq - self.samples.len() as f64 * m * m) / (n - 1) as f64
     }
 
-    pub fn std_dev(&self) -> f64 { self.variance().sqrt() }
+    pub fn std_dev(&self) -> f64 {
+        self.variance().sqrt()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +230,9 @@ pub fn welch_t_test(
 ) -> Option<TTestResult> {
     let n1 = control.count() as f64;
     let n2 = treatment.count() as f64;
-    if n1 < 2.0 || n2 < 2.0 { return None; }
+    if n1 < 2.0 || n2 < 2.0 {
+        return None;
+    }
 
     let m1 = control.mean();
     let m2 = treatment.mean();
@@ -225,9 +245,13 @@ pub fn welch_t_test(
 
     // When variance is zero but means differ, the result is definitively significant.
     if se_total <= 0.0 {
-        let better = if (m1 - m2).abs() < 1e-10 { None }
-            else if m2 < m1 { Some(Variant::Treatment) }
-            else { Some(Variant::Control) };
+        let better = if (m1 - m2).abs() < 1e-10 {
+            None
+        } else if m2 < m1 {
+            Some(Variant::Treatment)
+        } else {
+            Some(Variant::Control)
+        };
         return Some(TTestResult {
             t_stat: f64::INFINITY,
             df: n1 + n2 - 2.0,
@@ -260,7 +284,13 @@ pub fn welch_t_test(
         Some(Variant::Control)
     };
 
-    Some(TTestResult { t_stat, df, p_value, significant, better })
+    Some(TTestResult {
+        t_stat,
+        df,
+        p_value,
+        significant,
+        better,
+    })
 }
 
 /// Approximate two-tailed p-value for a given |t| and degrees of freedom.
@@ -281,15 +311,17 @@ fn approx_two_tailed_p(t_abs: f64, df: f64) -> f64 {
 /// Upper tail probability of the standard normal distribution (z > x).
 /// Hart's rational approximation — accurate to ~1e-5.
 fn standard_normal_upper_tail(x: f64) -> f64 {
-    if x < 0.0 { return 1.0 - standard_normal_upper_tail(-x); }
-    if x > 8.0 { return 0.0; }
+    if x < 0.0 {
+        return 1.0 - standard_normal_upper_tail(-x);
+    }
+    if x > 8.0 {
+        return 0.0;
+    }
     // Abramowitz & Stegun 26.2.17 approximation
     let t = 1.0 / (1.0 + 0.2316419 * x);
-    let poly = t * (0.319381530
-        + t * (-0.356563782
-        + t * (1.781477937
-        + t * (-1.821255978
-        + t * 1.330274429))));
+    let poly = t
+        * (0.319381530
+            + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
     let pdf = (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt();
     pdf * poly
 }
@@ -313,7 +345,7 @@ impl Experiment {
     pub fn new(spec: ExperimentSpec) -> Self {
         let max = spec.max_samples;
         Self {
-            control:   VariantStats::new(max),
+            control: VariantStats::new(max),
             treatment: VariantStats::new(max),
             status: ExperimentStatus::Running,
             started_at: Instant::now(),
@@ -340,7 +372,9 @@ impl Experiment {
     /// After recording, if both variants have `>= min_samples` the significance
     /// test runs automatically. If significant, the experiment is concluded.
     pub fn record(&mut self, variant: Variant, metric: f64) {
-        if self.status != ExperimentStatus::Running { return; }
+        if self.status != ExperimentStatus::Running {
+            return;
+        }
 
         // Check TTL
         if self.started_at.elapsed() > self.spec.ttl {
@@ -349,7 +383,7 @@ impl Experiment {
         }
 
         match variant {
-            Variant::Control   => self.control.record(metric),
+            Variant::Control => self.control.record(metric),
             Variant::Treatment => self.treatment.record(metric),
         }
 
@@ -358,7 +392,9 @@ impl Experiment {
 
     /// Force a significance check and potentially conclude the experiment.
     pub fn maybe_conclude(&mut self) {
-        if self.status != ExperimentStatus::Running { return; }
+        if self.status != ExperimentStatus::Running {
+            return;
+        }
         if self.control.count() < self.spec.min_samples
             || self.treatment.count() < self.spec.min_samples
         {
@@ -388,7 +424,9 @@ impl Experiment {
     /// The winning parameter value, or the control value if no winner yet.
     pub fn winning_value(&self) -> f64 {
         match self.status {
-            ExperimentStatus::Concluded { winner: Variant::Treatment } => self.spec.treatment_value,
+            ExperimentStatus::Concluded {
+                winner: Variant::Treatment,
+            } => self.spec.treatment_value,
             _ => self.spec.control_value,
         }
     }
@@ -411,14 +449,21 @@ pub struct ExperimentRegistry {
 
 impl ExperimentRegistry {
     pub fn new(max_active: usize) -> Self {
-        Self { experiments: HashMap::new(), max_active }
+        Self {
+            experiments: HashMap::new(),
+            max_active,
+        }
     }
 
     /// Register a new experiment. Returns an error if the registry is full
     /// or an experiment with the same name already exists.
     pub fn register(&mut self, spec: ExperimentSpec) -> Result<(), String> {
         spec.validate()?;
-        let active = self.experiments.values().filter(|e| !e.is_finished()).count();
+        let active = self
+            .experiments
+            .values()
+            .filter(|e| !e.is_finished())
+            .count();
         if active >= self.max_active {
             return Err(format!(
                 "registry full: {} active experiments (max {})",
@@ -428,7 +473,8 @@ impl ExperimentRegistry {
         if self.experiments.contains_key(&spec.name) {
             return Err(format!("experiment '{}' already registered", spec.name));
         }
-        self.experiments.insert(spec.name.clone(), Experiment::new(spec));
+        self.experiments
+            .insert(spec.name.clone(), Experiment::new(spec));
         Ok(())
     }
 
@@ -463,7 +509,10 @@ impl ExperimentRegistry {
 
     /// Number of active (running) experiments.
     pub fn active_count(&self) -> usize {
-        self.experiments.values().filter(|e| !e.is_finished()).count()
+        self.experiments
+            .values()
+            .filter(|e| !e.is_finished())
+            .count()
     }
 
     /// Number of all experiments (including finished).
@@ -518,55 +567,82 @@ mod tests {
 
     #[test]
     fn test_spec_empty_name_invalid() {
-        let s = ExperimentSpec { name: "".into(), ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            name: "".into(),
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_traffic_split_above_one_invalid() {
-        let s = ExperimentSpec { traffic_split: 1.5, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            traffic_split: 1.5,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_traffic_split_negative_invalid() {
-        let s = ExperimentSpec { traffic_split: -0.1, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            traffic_split: -0.1,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_traffic_split_zero_valid() {
-        let s = ExperimentSpec { traffic_split: 0.0, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            traffic_split: 0.0,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_ok());
     }
 
     #[test]
     fn test_spec_traffic_split_one_valid() {
-        let s = ExperimentSpec { traffic_split: 1.0, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            traffic_split: 1.0,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_ok());
     }
 
     #[test]
     fn test_spec_min_samples_zero_invalid() {
-        let s = ExperimentSpec { min_samples: 0, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            min_samples: 0,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_significance_one_invalid() {
-        let s = ExperimentSpec { significance: 1.0, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            significance: 1.0,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_significance_negative_invalid() {
-        let s = ExperimentSpec { significance: -0.1, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            significance: -0.1,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
     #[test]
     fn test_spec_max_samples_zero_invalid() {
-        let s = ExperimentSpec { max_samples: 0, ..spec("x", 0.1, 10) };
+        let s = ExperimentSpec {
+            max_samples: 0,
+            ..spec("x", 0.1, 10)
+        };
         assert!(s.validate().is_err());
     }
 
@@ -581,14 +657,17 @@ mod tests {
     #[test]
     fn test_variant_stats_count_increments() {
         let mut vs = VariantStats::new(100);
-        vs.record(1.0); vs.record(2.0);
+        vs.record(1.0);
+        vs.record(2.0);
         assert_eq!(vs.count(), 2);
     }
 
     #[test]
     fn test_variant_stats_mean_correct() {
         let mut vs = VariantStats::new(100);
-        vs.record(10.0); vs.record(20.0); vs.record(30.0);
+        vs.record(10.0);
+        vs.record(20.0);
+        vs.record(30.0);
         assert!((vs.mean() - 20.0).abs() < 1e-9);
     }
 
@@ -606,29 +685,39 @@ mod tests {
         for v in [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0] {
             vs.record(v);
         }
-        assert!((vs.variance() - 4.571).abs() < 0.01, "variance={}", vs.variance());
+        assert!(
+            (vs.variance() - 4.571).abs() < 0.01,
+            "variance={}",
+            vs.variance()
+        );
     }
 
     #[test]
     fn test_variant_stats_capped_at_max_samples() {
         let mut vs = VariantStats::new(5);
-        for i in 0..10 { vs.record(i as f64); }
+        for i in 0..10 {
+            vs.record(i as f64);
+        }
         assert_eq!(vs.count(), 5);
     }
 
     #[test]
     fn test_variant_stats_mean_after_eviction() {
         let mut vs = VariantStats::new(3);
-        vs.record(1.0); vs.record(2.0); vs.record(3.0);
+        vs.record(1.0);
+        vs.record(2.0);
+        vs.record(3.0);
         vs.record(10.0); // evicts 1.0
-        // remaining: 2, 3, 10 → mean = 5
+                         // remaining: 2, 3, 10 → mean = 5
         assert!((vs.mean() - 5.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_variant_stats_std_dev_non_negative() {
         let mut vs = VariantStats::new(100);
-        for v in [1.0, 2.0, 3.0, 4.0, 5.0] { vs.record(v); }
+        for v in [1.0, 2.0, 3.0, 4.0, 5.0] {
+            vs.record(v);
+        }
         assert!(vs.std_dev() >= 0.0);
     }
 
@@ -658,7 +747,10 @@ mod tests {
             t.record(i as f64 % 10.0);
         }
         let result = welch_t_test(&c, &t, 0.95).unwrap();
-        assert!(!result.significant, "identical distributions should not be significant");
+        assert!(
+            !result.significant,
+            "identical distributions should not be significant"
+        );
     }
 
     #[test]
@@ -679,7 +771,10 @@ mod tests {
     fn test_ttest_better_is_lower_mean() {
         let mut c = VariantStats::new(100);
         let mut t = VariantStats::new(100);
-        for _ in 0..50 { c.record(200.0); t.record(50.0); }
+        for _ in 0..50 {
+            c.record(200.0);
+            t.record(50.0);
+        }
         let result = welch_t_test(&c, &t, 0.95).unwrap();
         assert_eq!(result.better, Some(Variant::Treatment));
     }
@@ -688,17 +783,26 @@ mod tests {
     fn test_ttest_p_value_in_range() {
         let mut c = VariantStats::new(100);
         let mut t = VariantStats::new(100);
-        for i in 0..30 { c.record(i as f64); t.record(i as f64 * 2.0); }
+        for i in 0..30 {
+            c.record(i as f64);
+            t.record(i as f64 * 2.0);
+        }
         let result = welch_t_test(&c, &t, 0.95).unwrap();
-        assert!(result.p_value >= 0.0 && result.p_value <= 1.0,
-            "p_value={}", result.p_value);
+        assert!(
+            result.p_value >= 0.0 && result.p_value <= 1.0,
+            "p_value={}",
+            result.p_value
+        );
     }
 
     #[test]
     fn test_ttest_df_positive() {
         let mut c = VariantStats::new(100);
         let mut t = VariantStats::new(100);
-        for i in 0..20 { c.record(i as f64); t.record(i as f64 + 100.0); }
+        for i in 0..20 {
+            c.record(i as f64);
+            t.record(i as f64 + 100.0);
+        }
         let result = welch_t_test(&c, &t, 0.95).unwrap();
         assert!(result.df > 0.0, "df={}", result.df);
     }
@@ -732,10 +836,15 @@ mod tests {
     #[test]
     fn test_experiment_route_split_approximately_correct() {
         let exp = Experiment::new(spec("r", 0.2, 10));
-        let treatments = (0..1000u64).filter(|&id| exp.route(id) == Variant::Treatment).count();
+        let treatments = (0..1000u64)
+            .filter(|&id| exp.route(id) == Variant::Treatment)
+            .count();
         // Should be ~200 ± 50
-        assert!(treatments >= 150 && treatments <= 250,
-            "expected ~200 treatments, got {}", treatments);
+        assert!(
+            treatments >= 150 && treatments <= 250,
+            "expected ~200 treatments, got {}",
+            treatments
+        );
     }
 
     // ===== Experiment record + conclude =====
@@ -763,7 +872,12 @@ mod tests {
             exp.record(Variant::Treatment, 10.0);
         }
         assert!(exp.is_finished(), "experiment should have concluded");
-        assert!(matches!(exp.status, ExperimentStatus::Concluded { winner: Variant::Treatment }));
+        assert!(matches!(
+            exp.status,
+            ExperimentStatus::Concluded {
+                winner: Variant::Treatment
+            }
+        ));
     }
 
     #[test]
@@ -784,7 +898,12 @@ mod tests {
             exp.record(Variant::Control, 1000.0);
             exp.record(Variant::Treatment, 10.0);
         }
-        if matches!(exp.status, ExperimentStatus::Concluded { winner: Variant::Treatment }) {
+        if matches!(
+            exp.status,
+            ExperimentStatus::Concluded {
+                winner: Variant::Treatment
+            }
+        ) {
             assert_eq!(exp.winning_value(), exp.spec.treatment_value);
         }
     }
@@ -832,7 +951,10 @@ mod tests {
     #[test]
     fn test_registry_register_invalid_spec_fails() {
         let mut reg = ExperimentRegistry::new(10);
-        let bad = ExperimentSpec { name: "".into(), ..spec("x", 0.1, 10) };
+        let bad = ExperimentSpec {
+            name: "".into(),
+            ..spec("x", 0.1, 10)
+        };
         assert!(reg.register(bad).is_err());
     }
 
@@ -929,7 +1051,11 @@ mod tests {
     #[test]
     fn test_standard_normal_upper_tail_at_zero_is_half() {
         let p = standard_normal_upper_tail(0.0);
-        assert!((p - 0.5).abs() < 0.01, "upper tail at 0 should be ~0.5, got {}", p);
+        assert!(
+            (p - 0.5).abs() < 0.01,
+            "upper tail at 0 should be ~0.5, got {}",
+            p
+        );
     }
 
     #[test]

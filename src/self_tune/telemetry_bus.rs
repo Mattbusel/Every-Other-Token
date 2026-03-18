@@ -30,7 +30,7 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 // ---------------------------------------------------------------------------
 
 /// Number of samples held in each rolling window ring buffer.
-pub const WINDOW_1M_CAP: usize = 60;   // one sample per second
+pub const WINDOW_1M_CAP: usize = 60; // one sample per second
 pub const WINDOW_5M_CAP: usize = 300;
 pub const WINDOW_15M_CAP: usize = 900;
 pub const WINDOW_1H_CAP: usize = 3_600;
@@ -65,13 +65,13 @@ pub enum PipelineStage {
 impl std::fmt::Display for PipelineStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            PipelineStage::Dedup          => "dedup",
-            PipelineStage::RateLimit      => "rate_limit",
-            PipelineStage::Priority       => "priority",
-            PipelineStage::Cache          => "cache",
-            PipelineStage::Inference      => "inference",
+            PipelineStage::Dedup => "dedup",
+            PipelineStage::RateLimit => "rate_limit",
+            PipelineStage::Priority => "priority",
+            PipelineStage::Cache => "cache",
+            PipelineStage::Inference => "inference",
             PipelineStage::CircuitBreaker => "circuit_breaker",
-            PipelineStage::Other          => "other",
+            PipelineStage::Other => "other",
         };
         write!(f, "{s}")
     }
@@ -113,32 +113,38 @@ impl RingBuffer {
     }
 
     /// Number of valid samples currently stored.
-    pub fn len(&self) -> usize { self.len }
+    pub fn len(&self) -> usize {
+        self.len
+    }
 
-    pub fn is_empty(&self) -> bool { self.len == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
 
     /// Iterate samples from oldest to newest.
     pub fn iter(&self) -> impl Iterator<Item = f64> + '_ {
-        let start = if self.len == self.cap {
-            self.head
-        } else {
-            0
-        };
+        let start = if self.len == self.cap { self.head } else { 0 };
         (0..self.len).map(move |i| self.buf[(start + i) % self.cap])
     }
 
     /// Arithmetic mean of all stored samples, or `None` if empty.
     pub fn mean(&self) -> Option<f64> {
-        if self.is_empty() { return None; }
+        if self.is_empty() {
+            return None;
+        }
         Some(self.iter().sum::<f64>() / self.len as f64)
     }
 
     /// p95 of all stored samples, or `None` if empty.
     pub fn p95(&self) -> Option<f64> {
-        if self.is_empty() { return None; }
+        if self.is_empty() {
+            return None;
+        }
         let mut v: Vec<f64> = self.iter().collect();
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let idx = ((v.len() as f64 * 0.95).ceil() as usize).saturating_sub(1).min(v.len() - 1);
+        let idx = ((v.len() as f64 * 0.95).ceil() as usize)
+            .saturating_sub(1)
+            .min(v.len() - 1);
         Some(v[idx])
     }
 
@@ -173,8 +179,11 @@ impl StageAccumulator {
     }
 
     fn avg_latency_us(&self) -> f64 {
-        if self.latency_count == 0 { 0.0 }
-        else { self.latency_sum_us as f64 / self.latency_count as f64 }
+        if self.latency_count == 0 {
+            0.0
+        } else {
+            self.latency_sum_us as f64 / self.latency_count as f64
+        }
     }
 
     fn reset(&mut self) -> StageAccumulator {
@@ -196,7 +205,6 @@ pub struct TelemetrySnapshot {
     pub captured_at: Instant,
 
     // --- global counters (monotonically increasing) ---
-
     /// Total requests processed since startup.
     pub total_requests: u64,
     /// Total requests dropped (backpressure shed) since startup.
@@ -209,7 +217,6 @@ pub struct TelemetrySnapshot {
     pub total_dedup_hits: u64,
 
     // --- derived rates (per-interval) ---
-
     /// Requests processed during the last interval.
     pub interval_requests: u64,
     /// Errors during the last interval.
@@ -220,7 +227,6 @@ pub struct TelemetrySnapshot {
     pub cache_hit_rate: f64,
 
     // --- latency (all values in microseconds) ---
-
     /// Average end-to-end latency during the last interval.
     pub avg_latency_us: f64,
     /// p95 end-to-end latency in the 1-minute rolling window.
@@ -231,14 +237,12 @@ pub struct TelemetrySnapshot {
     pub p95_15m_us: f64,
 
     // --- circuit breaker ---
-
     /// `true` when any circuit breaker is currently open.
     pub circuit_open: bool,
     /// Number of circuit breaker trips since startup.
     pub circuit_trips: u64,
 
     // --- queue depth ---
-
     /// Current queue depth (number of items waiting for processing).
     pub queue_depth: u64,
     /// Queue depth as a fraction of configured capacity [0, 1].
@@ -302,18 +306,18 @@ struct BusState {
 
     // Global monotonic counters
     total_requests: AtomicU64,
-    total_dropped:  AtomicU64,
-    total_errors:   AtomicU64,
+    total_dropped: AtomicU64,
+    total_errors: AtomicU64,
     total_cache_hits: AtomicU64,
     total_dedup_hits: AtomicU64,
-    circuit_trips:  AtomicU64,
-    queue_depth:    AtomicU64,
+    circuit_trips: AtomicU64,
+    queue_depth: AtomicU64,
 
     // Rolling windows (1m, 5m, 15m, 1h) of avg_latency_us samples
-    window_1m:  Mutex<RingBuffer>,
-    window_5m:  Mutex<RingBuffer>,
+    window_1m: Mutex<RingBuffer>,
+    window_5m: Mutex<RingBuffer>,
     window_15m: Mutex<RingBuffer>,
-    window_1h:  Mutex<RingBuffer>,
+    window_1h: Mutex<RingBuffer>,
 
     // Per-interval accumulator reset on each snapshot
     accumulator: Mutex<StageAccumulator>,
@@ -328,8 +332,8 @@ struct BusState {
 
     // Used to track the previous interval's request count for rate calculation
     prev_total_requests: AtomicU64,
-    prev_total_errors:   AtomicU64,
-    prev_total_dropped:  AtomicU64,
+    prev_total_errors: AtomicU64,
+    prev_total_dropped: AtomicU64,
 }
 
 /// The telemetry feedback bus.
@@ -356,23 +360,23 @@ impl TelemetryBus {
         let inner = Arc::new(BusState {
             cfg,
             total_requests: AtomicU64::new(0),
-            total_dropped:  AtomicU64::new(0),
-            total_errors:   AtomicU64::new(0),
+            total_dropped: AtomicU64::new(0),
+            total_errors: AtomicU64::new(0),
             total_cache_hits: AtomicU64::new(0),
             total_dedup_hits: AtomicU64::new(0),
-            circuit_trips:  AtomicU64::new(0),
-            queue_depth:    AtomicU64::new(0),
-            window_1m:  Mutex::new(RingBuffer::new(WINDOW_1M_CAP)),
-            window_5m:  Mutex::new(RingBuffer::new(WINDOW_5M_CAP)),
+            circuit_trips: AtomicU64::new(0),
+            queue_depth: AtomicU64::new(0),
+            window_1m: Mutex::new(RingBuffer::new(WINDOW_1M_CAP)),
+            window_5m: Mutex::new(RingBuffer::new(WINDOW_5M_CAP)),
             window_15m: Mutex::new(RingBuffer::new(WINDOW_15M_CAP)),
-            window_1h:  Mutex::new(RingBuffer::new(WINDOW_1H_CAP)),
+            window_1h: Mutex::new(RingBuffer::new(WINDOW_1H_CAP)),
             accumulator: Mutex::new(StageAccumulator::default()),
             latest: RwLock::new(TelemetrySnapshot::zero()),
             tx,
             circuit_open: std::sync::atomic::AtomicBool::new(false),
             prev_total_requests: AtomicU64::new(0),
-            prev_total_errors:   AtomicU64::new(0),
-            prev_total_dropped:  AtomicU64::new(0),
+            prev_total_errors: AtomicU64::new(0),
+            prev_total_dropped: AtomicU64::new(0),
         });
         Self { inner }
     }
@@ -462,24 +466,30 @@ impl TelemetryBus {
             lock.reset()
         };
 
-        let total_req  = i.total_requests.load(Ordering::Relaxed);
+        let total_req = i.total_requests.load(Ordering::Relaxed);
         let total_drop = i.total_dropped.load(Ordering::Relaxed);
-        let total_err  = i.total_errors.load(Ordering::Relaxed);
-        let total_ch   = i.total_cache_hits.load(Ordering::Relaxed);
+        let total_err = i.total_errors.load(Ordering::Relaxed);
+        let total_ch = i.total_cache_hits.load(Ordering::Relaxed);
 
-        let prev_req   = i.prev_total_requests.swap(total_req, Ordering::Relaxed);
-        let prev_err   = i.prev_total_errors.swap(total_err, Ordering::Relaxed);
-        let prev_drop  = i.prev_total_dropped.swap(total_drop, Ordering::Relaxed);
+        let prev_req = i.prev_total_requests.swap(total_req, Ordering::Relaxed);
+        let prev_err = i.prev_total_errors.swap(total_err, Ordering::Relaxed);
+        let prev_drop = i.prev_total_dropped.swap(total_drop, Ordering::Relaxed);
 
-        let interval_req  = total_req.saturating_sub(prev_req);
-        let interval_err  = total_err.saturating_sub(prev_err);
+        let interval_req = total_req.saturating_sub(prev_req);
+        let interval_err = total_err.saturating_sub(prev_err);
         let interval_drop = total_drop.saturating_sub(prev_drop);
 
-        let drop_rate = if interval_req == 0 { 0.0 }
-            else { interval_drop as f64 / interval_req as f64 };
+        let drop_rate = if interval_req == 0 {
+            0.0
+        } else {
+            interval_drop as f64 / interval_req as f64
+        };
 
-        let cache_hit_rate = if total_req == 0 { 0.0 }
-            else { total_ch as f64 / total_req as f64 };
+        let cache_hit_rate = if total_req == 0 {
+            0.0
+        } else {
+            total_ch as f64 / total_req as f64
+        };
 
         let avg_us = acc.avg_latency_us();
 
@@ -501,28 +511,31 @@ impl TelemetryBus {
             w1h.push(avg_us);
         }
 
-        let p95_1m  = { i.window_1m.lock().await.p95().unwrap_or(0.0) };
-        let p95_5m  = { i.window_5m.lock().await.p95().unwrap_or(0.0) };
+        let p95_1m = { i.window_1m.lock().await.p95().unwrap_or(0.0) };
+        let p95_5m = { i.window_5m.lock().await.p95().unwrap_or(0.0) };
         let p95_15m = { i.window_15m.lock().await.p95().unwrap_or(0.0) };
 
         let queue_d = i.queue_depth.load(Ordering::Relaxed);
-        let qfrac = if i.cfg.queue_capacity == 0 { 0.0 }
-            else { (queue_d as f64 / i.cfg.queue_capacity as f64).min(1.0) };
+        let qfrac = if i.cfg.queue_capacity == 0 {
+            0.0
+        } else {
+            (queue_d as f64 / i.cfg.queue_capacity as f64).min(1.0)
+        };
 
         let snap = TelemetrySnapshot {
             captured_at: Instant::now(),
             total_requests: total_req,
-            total_dropped:  total_drop,
-            total_errors:   total_err,
+            total_dropped: total_drop,
+            total_errors: total_err,
             total_cache_hits: total_ch,
             total_dedup_hits: i.total_dedup_hits.load(Ordering::Relaxed),
             interval_requests: interval_req,
-            interval_errors:   interval_err,
+            interval_errors: interval_err,
             drop_rate,
             cache_hit_rate,
             avg_latency_us: avg_us,
-            p95_1m_us:  p95_1m,
-            p95_5m_us:  p95_5m,
+            p95_1m_us: p95_1m,
+            p95_5m_us: p95_5m,
             p95_15m_us: p95_15m,
             circuit_open: i.circuit_open.load(Ordering::Relaxed),
             circuit_trips: i.circuit_trips.load(Ordering::Relaxed),
@@ -662,9 +675,11 @@ mod tests {
     #[test]
     fn test_ringbuffer_mean_after_wrap() {
         let mut rb = RingBuffer::new(3);
-        rb.push(1.0); rb.push(2.0); rb.push(3.0);
+        rb.push(1.0);
+        rb.push(2.0);
+        rb.push(3.0);
         rb.push(100.0); // evicts 1.0
-        // remaining: 2, 3, 100
+                        // remaining: 2, 3, 100
         let m = rb.mean().unwrap();
         assert!((m - 35.0).abs() < 1e-9);
     }
@@ -880,10 +895,15 @@ mod tests {
         bus.start_emitter();
 
         let snap = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv error");
+            .await
+            .expect("timeout")
+            .expect("recv error");
 
-        assert!((snap.drop_rate - 1.0 / 3.0).abs() < 0.01,
-            "drop_rate={}", snap.drop_rate);
+        assert!(
+            (snap.drop_rate - 1.0 / 3.0).abs() < 0.01,
+            "drop_rate={}",
+            snap.drop_rate
+        );
     }
 
     #[tokio::test]
@@ -894,15 +914,24 @@ mod tests {
         });
         let mut rx = bus.subscribe();
 
-        for _ in 0..10 { bus.record_latency(PipelineStage::Cache, 50); }
-        for _ in 0..4  { bus.record_cache_hit(); }
+        for _ in 0..10 {
+            bus.record_latency(PipelineStage::Cache, 50);
+        }
+        for _ in 0..4 {
+            bus.record_cache_hit();
+        }
         bus.start_emitter();
 
         let snap = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv error");
+            .await
+            .expect("timeout")
+            .expect("recv error");
 
-        assert!((snap.cache_hit_rate - 0.4).abs() < 0.01,
-            "cache_hit_rate={}", snap.cache_hit_rate);
+        assert!(
+            (snap.cache_hit_rate - 0.4).abs() < 0.01,
+            "cache_hit_rate={}",
+            snap.cache_hit_rate
+        );
     }
 
     #[tokio::test]
@@ -917,7 +946,9 @@ mod tests {
         bus.start_emitter();
 
         let snap = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv error");
+            .await
+            .expect("timeout")
+            .expect("recv error");
         assert!((snap.queue_fill_frac - 1.0).abs() < 1e-9);
     }
 
@@ -967,7 +998,9 @@ mod tests {
         bus.start_emitter();
 
         let snap = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv");
+            .await
+            .expect("timeout")
+            .expect("recv");
         // After first emit the 1m window has one sample
         assert!(snap.p95_1m_us >= 0.0);
     }
@@ -983,7 +1016,9 @@ mod tests {
         bus.start_emitter();
 
         let snap = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv");
+            .await
+            .expect("timeout")
+            .expect("recv");
         assert!(snap.circuit_open);
         assert_eq!(snap.circuit_trips, 1);
     }
@@ -997,16 +1032,22 @@ mod tests {
         let mut rx = bus.subscribe();
 
         // Record 5 requests before first snapshot
-        for _ in 0..5 { bus.record_latency(PipelineStage::Dedup, 10); }
+        for _ in 0..5 {
+            bus.record_latency(PipelineStage::Dedup, 10);
+        }
         bus.start_emitter();
 
         let snap1 = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv");
+            .await
+            .expect("timeout")
+            .expect("recv");
         assert_eq!(snap1.interval_requests, 5);
 
         // No new requests between intervals
         let snap2 = timeout(Duration::from_millis(300), rx.recv())
-            .await.expect("timeout").expect("recv");
+            .await
+            .expect("timeout")
+            .expect("recv");
         assert_eq!(snap2.interval_requests, 0);
     }
 

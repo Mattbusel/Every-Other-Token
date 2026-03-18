@@ -13,12 +13,12 @@
 //! - [`docs`]     (2.5) — auto-generated changelogs and architecture diagrams
 //! - [`discover`] (2.6) — capability discovery: dead code, coverage gaps, hotspots
 
-pub mod task_gen;
+pub mod deployment;
+pub mod discover;
+pub mod docs;
 pub mod gate;
 pub mod memory;
-pub mod deployment;
-pub mod docs;
-pub mod discover;
+pub mod task_gen;
 
 #[cfg(feature = "redis-backing")]
 pub mod redis_memory;

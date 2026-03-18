@@ -243,7 +243,8 @@ impl RedisSnapshotStore {
         let mut conn = client
             .get_connection()
             .map_err(|e| format!("Redis connection failed: {}", e))?;
-        conn.ping().map_err(|e| format!("Redis ping failed: {}", e))?;
+        conn.ping()
+            .map_err(|e| format!("Redis ping failed: {}", e))?;
         Ok(Self {
             ops: Box::new(conn),
             registry: SnapshotRegistry::new(capacity),
@@ -591,7 +592,9 @@ mod tests {
         let mut s = store(10);
         let id = s.commit(
             params(),
-            ChangeSource::Manual { operator: "bob".to_string() },
+            ChangeSource::Manual {
+                operator: "bob".to_string(),
+            },
             metrics_default(),
             Some("my note".to_string()),
         );
@@ -645,7 +648,9 @@ mod tests {
         let mut s = store(10);
         let id = s.commit(
             params(),
-            ChangeSource::Manual { operator: "ops".to_string() },
+            ChangeSource::Manual {
+                operator: "ops".to_string(),
+            },
             metrics_default(),
             None,
         );

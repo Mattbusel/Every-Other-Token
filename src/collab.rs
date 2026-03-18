@@ -186,7 +186,13 @@ pub fn join_room(
     code: &str,
     name: &str,
     is_host: bool,
-) -> Result<(Participant, tokio::sync::broadcast::Receiver<serde_json::Value>), String> {
+) -> Result<
+    (
+        Participant,
+        tokio::sync::broadcast::Receiver<serde_json::Value>,
+    ),
+    String,
+> {
     let mut guard = store
         .lock()
         .map_err(|_| "internal: lock poisoned".to_string())?;
@@ -279,12 +285,7 @@ pub fn add_chat(store: &RoomStore, code: &str, msg: ChatMessage) {
 ///
 /// `dir` must be `"up"` or `"down"`. Returns the updated `(up, down)` counts,
 /// or `None` if the room was not found.
-pub fn vote(
-    store: &RoomStore,
-    code: &str,
-    transform: &str,
-    dir: &str,
-) -> Option<(u32, u32)> {
+pub fn vote(store: &RoomStore, code: &str, transform: &str, dir: &str) -> Option<(u32, u32)> {
     let mut guard = store.lock().ok()?;
     let room = guard.get_mut(code)?;
     let entry = room.votes.entry(transform.to_string()).or_insert((0, 0));
@@ -347,11 +348,14 @@ pub fn maybe_record(store: &RoomStore, code: &str, payload: serde_json::Value) {
             if room.is_recording {
                 let start = room.recording_start_ms.unwrap_or_else(now_ms);
                 let offset_ms = now_ms().saturating_sub(start);
-                room.recorded_events.push(RecordedEvent { offset_ms, payload });
+                room.recorded_events
+                    .push(RecordedEvent { offset_ms, payload });
                 // Count dropped events and warn
                 let dropped = if room.recorded_events.len() > room.recording_cap {
                     let excess = room.recorded_events.len() - room.recording_cap;
-                    for _ in 0..excess { room.recorded_events.remove(0); }
+                    for _ in 0..excess {
+                        room.recorded_events.remove(0);
+                    }
                     excess
                 } else {
                     0
@@ -652,7 +656,10 @@ fn update_participant_name(
 ) -> Option<Participant> {
     let mut guard = store.lock().ok()?;
     let room = guard.get_mut(code)?;
-    let p = room.participants.iter_mut().find(|p| p.id == participant_id)?;
+    let p = room
+        .participants
+        .iter_mut()
+        .find(|p| p.id == participant_id)?;
     p.name = new_name.to_string();
     Some(p.clone())
 }
@@ -698,7 +705,8 @@ mod tests {
     fn test_generate_code_all_uppercase_alphanumeric() {
         let code = generate_code();
         assert!(
-            code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
+            code.chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
             "code '{}' contains non-uppercase-alphanumeric chars",
             code
         );
@@ -709,14 +717,22 @@ mod tests {
         let codes: Vec<String> = (0..30).map(|_| generate_code()).collect();
         let unique: std::collections::HashSet<&String> = codes.iter().collect();
         // With 36^6 ≈ 2.1 billion possibilities, 30 calls should all be unique.
-        assert!(unique.len() >= 28, "expected near-unique codes, got {} unique out of 30", unique.len());
+        assert!(
+            unique.len() >= 28,
+            "expected near-unique codes, got {} unique out of 30",
+            unique.len()
+        );
     }
 
     #[test]
     fn test_generate_code_no_lowercase() {
         for _ in 0..20 {
             let code = generate_code();
-            assert!(!code.chars().any(|c| c.is_ascii_lowercase()), "code contains lowercase: {}", code);
+            assert!(
+                !code.chars().any(|c| c.is_ascii_lowercase()),
+                "code contains lowercase: {}",
+                code
+            );
         }
     }
 
@@ -737,7 +753,10 @@ mod tests {
     #[test]
     fn test_now_ms_plausible_epoch() {
         // Must be after 2024-01-01 in milliseconds
-        assert!(now_ms() > 1_704_067_200_000, "now_ms() appears to predate 2024");
+        assert!(
+            now_ms() > 1_704_067_200_000,
+            "now_ms() appears to predate 2024"
+        );
     }
 
     // -- PARTICIPANT_COLORS --------------------------------------------------
@@ -780,7 +799,9 @@ mod tests {
     fn test_create_room_code_is_uppercase_alphanumeric() {
         let store = new_room_store();
         let code = create_room(&store);
-        assert!(code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
+        assert!(code
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
     }
 
     #[test]
@@ -904,7 +925,11 @@ mod tests {
         let result = join_room(&store, "XXXXXX", "Alice", true);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.contains("XXXXXX"), "error should mention the code: {}", err);
+        assert!(
+            err.contains("XXXXXX"),
+            "error should mention the code: {}",
+            err
+        );
     }
 
     #[test]
@@ -922,7 +947,11 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         let (p, _) = join_room(&store, &code, "Alice", true).unwrap();
-        assert!(p.joined_at_ms > 1_704_067_200_000, "timestamp looks wrong: {}", p.joined_at_ms);
+        assert!(
+            p.joined_at_ms > 1_704_067_200_000,
+            "timestamp looks wrong: {}",
+            p.joined_at_ms
+        );
     }
 
     // -- leave_room ----------------------------------------------------------
@@ -1066,15 +1095,19 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         for i in 0..5 {
-            apply_surgery(&store, &code, SurgeryEdit {
-                token_index: i,
-                new_text: format!("new{}", i),
-                old_text: format!("old{}", i),
-                editor_id: "p1".to_string(),
-                editor_color: "#58a6ff".to_string(),
-                editor_name: "Alice".to_string(),
-                timestamp_ms: i as u64,
-            });
+            apply_surgery(
+                &store,
+                &code,
+                SurgeryEdit {
+                    token_index: i,
+                    new_text: format!("new{}", i),
+                    old_text: format!("old{}", i),
+                    editor_id: "p1".to_string(),
+                    editor_color: "#58a6ff".to_string(),
+                    editor_name: "Alice".to_string(),
+                    timestamp_ms: i as u64,
+                },
+            );
         }
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().surgery_log.len(), 5);
@@ -1104,15 +1137,19 @@ mod tests {
     fn test_add_chat_stores_correct_text() {
         let store = new_room_store();
         let code = create_room(&store);
-        add_chat(&store, &code, ChatMessage {
-            id: "m1".to_string(),
-            author_id: "p1".to_string(),
-            author_name: "Alice".to_string(),
-            author_color: "#58a6ff".to_string(),
-            text: "Nice token!".to_string(),
-            token_index: Some(5),
-            timestamp_ms: 0,
-        });
+        add_chat(
+            &store,
+            &code,
+            ChatMessage {
+                id: "m1".to_string(),
+                author_id: "p1".to_string(),
+                author_name: "Alice".to_string(),
+                author_color: "#58a6ff".to_string(),
+                text: "Nice token!".to_string(),
+                token_index: Some(5),
+                timestamp_ms: 0,
+            },
+        );
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let stored = &guard.get(&code).unwrap().chat_log[0];
         assert_eq!(stored.text, "Nice token!");
@@ -1123,15 +1160,19 @@ mod tests {
     fn test_add_chat_nonexistent_room_is_noop() {
         let store = new_room_store();
         // Must not panic
-        add_chat(&store, "XXXXXX", ChatMessage {
-            id: "m1".to_string(),
-            author_id: "p1".to_string(),
-            author_name: "Ghost".to_string(),
-            author_color: "#fff".to_string(),
-            text: "hello".to_string(),
-            token_index: None,
-            timestamp_ms: 0,
-        });
+        add_chat(
+            &store,
+            "XXXXXX",
+            ChatMessage {
+                id: "m1".to_string(),
+                author_id: "p1".to_string(),
+                author_name: "Ghost".to_string(),
+                author_color: "#fff".to_string(),
+                text: "hello".to_string(),
+                token_index: None,
+                timestamp_ms: 0,
+            },
+        );
     }
 
     #[test]
@@ -1139,15 +1180,19 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         for i in 0..3 {
-            add_chat(&store, &code, ChatMessage {
-                id: format!("m{}", i),
-                author_id: "p1".to_string(),
-                author_name: "Alice".to_string(),
-                author_color: "#58a6ff".to_string(),
-                text: format!("msg {}", i),
-                token_index: None,
-                timestamp_ms: i as u64,
-            });
+            add_chat(
+                &store,
+                &code,
+                ChatMessage {
+                    id: format!("m{}", i),
+                    author_id: "p1".to_string(),
+                    author_name: "Alice".to_string(),
+                    author_color: "#58a6ff".to_string(),
+                    text: format!("msg {}", i),
+                    token_index: None,
+                    timestamp_ms: i as u64,
+                },
+            );
         }
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(guard.get(&code).unwrap().chat_log.len(), 3);
@@ -1324,8 +1369,16 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         start_recording(&store, &code);
-        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 0}));
-        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 1}));
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "index": 0}),
+        );
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "index": 1}),
+        );
         let events = stop_recording(&store, &code);
         assert_eq!(events.len(), 2);
     }
@@ -1374,7 +1427,11 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         start_recording(&store, &code);
-        maybe_record(&store, &code, serde_json::json!({"type": "chat", "text": "hello"}));
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "chat", "text": "hello"}),
+        );
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let ev = &guard.get(&code).unwrap().recorded_events[0];
         assert_eq!(ev.payload["type"], "chat");
@@ -1390,7 +1447,11 @@ mod tests {
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let ev = &guard.get(&code).unwrap().recorded_events[0];
         // offset_ms must be >= 0 (it's u64, always true) and < 1000ms for a test
-        assert!(ev.offset_ms < 1000, "offset_ms should be small in a fast test: {}", ev.offset_ms);
+        assert!(
+            ev.offset_ms < 1000,
+            "offset_ms should be small in a fast test: {}",
+            ev.offset_ms
+        );
     }
 
     #[test]
@@ -1463,7 +1524,10 @@ mod tests {
                 assert_eq!(msg["cap"], 2);
             }
         }
-        assert!(got_truncated, "expected record_truncated broadcast when cap is exceeded");
+        assert!(
+            got_truncated,
+            "expected record_truncated broadcast when cap is exceeded"
+        );
 
         // Verify only cap events remain
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
@@ -1630,25 +1694,33 @@ mod tests {
         let (host, _rx_host) = join_room(&store, &code, "Host", true).unwrap();
         let (guest, _rx_guest) = join_room(&store, &code, "Guest", false).unwrap();
 
-        add_chat(&store, &code, ChatMessage {
-            id: "c1".to_string(),
-            author_id: host.id.clone(),
-            author_name: "Host".to_string(),
-            author_color: host.color.clone(),
-            text: "Welcome!".to_string(),
-            token_index: None,
-            timestamp_ms: now_ms(),
-        });
+        add_chat(
+            &store,
+            &code,
+            ChatMessage {
+                id: "c1".to_string(),
+                author_id: host.id.clone(),
+                author_name: "Host".to_string(),
+                author_color: host.color.clone(),
+                text: "Welcome!".to_string(),
+                token_index: None,
+                timestamp_ms: now_ms(),
+            },
+        );
 
-        apply_surgery(&store, &code, SurgeryEdit {
-            token_index: 0,
-            new_text: "edited".to_string(),
-            old_text: "original".to_string(),
-            editor_id: guest.id.clone(),
-            editor_color: guest.color.clone(),
-            editor_name: guest.name.clone(),
-            timestamp_ms: now_ms(),
-        });
+        apply_surgery(
+            &store,
+            &code,
+            SurgeryEdit {
+                token_index: 0,
+                new_text: "edited".to_string(),
+                old_text: "original".to_string(),
+                editor_id: guest.id.clone(),
+                editor_color: guest.color.clone(),
+                editor_name: guest.name.clone(),
+                timestamp_ms: now_ms(),
+            },
+        );
 
         let (up, _) = vote(&store, &code, "reverse", "up").unwrap();
         assert_eq!(up, 1);
@@ -1671,9 +1743,17 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
         for i in 0..3 {
-            maybe_record(&store, &code, serde_json::json!({"type": "token", "index": i}));
+            maybe_record(
+                &store,
+                &code,
+                serde_json::json!({"type": "token", "index": i}),
+            );
         }
-        maybe_record(&store, &code, serde_json::json!({"type": "chat", "text": "hi"}));
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "chat", "text": "hi"}),
+        );
         let events = stop_recording(&store, &code);
         assert_eq!(events.len(), 4);
         assert_eq!(events[0].payload["type"], "token");
@@ -1748,7 +1828,11 @@ mod tests {
         let (_, _rx) = join_room(&store, &code, "p1", false).unwrap();
         let (_, _rx2) = join_room(&store, &code, "p2", false).unwrap();
 
-        broadcast(&store, &code, serde_json::json!({"type": "token", "index": 0}));
+        broadcast(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "index": 0}),
+        );
 
         let snap = room_state_snapshot(&store, &code);
         assert_eq!(snap["participants"].as_array().unwrap().len(), 2);
@@ -1763,9 +1847,21 @@ mod tests {
         let code = create_room(&store);
         start_recording(&store, &code);
 
-        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 0}));
-        maybe_record(&store, &code, serde_json::json!({"type": "chat", "text": "nice"}));
-        maybe_record(&store, &code, serde_json::json!({"type": "token", "index": 1}));
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "index": 0}),
+        );
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "chat", "text": "nice"}),
+        );
+        maybe_record(
+            &store,
+            &code,
+            serde_json::json!({"type": "token", "index": 1}),
+        );
 
         let events = stop_recording(&store, &code);
         assert_eq!(events.len(), 3);
@@ -1821,7 +1917,10 @@ mod tests {
         }
         evict_idle_rooms(&store);
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
-        assert!(!guard.contains_key(&code), "stale room should have been evicted");
+        assert!(
+            !guard.contains_key(&code),
+            "stale room should have been evicted"
+        );
     }
 
     #[test]
@@ -1831,7 +1930,10 @@ mod tests {
         // last_activity_ms was just set to now_ms() in create_room
         evict_idle_rooms(&store);
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
-        assert!(guard.contains_key(&code), "recently active room should not be evicted");
+        assert!(
+            guard.contains_key(&code),
+            "recently active room should not be evicted"
+        );
     }
 
     #[test]
@@ -1873,7 +1975,11 @@ mod tests {
         }
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
         let room = guard.get(&code).unwrap();
-        assert_eq!(room.recorded_events.len(), 5, "cap should limit buffer to 5 events");
+        assert_eq!(
+            room.recorded_events.len(),
+            5,
+            "cap should limit buffer to 5 events"
+        );
         // The oldest events should have been dropped (FIFO trim)
         assert_eq!(room.recorded_events[0].payload["seq"], 5);
         assert_eq!(room.recorded_events[4].payload["seq"], 9);
@@ -1884,7 +1990,10 @@ mod tests {
         let store = new_room_store();
         let code = create_room(&store);
         let guard = store.lock().unwrap_or_else(|e| e.into_inner());
-        assert_eq!(guard.get(&code).unwrap().recording_cap, DEFAULT_RECORDING_CAP);
+        assert_eq!(
+            guard.get(&code).unwrap().recording_cap,
+            DEFAULT_RECORDING_CAP
+        );
     }
 
     // -- generate_code collision test ----------------------------------------
@@ -1895,12 +2004,17 @@ mod tests {
         for code in &codes {
             assert_eq!(code.len(), 6, "code must be 6 chars: {}", code);
             assert!(
-                code.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
+                code.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
                 "code contains non-uppercase-alphanumeric chars: {}",
                 code
             );
         }
         let unique: std::collections::HashSet<&String> = codes.iter().collect();
-        assert_eq!(unique.len(), codes.len(), "found duplicate codes among 1000 generated");
+        assert_eq!(
+            unique.len(),
+            codes.len(),
+            "found duplicate codes among 1000 generated"
+        );
     }
 }

@@ -105,7 +105,10 @@ mod inner {
         let days = s / 86400;
         // Days since 1970-01-01
         let (year, month, day) = days_to_ymd(days);
-        format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hour, min, sec)
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            year, month, day, hour, min, sec
+        )
     }
 
     fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {

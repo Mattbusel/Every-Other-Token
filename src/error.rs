@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn test_provider_http_message() {
-        let e = EotError::ProviderHttp { status: 429, url: "https://api.openai.com".to_string() };
+        let e = EotError::ProviderHttp {
+            status: 429,
+            url: "https://api.openai.com".to_string(),
+        };
         let msg = e.to_string();
         assert!(msg.contains("429"));
         assert!(msg.contains("openai.com"));

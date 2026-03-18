@@ -257,13 +257,18 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             .iter()
             .map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0))
             .collect();
-        let collapse_positions = detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
+        let collapse_positions =
+            detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
 
         // Per-transform perplexity breakdown
-        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
         for event in &events {
             if event.transformed {
-                let label = event.chaos_label.clone().unwrap_or_else(|| transform_str.clone());
+                let label = event
+                    .chaos_label
+                    .clone()
+                    .unwrap_or_else(|| transform_str.clone());
                 if let Some(p) = event.perplexity {
                     transform_perp.entry(label).or_default().push(p as f64);
                 }
@@ -276,14 +281,17 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
         // Persist run to DB if store is open
         if let (Some(ref s), Some(eid)) = (&store, exp_id) {
-            s.insert_run(eid, &crate::store::RunRecord {
-                run_index: i,
-                token_count,
-                transformed_count,
-                avg_confidence,
-                avg_perplexity,
-                vocab_diversity,
-            })?;
+            s.insert_run(
+                eid,
+                &crate::store::RunRecord {
+                    run_index: i,
+                    token_count,
+                    transformed_count,
+                    avg_confidence,
+                    avg_perplexity,
+                    vocab_diversity,
+                },
+            )?;
         }
 
         // Record events for heatmap
@@ -324,8 +332,16 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
     // Auto-baseline: compare A (even runs) vs B (odd runs) confidence when data available.
     // This always runs in research mode (no --baseline flag needed) if we have >= 2 runs.
-    let even_confs: Vec<f64> = runs.iter().filter(|r| r.run_index % 2 == 0).filter_map(|r| r.avg_confidence).collect();
-    let odd_confs: Vec<f64> = runs.iter().filter(|r| r.run_index % 2 == 1).filter_map(|r| r.avg_confidence).collect();
+    let even_confs: Vec<f64> = runs
+        .iter()
+        .filter(|r| r.run_index % 2 == 0)
+        .filter_map(|r| r.avg_confidence)
+        .collect();
+    let odd_confs: Vec<f64> = runs
+        .iter()
+        .filter(|r| r.run_index % 2 == 1)
+        .filter_map(|r| r.avg_confidence)
+        .collect();
     if !even_confs.is_empty() && !odd_confs.is_empty() {
         let even_mean = even_confs.iter().sum::<f64>() / even_confs.len() as f64;
         let odd_mean = odd_confs.iter().sum::<f64>() / odd_confs.len() as f64;
@@ -333,7 +349,11 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             even_mean, odd_mean, odd_mean - even_mean);
         // Also run t-test if enough data
         if let Some(p) = two_sample_t_test(&even_confs, &odd_confs) {
-            let sig = if p < 0.05 { "SIGNIFICANT" } else { "not significant" };
+            let sig = if p < 0.05 {
+                "SIGNIFICANT"
+            } else {
+                "not significant"
+            };
             eprintln!("[auto-baseline] t-test p={:.4} ({})", p, sig);
         }
     }
@@ -341,10 +361,14 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     // Baseline comparison: if --baseline and there's a "none" transform in the DB
     if args.baseline {
         if let (Some(ref s), Some(eid)) = (&store, exp_id) {
-            let baseline_runs = s.load_runs_by_transform(&args.prompt, "none").unwrap_or_default();
+            let baseline_runs = s
+                .load_runs_by_transform(&args.prompt, "none")
+                .unwrap_or_default();
             if !baseline_runs.is_empty() {
-                let baseline_confs: Vec<f64> =
-                    baseline_runs.iter().filter_map(|r| r.avg_confidence).collect();
+                let baseline_confs: Vec<f64> = baseline_runs
+                    .iter()
+                    .filter_map(|r| r.avg_confidence)
+                    .collect();
                 let current_confs: Vec<f64> =
                     runs.iter().filter_map(|r| r.avg_confidence).collect();
                 if !baseline_confs.is_empty() && !current_confs.is_empty() {
@@ -494,10 +518,14 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
     let aligned_length = runs.iter().map(|r| r.token_count).min().unwrap_or(0);
 
     // Aggregate per-transform perplexity across runs
-    let mut all_transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut all_transform_perp: std::collections::HashMap<String, Vec<f64>> =
+        std::collections::HashMap::new();
     for run in runs {
         for (label, perp) in &run.per_transform_perplexity {
-            all_transform_perp.entry(label.clone()).or_default().push(*perp);
+            all_transform_perp
+                .entry(label.clone())
+                .or_default()
+                .push(*perp);
         }
     }
     let mean_per_transform_perplexity: std::collections::HashMap<String, f64> = all_transform_perp
@@ -643,24 +671,53 @@ async fn run_research_for_prompt(
         drop(interceptor);
 
         let mut events = Vec::new();
-        while let Ok(e) = rx.try_recv() { events.push(e); }
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
 
         let token_count = events.len();
         let transformed_count = events.iter().filter(|e| e.transformed).count();
-        let confidences: Vec<f64> = events.iter().filter_map(|e| e.confidence.map(|v| v as f64)).collect();
-        let avg_confidence = if confidences.is_empty() { None } else { Some(confidences.iter().sum::<f64>() / confidences.len() as f64) };
-        let perplexities: Vec<f64> = events.iter().filter_map(|e| e.perplexity.map(|v| v as f64)).collect();
-        let avg_perplexity = if perplexities.is_empty() { None } else { Some(perplexities.iter().sum::<f64>() / perplexities.len() as f64) };
-        let unique: std::collections::HashSet<&str> = events.iter().map(|e| e.original.as_str()).collect();
-        let vocab_diversity = if token_count == 0 { 0.0 } else { unique.len() as f64 / token_count as f64 };
-        let per_token_confidences: Vec<f64> = events.iter().map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0)).collect();
-        let collapse_positions = detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
+        let confidences: Vec<f64> = events
+            .iter()
+            .filter_map(|e| e.confidence.map(|v| v as f64))
+            .collect();
+        let avg_confidence = if confidences.is_empty() {
+            None
+        } else {
+            Some(confidences.iter().sum::<f64>() / confidences.len() as f64)
+        };
+        let perplexities: Vec<f64> = events
+            .iter()
+            .filter_map(|e| e.perplexity.map(|v| v as f64))
+            .collect();
+        let avg_perplexity = if perplexities.is_empty() {
+            None
+        } else {
+            Some(perplexities.iter().sum::<f64>() / perplexities.len() as f64)
+        };
+        let unique: std::collections::HashSet<&str> =
+            events.iter().map(|e| e.original.as_str()).collect();
+        let vocab_diversity = if token_count == 0 {
+            0.0
+        } else {
+            unique.len() as f64 / token_count as f64
+        };
+        let per_token_confidences: Vec<f64> = events
+            .iter()
+            .map(|e| e.confidence.map(|v| v as f64).unwrap_or(1.0))
+            .collect();
+        let collapse_positions =
+            detect_collapse_positions(&per_token_confidences, args.collapse_window, 0.4);
 
         // Per-transform perplexity breakdown
-        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut transform_perp: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
         for event in &events {
             if event.transformed {
-                let label = event.chaos_label.clone().unwrap_or_else(|| transform_str.clone());
+                let label = event
+                    .chaos_label
+                    .clone()
+                    .unwrap_or_else(|| transform_str.clone());
                 if let Some(p) = event.perplexity {
                     transform_perp.entry(label).or_default().push(p as f64);
                 }
@@ -734,9 +791,23 @@ pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn st
     let (tx_a, mut rx_a) = mpsc::unbounded_channel();
     let (tx_b, mut rx_b) = mpsc::unbounded_channel();
 
-    let mut ia = TokenInterceptor::new(Provider::Openai, transform_openai, model_openai, false, false, false)?;
+    let mut ia = TokenInterceptor::new(
+        Provider::Openai,
+        transform_openai,
+        model_openai,
+        false,
+        false,
+        false,
+    )?;
     ia.web_tx = Some(tx_a);
-    let mut ib = TokenInterceptor::new(Provider::Anthropic, transform_anthropic, model_anthropic, false, false, false)?;
+    let mut ib = TokenInterceptor::new(
+        Provider::Anthropic,
+        transform_anthropic,
+        model_anthropic,
+        false,
+        false,
+        false,
+    )?;
     ib.web_tx = Some(tx_b);
 
     let prompt = args.prompt.clone();
@@ -750,11 +821,19 @@ pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn st
 
     let mut events_a = Vec::new();
     let mut events_b = Vec::new();
-    while let Ok(e) = rx_a.try_recv() { events_a.push(e); }
-    while let Ok(e) = rx_b.try_recv() { events_b.push(e); }
+    while let Ok(e) = rx_a.try_recv() {
+        events_a.push(e);
+    }
+    while let Ok(e) = rx_b.try_recv() {
+        events_b.push(e);
+    }
 
     let max_len = events_a.len().max(events_b.len());
-    println!("{:<30}  {}", "OpenAI".bright_cyan().bold(), "Anthropic".bright_magenta().bold());
+    println!(
+        "{:<30}  {}",
+        "OpenAI".bright_cyan().bold(),
+        "Anthropic".bright_magenta().bold()
+    );
     println!("{}", "-".repeat(65));
     for i in 0..max_len {
         let a_text = events_a.get(i).map(|e| e.text.as_str()).unwrap_or("");
@@ -794,8 +873,7 @@ fn normal_cdf(z: f64) -> f64 {
     let t = 1.0 / (1.0 + 0.2316419 * z.abs());
     let poly = t
         * (0.319381530
-            + t * (-0.356563782
-                + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+            + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
     let pdf = (-z * z / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt();
     let p = 1.0 - pdf * poly;
     if z >= 0.0 {
@@ -809,9 +887,7 @@ fn normal_cdf(z: f64) -> f64 {
 mod tests {
     use super::*;
 
-    fn make_runs(
-        data: &[(usize, usize, Option<f64>, Option<f64>, f64)],
-    ) -> Vec<ResearchRun> {
+    fn make_runs(data: &[(usize, usize, Option<f64>, Option<f64>, f64)]) -> Vec<ResearchRun> {
         data.iter()
             .enumerate()
             .map(|(i, &(tc, tr, conf, perp, vd))| ResearchRun {

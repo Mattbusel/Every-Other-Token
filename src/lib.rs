@@ -31,17 +31,17 @@
 //! ```
 
 pub mod cli;
+pub mod collab;
 pub mod config;
 pub mod error;
+pub mod heatmap;
 pub mod providers;
 pub mod render;
+pub mod replay;
+pub mod research;
+pub mod store;
 pub mod transforms;
 pub mod web;
-pub mod research;
-pub mod collab;
-pub mod store;
-pub mod heatmap;
-pub mod replay;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
@@ -276,7 +276,9 @@ async fn execute_with_retry(
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| "max retries exceeded".to_string()).into())
+    Err(last_err
+        .unwrap_or_else(|| "max retries exceeded".to_string())
+        .into())
 }
 
 impl TokenInterceptor {
@@ -301,7 +303,9 @@ impl TokenInterceptor {
                     .map_err(|_| "OPENAI_API_KEY not set. Export it or pass via environment.")?;
                 // Basic format validation (#9): OpenAI keys start with "sk-"
                 if !key.starts_with("sk-") {
-                    eprintln!("[warn] OPENAI_API_KEY does not start with 'sk-' — verify it is correct");
+                    eprintln!(
+                        "[warn] OPENAI_API_KEY does not start with 'sk-' — verify it is correct"
+                    );
                 }
                 key
             }
@@ -525,9 +529,15 @@ impl TokenInterceptor {
     async fn stream_openai(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut messages = Vec::new();
         if let Some(sys) = &self.system_prompt {
-            messages.push(OpenAIChatMessage { role: "system".to_string(), content: sys.clone() });
+            messages.push(OpenAIChatMessage {
+                role: "system".to_string(),
+                content: sys.clone(),
+            });
         }
-        messages.push(OpenAIChatMessage { role: "user".to_string(), content: prompt.to_string() });
+        messages.push(OpenAIChatMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        });
         let request = OpenAIChatRequest {
             model: self.model.clone(),
             messages,
@@ -546,7 +556,8 @@ impl TokenInterceptor {
             .build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
-        let response = execute_with_retry(&self.client, req, self.max_retries).await
+        let response = execute_with_retry(&self.client, req, self.max_retries)
+            .await
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
@@ -597,7 +608,10 @@ impl TokenInterceptor {
                                     .unwrap_or((None, vec![]));
                                 self.process_content_logprob(content, log_prob, top_alts);
                                 if self.pending_delay_ms > 0 {
-                                    tokio::time::sleep(std::time::Duration::from_millis(self.pending_delay_ms)).await;
+                                    tokio::time::sleep(std::time::Duration::from_millis(
+                                        self.pending_delay_ms,
+                                    ))
+                                    .await;
                                     self.pending_delay_ms = 0;
                                 }
                             }
@@ -619,7 +633,9 @@ impl TokenInterceptor {
         // confidence/perplexity fields will be None for every token in this
         // stream. Cross-provider perplexity comparisons require normalisation
         // because the models operate over different vocabulary sizes (#20).
-        tracing::debug!("Anthropic stream: logprobs unavailable; confidence/perplexity will be None");
+        tracing::debug!(
+            "Anthropic stream: logprobs unavailable; confidence/perplexity will be None"
+        );
         if self.web_tx.is_none() {
             eprintln!("[info] Anthropic does not provide logprobs — confidence metrics will be unavailable for this run");
         }
@@ -646,7 +662,8 @@ impl TokenInterceptor {
             .build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
-        let response = execute_with_retry(&self.client, req, self.max_retries).await
+        let response = execute_with_retry(&self.client, req, self.max_retries)
+            .await
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
@@ -682,7 +699,9 @@ impl TokenInterceptor {
                                     // Estimate confidence from inter-token latency for Anthropic
                                     // Fast tokens (< 50ms) → high confidence proxy; slow tokens → lower
                                     let now = std::time::Instant::now();
-                                    let timing_confidence = if let Some(last) = self.last_token_instant {
+                                    let timing_confidence = if let Some(last) =
+                                        self.last_token_instant
+                                    {
                                         let delta_ms = now.duration_since(last).as_millis() as f64;
                                         // Normalize: tokens arriving in < 50ms get confidence ~0.9, > 500ms → ~0.1
                                         let conf = (1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1;
@@ -692,10 +711,14 @@ impl TokenInterceptor {
                                     };
                                     self.last_token_instant = Some(now);
                                     // Convert timing_confidence to a log_prob approximation if available
-                                    let timing_logprob = timing_confidence.map(|c| c.ln().max(-10.0));
+                                    let timing_logprob =
+                                        timing_confidence.map(|c| c.ln().max(-10.0));
                                     self.process_content_logprob(text, timing_logprob, vec![]);
                                     if self.pending_delay_ms > 0 {
-                                        tokio::time::sleep(std::time::Duration::from_millis(self.pending_delay_ms)).await;
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            self.pending_delay_ms,
+                                        ))
+                                        .await;
                                         self.pending_delay_ms = 0;
                                     }
                                 }
@@ -741,7 +764,9 @@ impl TokenInterceptor {
         ];
 
         // Vary fixture starting position based on prompt content for more realistic tests
-        let prompt_hash: usize = prompt.bytes().fold(0usize, |acc, b| acc.wrapping_add(b as usize));
+        let prompt_hash: usize = prompt
+            .bytes()
+            .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
         let offset = prompt_hash % fixture.len();
 
         for idx in 0..fixture.len() {
@@ -781,8 +806,14 @@ impl TokenInterceptor {
                     confidence: Some(confidence),
                     perplexity: Some(perplexity),
                     alternatives: vec![
-                        TokenAlternative { token: "a".to_string(), probability: 0.15 },
-                        TokenAlternative { token: "the".to_string(), probability: 0.10 },
+                        TokenAlternative {
+                            token: "a".to_string(),
+                            probability: 0.15,
+                        },
+                        TokenAlternative {
+                            token: "the".to_string(),
+                            probability: 0.10,
+                        },
                     ],
                     is_error: false,
                 };
@@ -875,7 +906,6 @@ impl TokenInterceptor {
         self.process_content_logprob(content, log_prob, top_alts);
     }
 
-
     /// Process a content chunk, optionally attaching logprob-derived fields to
     /// the first non-whitespace token produced.
     ///
@@ -899,8 +929,7 @@ impl TokenInterceptor {
                 // floor((i+1)*rate) > floor(i*rate), giving a uniform
                 // distribution at any rate without probabilistic sampling.
                 let rate = self.rate;
-                let should_transform =
-                    ((i + 1) as f64 * rate).floor() > (i as f64 * rate).floor();
+                let should_transform = ((i + 1) as f64 * rate).floor() > (i as f64 * rate).floor();
 
                 // Logprob data only goes on the first real token of each API chunk.
                 // Compute before the transform so confidence can drive importance.
@@ -915,24 +944,29 @@ impl TokenInterceptor {
 
                 // Confidence gating: if min_confidence is set and token has API confidence,
                 // only transform tokens whose confidence is BELOW the threshold
-                let should_transform = if let (Some(min_conf), Some(conf)) = (self.min_confidence, token_confidence) {
-                    conf as f64 <= min_conf
-                } else {
-                    should_transform
-                };
+                let should_transform =
+                    if let (Some(min_conf), Some(conf)) = (self.min_confidence, token_confidence) {
+                        conf as f64 <= min_conf
+                    } else {
+                        should_transform
+                    };
 
                 // Use real API confidence as importance when available; fall back
                 // to the heuristic scorer for tokens without logprob data.
-                let importance = token_confidence
-                    .map(|c| c as f64)
-                    .unwrap_or_else(|| transforms::calculate_token_importance_rng(&token, i, &mut self.rng));
+                let importance = token_confidence.map(|c| c as f64).unwrap_or_else(|| {
+                    transforms::calculate_token_importance_rng(&token, i, &mut self.rng)
+                });
 
                 let (display_text, chaos_label) = if should_transform {
                     self.transformed_count += 1;
                     let (text, label) = self.transform.apply_with_label_rng(&token, &mut self.rng);
                     let cl = if matches!(self.transform, Transform::Chaos) || text.is_empty() {
                         // Chaos: use sub-transform label; Delete: mark explicitly as "deleted"
-                        Some(if text.is_empty() { "deleted".to_string() } else { label.to_string() })
+                        Some(if text.is_empty() {
+                            "deleted".to_string()
+                        } else {
+                            label.to_string()
+                        })
                     } else {
                         None
                     };
@@ -1156,8 +1190,10 @@ pub async fn run_research_headless(
     let total = all_tokens.len();
     let total_transformed = all_tokens.iter().filter(|t| t.transformed).count();
 
-    let unique: std::collections::HashSet<String> =
-        all_tokens.iter().map(|t| t.original.to_lowercase()).collect();
+    let unique: std::collections::HashSet<String> = all_tokens
+        .iter()
+        .map(|t| t.original.to_lowercase())
+        .collect();
     let vocab_diversity = if total > 0 {
         unique.len() as f64 / total as f64
     } else {
@@ -1165,19 +1201,29 @@ pub async fn run_research_headless(
     };
 
     let mean_token_length = if total > 0 {
-        all_tokens.iter().map(|t| t.original.len() as f64).sum::<f64>() / total as f64
+        all_tokens
+            .iter()
+            .map(|t| t.original.len() as f64)
+            .sum::<f64>()
+            / total as f64
     } else {
         0.0
     };
 
-    let perp_tokens: Vec<f64> = all_tokens.iter().filter_map(|t| t.perplexity.map(|p| p as f64)).collect();
+    let perp_tokens: Vec<f64> = all_tokens
+        .iter()
+        .filter_map(|t| t.perplexity.map(|p| p as f64))
+        .collect();
     let mean_perplexity = if perp_tokens.is_empty() {
         None
     } else {
         Some(perp_tokens.iter().sum::<f64>() / perp_tokens.len() as f64)
     };
 
-    let conf_tokens: Vec<f64> = all_tokens.iter().filter_map(|t| t.confidence.map(|c| c as f64)).collect();
+    let conf_tokens: Vec<f64> = all_tokens
+        .iter()
+        .filter_map(|t| t.confidence.map(|c| c as f64))
+        .collect();
     let mean_confidence = if conf_tokens.is_empty() {
         None
     } else {
@@ -1185,9 +1231,14 @@ pub async fn run_research_headless(
     };
 
     // Top 10 highest-perplexity original tokens
-    let mut by_perp: Vec<&TokenEvent> = all_tokens.iter().filter(|t| t.perplexity.is_some()).collect();
+    let mut by_perp: Vec<&TokenEvent> = all_tokens
+        .iter()
+        .filter(|t| t.perplexity.is_some())
+        .collect();
     by_perp.sort_by(|a, b| {
-        b.perplexity.partial_cmp(&a.perplexity).unwrap_or(std::cmp::Ordering::Equal)
+        b.perplexity
+            .partial_cmp(&a.perplexity)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let top_perplexity_tokens: Vec<String> = by_perp
         .iter()
@@ -1956,7 +2007,10 @@ mod tests {
 
     #[test]
     fn test_token_alternative_serializes() {
-        let alt = TokenAlternative { token: "hello".to_string(), probability: 0.75 };
+        let alt = TokenAlternative {
+            token: "hello".to_string(),
+            probability: 0.75,
+        };
         let json = serde_json::to_string(&alt).expect("serialize");
         assert!(json.contains("\"token\":\"hello\""));
         assert!(json.contains("\"probability\":0.75") || json.contains("probability"));
@@ -1964,7 +2018,10 @@ mod tests {
 
     #[test]
     fn test_token_alternative_clone() {
-        let alt = TokenAlternative { token: "world".to_string(), probability: 0.5 };
+        let alt = TokenAlternative {
+            token: "world".to_string(),
+            probability: 0.5,
+        };
         let alt2 = alt.clone();
         assert_eq!(alt2.token, alt.token);
     }
@@ -2002,7 +2059,11 @@ mod tests {
         i.process_content_logprob("word", Some(-1.0_f32), vec![]);
         let ev = rx.try_recv().expect("event");
         let perp = ev.perplexity.expect("perplexity present");
-        assert!((perp - std::f32::consts::E).abs() < 0.01, "expected ~e, got {}", perp);
+        assert!(
+            (perp - std::f32::consts::E).abs() < 0.01,
+            "expected ~e, got {}",
+            perp
+        );
     }
 
     #[test]
@@ -2011,8 +2072,14 @@ mod tests {
         let mut i = make_test_interceptor();
         i.web_tx = Some(tx);
         let alts = vec![
-            TokenAlternative { token: "hi".to_string(), probability: 0.9 },
-            TokenAlternative { token: "hey".to_string(), probability: 0.05 },
+            TokenAlternative {
+                token: "hi".to_string(),
+                probability: 0.9,
+            },
+            TokenAlternative {
+                token: "hey".to_string(),
+                probability: 0.05,
+            },
         ];
         i.process_content_logprob("hello world", Some(-0.1_f32), alts);
         let first = rx.try_recv().expect("first token");
@@ -2046,7 +2113,10 @@ mod tests {
             provider: None,
             confidence: Some(0.92),
             perplexity: Some(1.08),
-            alternatives: vec![TokenAlternative { token: "hey".to_string(), probability: 0.05 }],
+            alternatives: vec![TokenAlternative {
+                token: "hey".to_string(),
+                probability: 0.05,
+            }],
             is_error: false,
         };
         let json = serde_json::to_string(&event).expect("serialize");
@@ -2109,10 +2179,18 @@ mod tests {
         i.web_tx = Some(tx);
         i.process_content_logprob("the quick brown fox", Some(-0.5_f32), vec![]);
         let mut events: Vec<TokenEvent> = Vec::new();
-        while let Ok(ev) = rx.try_recv() { events.push(ev); }
+        while let Ok(ev) = rx.try_recv() {
+            events.push(ev);
+        }
         assert!(events.len() >= 2);
-        assert!(events[0].confidence.is_some(), "first token should have confidence");
-        assert!(events[1].confidence.is_none(), "subsequent tokens should not");
+        assert!(
+            events[0].confidence.is_some(),
+            "first token should have confidence"
+        );
+        assert!(
+            events[1].confidence.is_none(),
+            "subsequent tokens should not"
+        );
     }
 }
 
@@ -2120,7 +2198,11 @@ mod tests {
 mod research_tests {
     use super::*;
 
-    fn make_session(tokens: usize, confidence: Option<f32>, perplexity: Option<f32>) -> ResearchSession {
+    fn make_session(
+        tokens: usize,
+        confidence: Option<f32>,
+        perplexity: Option<f32>,
+    ) -> ResearchSession {
         ResearchSession {
             prompt: "test prompt".to_string(),
             provider: "openai".to_string(),
@@ -2226,7 +2308,10 @@ mod research_tests {
 
     #[test]
     fn test_research_session_runs_field_roundtrips() {
-        let s = ResearchSession { runs: 42, ..make_session(10, None, None) };
+        let s = ResearchSession {
+            runs: 42,
+            ..make_session(10, None, None)
+        };
         let json = serde_json::to_string(&s).expect("serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
         assert_eq!(v["runs"], 42);
@@ -2321,7 +2406,10 @@ mod research_tests {
 
         assert_eq!(events1.len(), events2.len());
         for (e1, e2) in events1.iter().zip(events2.iter()) {
-            assert_eq!(e1.text, e2.text, "seeded runs should produce identical output");
+            assert_eq!(
+                e1.text, e2.text,
+                "seeded runs should produce identical output"
+            );
         }
     }
 
@@ -2460,4 +2548,3 @@ mod wasm_support {
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 pub use wasm_support::wasm_run;
-

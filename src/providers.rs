@@ -157,7 +157,10 @@ impl std::str::FromStr for Provider {
             "openai" => Ok(Provider::Openai),
             "anthropic" => Ok(Provider::Anthropic),
             "mock" => Ok(Provider::Mock),
-            other => Err(format!("unknown provider: '{}' (expected openai, anthropic, or mock)", other)),
+            other => Err(format!(
+                "unknown provider: '{}' (expected openai, anthropic, or mock)",
+                other
+            )),
         }
     }
 }
@@ -533,7 +536,10 @@ mod tests {
     fn test_openai_chat_request_has_logprobs_fields() {
         let req = OpenAIChatRequest {
             model: "gpt-4".to_string(),
-            messages: vec![OpenAIChatMessage { role: "user".to_string(), content: "hi".to_string() }],
+            messages: vec![OpenAIChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
             stream: true,
             temperature: 0.7,
             logprobs: true,
@@ -590,7 +596,10 @@ mod tests {
     fn test_anthropic_request_with_system_serializes() {
         let req = AnthropicRequest {
             model: "claude-sonnet-4-20250514".to_string(),
-            messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
             max_tokens: 1024,
             stream: true,
             temperature: 0.7,
@@ -604,7 +613,10 @@ mod tests {
     fn test_anthropic_request_without_system_omits_field() {
         let req = AnthropicRequest {
             model: "claude-sonnet-4-20250514".to_string(),
-            messages: vec![AnthropicMessage { role: "user".to_string(), content: "hi".to_string() }],
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
             max_tokens: 1024,
             stream: true,
             temperature: 0.7,
@@ -616,7 +628,10 @@ mod tests {
 
     #[test]
     fn test_openai_top_logprob_clone() {
-        let t = OpenAITopLogprob { token: "foo".to_string(), logprob: -1.0 };
+        let t = OpenAITopLogprob {
+            token: "foo".to_string(),
+            logprob: -1.0,
+        };
         let t2 = t.clone();
         assert_eq!(t2.token, t.token);
         assert!((t2.logprob - t.logprob).abs() < 1e-6);
@@ -631,7 +646,10 @@ mod tests {
 
     #[test]
     fn test_openai_top_logprob_serializes() {
-        let t = OpenAITopLogprob { token: "bar".to_string(), logprob: -2.0 };
+        let t = OpenAITopLogprob {
+            token: "bar".to_string(),
+            logprob: -2.0,
+        };
         let json = serde_json::to_string(&t).expect("serialize");
         assert!(json.contains("\"token\":\"bar\""));
         assert!(json.contains("\"logprob\":-2.0"));

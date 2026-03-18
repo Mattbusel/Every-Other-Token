@@ -37,15 +37,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::interval;
 
-use crate::self_tune::{
-    anomaly::{AnomalyDetector, DetectorConfig, Severity},
-    controller::{Controller, ControllerConfig},
-    telemetry_bus::{TelemetryBus, TelemetrySnapshot},
-};
 #[cfg(feature = "self-modify")]
 use crate::self_modify::{
     memory::{AgentMemory, MemoryConfig, ModificationRecord, Outcome},
     task_gen::{AnomalySeverity, DegradationSignal, TaskGenConfig, TaskGenerator},
+};
+use crate::self_tune::{
+    anomaly::{AnomalyDetector, DetectorConfig, Severity},
+    controller::{Controller, ControllerConfig},
+    telemetry_bus::{TelemetryBus, TelemetrySnapshot},
 };
 
 // ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ impl SelfImprovementOrchestrator {
         #[cfg(feature = "self-modify")]
         let deployment_pipeline = config.gate_config.as_ref().map(|gc| {
             crate::self_modify::deployment::StagedDeploymentPipeline::new(
-                crate::self_modify::gate::ValidationGate::new(gc.clone())
+                crate::self_modify::gate::ValidationGate::new(gc.clone()),
             )
         });
 
@@ -187,7 +187,10 @@ impl SelfImprovementOrchestrator {
 
     /// Register a deployment target.
     #[cfg(feature = "self-modify")]
-    pub fn add_deployment_target(&mut self, target: Box<dyn crate::self_modify::deployment::DeploymentTarget>) {
+    pub fn add_deployment_target(
+        &mut self,
+        target: Box<dyn crate::self_modify::deployment::DeploymentTarget>,
+    ) {
         if let Some(ref mut pipeline) = self.deployment_pipeline {
             pipeline.add_target(target);
         }
@@ -241,8 +244,7 @@ impl SelfImprovementOrchestrator {
             let passes_threshold = match self.config.task_gen_severity_threshold {
                 Severity::Info => true,
                 Severity::Warn => {
-                    anomaly.severity == Severity::Warn
-                        || anomaly.severity == Severity::Critical
+                    anomaly.severity == Severity::Warn || anomaly.severity == Severity::Critical
                 }
                 Severity::Critical => anomaly.severity == Severity::Critical,
             };
@@ -273,7 +275,10 @@ impl SelfImprovementOrchestrator {
             };
 
             let now_ms = snap.captured_at.elapsed().as_millis() as u64;
-            if let Some(task) = self.task_gen.generate_at(signal, std::time::Instant::now(), now_ms) {
+            if let Some(task) = self
+                .task_gen
+                .generate_at(signal, std::time::Instant::now(), now_ms)
+            {
                 new_tasks.push(task.name.clone());
 
                 // Record in agent memory as a pending modification
@@ -302,33 +307,40 @@ impl SelfImprovementOrchestrator {
             if !new_tasks.is_empty() {
                 use crate::self_modify::deployment::{CargoCheckRunner, ParamChange};
                 let runner = CargoCheckRunner::new(".");
-                let changes: Vec<ParamChange> = new_tasks.iter().map(|name| ParamChange {
-                    param_name: name.clone(),
-                    old_value: 0.0,
-                    new_value: 1.0,
-                }).collect();
-                let outcome = pipeline.deploy(
-                    format!("auto-{}", new_tasks.len()),
-                    &runner,
-                    &changes,
-                );
+                let changes: Vec<ParamChange> = new_tasks
+                    .iter()
+                    .map(|name| ParamChange {
+                        param_name: name.clone(),
+                        old_value: 0.0,
+                        new_value: 1.0,
+                    })
+                    .collect();
+                let outcome =
+                    pipeline.deploy(format!("auto-{}", new_tasks.len()), &runner, &changes);
                 // Log deployment outcome for observability.
                 match &outcome {
-                    crate::self_modify::deployment::DeploymentOutcome::Deployed { changes_applied, .. } => {
+                    crate::self_modify::deployment::DeploymentOutcome::Deployed {
+                        changes_applied,
+                        ..
+                    } => {
                         tracing::info!(
                             target: "self_tune::orchestrator",
                             changes = changes_applied,
                             "Auto-deployment succeeded"
                         );
                     }
-                    crate::self_modify::deployment::DeploymentOutcome::Rejected { failed_checks } => {
+                    crate::self_modify::deployment::DeploymentOutcome::Rejected {
+                        failed_checks,
+                    } => {
                         tracing::warn!(
                             target: "self_tune::orchestrator",
                             checks = ?failed_checks,
                             "Auto-deployment rejected by validation gate"
                         );
                     }
-                    crate::self_modify::deployment::DeploymentOutcome::AwaitingReview { change_id } => {
+                    crate::self_modify::deployment::DeploymentOutcome::AwaitingReview {
+                        change_id,
+                    } => {
                         tracing::info!(
                             target: "self_tune::orchestrator",
                             change_id = %change_id,
@@ -399,7 +411,6 @@ mod tests {
         s.avg_latency_us = (p95_us / 2) as f64;
         s
     }
-
 
     // -------------------------------------------------------------------
     // Construction
@@ -474,7 +485,10 @@ mod tests {
             orc.process_snapshot(snap_with_latency(500_000)); // 500ms — far from mean
         }
         let s = orc.status_snapshot();
-        assert!(s.anomalies_detected > 0, "spike should trigger anomaly detection");
+        assert!(
+            s.anomalies_detected > 0,
+            "spike should trigger anomaly detection"
+        );
     }
 
     #[test]
@@ -493,7 +507,10 @@ mod tests {
     #[test]
     fn test_process_snapshot_auto_adjust_disabled_no_controller_effect() {
         let mut orc = SelfImprovementOrchestrator::new(
-            OrchestratorConfig { auto_adjust_params: false, ..OrchestratorConfig::default() },
+            OrchestratorConfig {
+                auto_adjust_params: false,
+                ..OrchestratorConfig::default()
+            },
             make_bus(),
         );
         for _ in 0..5 {
@@ -551,7 +568,10 @@ mod tests {
     #[test]
     fn test_deployment_pipeline_absent_when_gate_config_none() {
         let orc = SelfImprovementOrchestrator::new(
-            OrchestratorConfig { gate_config: None, ..OrchestratorConfig::default() },
+            OrchestratorConfig {
+                gate_config: None,
+                ..OrchestratorConfig::default()
+            },
             make_bus(),
         );
         assert!(orc.deployment_pipeline.is_none());
@@ -562,7 +582,10 @@ mod tests {
     fn test_add_deployment_target_noop_when_pipeline_absent() {
         use crate::self_modify::deployment::InMemoryParamTarget;
         let mut orc = SelfImprovementOrchestrator::new(
-            OrchestratorConfig { gate_config: None, ..OrchestratorConfig::default() },
+            OrchestratorConfig {
+                gate_config: None,
+                ..OrchestratorConfig::default()
+            },
             make_bus(),
         );
         orc.add_deployment_target(Box::new(InMemoryParamTarget::new("t")));
@@ -605,7 +628,10 @@ mod tests {
                 .modifications()
                 .filter(|r| r.outcome == crate::self_modify::memory::Outcome::Pending)
                 .collect();
-            assert!(!pending.is_empty(), "generated tasks should be in memory as Pending");
+            assert!(
+                !pending.is_empty(),
+                "generated tasks should be in memory as Pending"
+            );
         }
     }
 
