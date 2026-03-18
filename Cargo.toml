@@ -2,6 +2,7 @@
 name = "every-other-token"
 version = "4.0.0"
 edition = "2021"
+rust-version = "1.75"
 authors = ["AI Research Tools"]
 description = "A real-time LLM stream interceptor for token-level interaction research"
 license = "MIT"
@@ -52,7 +53,7 @@ redis-backing = ["self-modify", "dep:redis"]
 
 [dependencies.redis]
 # redis: synchronous client for write-through persistence of agent memory and snapshots
-version = "0.25"
+version = "0.26"
 optional = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

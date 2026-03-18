@@ -169,6 +169,14 @@ pub struct Args {
     /// Default: 5.
     #[arg(long, default_value = "5")]
     pub collapse_window: usize,
+
+    /// Base URL for the MCP orchestrator pipeline (default: http://localhost:3000).
+    #[arg(long, default_value = "http://localhost:3000")]
+    pub orchestrator_url: String,
+
+    /// Maximum API retry attempts on 429/5xx errors (default: 3).
+    #[arg(long, default_value = "3")]
+    pub max_retries: u32,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -242,8 +250,14 @@ pub fn parse_rate_range(s: &str) -> Option<(f64, f64)> {
 }
 
 /// Apply template substitution: replace "{input}" with the prompt.
+///
+/// The prompt is inserted verbatim — any literal `{input}` occurrences
+/// already inside the prompt are not re-expanded because we use a single
+/// non-recursive `replace` on the *template* string only.
 pub fn apply_template(template: &str, prompt: &str) -> String {
-    template.replace("{input}", prompt)
+    // Split on the literal placeholder and rejoin with the prompt so that
+    // braces inside `prompt` itself are never interpreted as placeholders.
+    template.split("{input}").collect::<Vec<_>>().join(prompt)
 }
 
 #[cfg(test)]
@@ -570,5 +584,52 @@ mod tests {
     #[test]
     fn test_known_anthropic_models_contain_sonnet() {
         assert!(KNOWN_ANTHROPIC_MODELS.contains(&"claude-sonnet-4-6"));
+    }
+
+    // -- Template injection safety tests (#6) --
+
+    #[test]
+    fn test_apply_template_prompt_with_placeholder_not_reexpanded() {
+        // Prompt containing "{input}" must NOT be re-expanded
+        let result = apply_template("Q: {input}", "what is {input}?");
+        assert_eq!(result, "Q: what is {input}?");
+    }
+
+    #[test]
+    fn test_apply_template_multiple_placeholders() {
+        let result = apply_template("{input} and {input}", "hello");
+        assert_eq!(result, "hello and hello");
+    }
+
+    // -- New CLI flags tests (#12, #13) --
+
+    #[test]
+    fn test_args_orchestrator_url_default() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert_eq!(args.orchestrator_url, "http://localhost:3000");
+    }
+
+    #[test]
+    fn test_args_orchestrator_url_custom() {
+        let args = Args::parse_from(["eot", "prompt", "--orchestrator-url", "http://10.0.0.1:9000"]);
+        assert_eq!(args.orchestrator_url, "http://10.0.0.1:9000");
+    }
+
+    #[test]
+    fn test_args_max_retries_default() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert_eq!(args.max_retries, 3);
+    }
+
+    #[test]
+    fn test_args_max_retries_custom() {
+        let args = Args::parse_from(["eot", "prompt", "--max-retries", "5"]);
+        assert_eq!(args.max_retries, 5);
+    }
+
+    #[test]
+    fn test_args_max_retries_zero() {
+        let args = Args::parse_from(["eot", "prompt", "--max-retries", "0"]);
+        assert_eq!(args.max_retries, 0);
     }
 }

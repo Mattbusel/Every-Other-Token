@@ -18,6 +18,11 @@ pub struct ResearchRun {
     /// that were transformed with that label (useful for Chaos mode sub-transform analysis).
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub per_transform_perplexity: std::collections::HashMap<String, f64>,
+    /// Token throughput in tokens per second for this run (None if elapsed was zero).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_per_second: Option<f64>,
+    /// Wall-clock duration of this run in milliseconds.
+    pub elapsed_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,7 +148,9 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             interceptor = interceptor.with_seed(seed);
         }
 
+        let run_start = std::time::Instant::now();
         interceptor.intercept_stream(&args.prompt).await?;
+        let elapsed_ms = run_start.elapsed().as_millis() as u64;
         drop(interceptor);
 
         let mut events = Vec::new();
@@ -221,6 +228,11 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             exporter.record_run(&events);
         }
 
+        let tokens_per_second = if elapsed_ms > 0 {
+            Some(token_count as f64 / (elapsed_ms as f64 / 1000.0))
+        } else {
+            None
+        };
         runs.push(ResearchRun {
             run_index: i,
             token_count,
@@ -230,6 +242,8 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             vocab_diversity,
             collapse_positions,
             per_transform_perplexity,
+            tokens_per_second,
+            elapsed_ms,
         });
     }
 
@@ -546,7 +560,9 @@ async fn run_research_for_prompt(
         if let Some(seed) = args.seed {
             interceptor = interceptor.with_seed(seed);
         }
+        let run_start = std::time::Instant::now();
         interceptor.intercept_stream(prompt).await?;
+        let elapsed_ms = run_start.elapsed().as_millis() as u64;
         drop(interceptor);
 
         let mut events = Vec::new();
@@ -578,6 +594,12 @@ async fn run_research_for_prompt(
             .map(|(k, v)| (k, v.iter().sum::<f64>() / v.len() as f64))
             .collect();
 
+        let tokens_per_second = if elapsed_ms > 0 {
+            Some(token_count as f64 / (elapsed_ms as f64 / 1000.0))
+        } else {
+            None
+        };
+
         runs.push(ResearchRun {
             run_index: i,
             token_count,
@@ -587,6 +609,8 @@ async fn run_research_for_prompt(
             vocab_diversity,
             collapse_positions,
             per_transform_perplexity,
+            elapsed_ms,
+            tokens_per_second,
         });
     }
 
@@ -715,6 +739,8 @@ mod tests {
                 vocab_diversity: vd,
                 collapse_positions: vec![],
                 per_transform_perplexity: std::collections::HashMap::new(),
+                elapsed_ms: 0,
+                tokens_per_second: None,
             })
             .collect()
     }
@@ -810,6 +836,8 @@ mod tests {
             vocab_diversity: 0.7,
             collapse_positions: vec![],
             per_transform_perplexity: std::collections::HashMap::new(),
+            elapsed_ms: 0,
+            tokens_per_second: None,
         };
         let json = serde_json::to_string(&run).expect("serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("parse");

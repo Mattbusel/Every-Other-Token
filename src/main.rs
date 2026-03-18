@@ -186,6 +186,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     interceptor.top_logprobs = args.top_logprobs;
     interceptor.json_stream = args.json_stream;
+    interceptor.orchestrator_url = args.orchestrator_url.clone();
+    interceptor.max_retries = args.max_retries;
 
     tokio::select! {
         result = interceptor.intercept_stream(&args.prompt) => {
