@@ -75,10 +75,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.ref_name }}"
+          ARTIFACTS=$(find dist -type f | tr '\n' ' ')
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes "See [CHANGELOG.md](CHANGELOG.md) for details." \
-            dist/**/*
+            $ARTIFACTS
 
   publish-crates-io:
     name: Publish to crates.io
