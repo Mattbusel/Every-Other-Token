@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EOT Research Output",
+  "type": "object",
+  "required": ["schema_version", "runs"],
+  "properties": {
+    "schema_version": { "type": "string", "description": "Semantic version of this schema" },
+    "prompt": { "type": "string" },
+    "transform": { "type": "string" },
+    "provider": { "type": "string", "enum": ["openai", "anthropic", "mock"] },
+    "model": { "type": "string" },
+    "rate": { "type": "number", "minimum": 0, "maximum": 1 },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "run_index": { "type": "integer" },
+          "tokens": { "type": "array", "items": { "$ref": "#/definitions/TokenEvent" } },
+          "token_count": { "type": "integer" },
+          "transform_count": { "type": "integer" },
+          "avg_confidence": { "type": ["number", "null"] },
+          "avg_perplexity": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "properties": {
+        "mean_token_count": { "type": "number" },
+        "std_dev_token_count": { "type": "number" },
+        "mean_transform_rate": { "type": "number" },
+        "ci_95_low": { "type": "number" },
+        "ci_95_high": { "type": "number" }
+      }
+    }
+  },
+  "definitions": {
+    "TokenEvent": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "original": { "type": "string" },
+        "index": { "type": "integer" },
+        "transformed": { "type": "boolean" },
+        "importance": { "type": "number" },
+        "confidence": { "type": ["number", "null"] },
+        "perplexity": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

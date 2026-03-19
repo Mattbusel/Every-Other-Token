@@ -446,6 +446,7 @@ impl TokenInterceptor {
 
     /// Set the intercept rate (0.0–1.0).  Clamped to [0.0, 1.0].
     pub fn with_rate(mut self, rate: f64) -> Self {
+        debug_assert!(rate.is_finite(), "with_rate: rate must be finite, got {}", rate);
         self.rate = rate.clamp(0.0, 1.0);
         self
     }

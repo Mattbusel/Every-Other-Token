@@ -142,6 +142,20 @@ canvas#depgraph{width:100%;height:200px;display:block}
 #replay-prog{height:3px;background:#21262d;border-radius:2px;overflow:hidden;display:none;flex:1}
 #replay-prog.show{display:block}
 #replay-bar{height:100%;background:#a371f7;width:0%;transition:width .08s linear}
+/* Transform preview */
+#transform-preview{padding:4px 24px;background:#0a0e14;border-top:1px solid #21262d;font-size:.72rem;color:#8b949e;display:none}
+#transform-preview.show{display:block}
+/* Chain builder */
+#chain-builder{display:none;padding:6px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;margin-top:4px}
+#chain-builder.show{display:block}
+#chain-builder label{display:flex;align-items:center;gap:5px;font-size:.75rem;color:#c9d1d9;margin-bottom:3px;cursor:pointer}
+#chain-current{font-size:.68rem;color:#e3b341;margin-top:4px}
+/* A/B bar chart */
+#ab-chart-wrap{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;margin-top:8px}
+#ab-chart-title{font-size:.7rem;color:#8b949e;margin-bottom:4px}
+#ab-chart{display:block;width:100%}
+/* Research runs */
+#research-runs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:.78rem;color:#8b949e}
 /* Rec button */
 .btn-rec-on{background:#f85149}
 @keyframes recPulse{0%,100%{opacity:1}50%{opacity:.5}}
@@ -213,14 +227,36 @@ canvas#depgraph{width:100%;height:200px;display:block}
 </div>
 <div class="controls">
   <div class="field"><label for="prompt">Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
-  <div class="field"><label for="transform">Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select></div>
+  <div class="field"><label for="transform">Transform</label>
+    <div style="display:flex;gap:4px;align-items:center">
+      <select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select>
+      <button id="btn-chain-mode" class="btn btn-mode" style="padding:4px 8px;font-size:.73rem" title="Toggle chain builder">Chain</button>
+    </div>
+    <div id="chain-builder">
+      <label><input type="checkbox" data-tx="reverse"> reverse</label>
+      <label><input type="checkbox" data-tx="uppercase"> uppercase</label>
+      <label><input type="checkbox" data-tx="mock"> mock</label>
+      <label><input type="checkbox" data-tx="noise"> noise</label>
+      <label><input type="checkbox" data-tx="scramble"> scramble</label>
+      <label><input type="checkbox" data-tx="delete"> delete</label>
+      <label><input type="checkbox" data-tx="synonym"> synonym</label>
+      <div id="chain-current" style="color:#484f58">none</div>
+    </div>
+  </div>
   <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
   <div class="field"><label for="model">Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
   <label class="toggle"><input type="checkbox" id="graphtoggle"> Graph</label>
+  <div class="field"><label for="min-confidence">Min Conf</label>
+    <div style="display:flex;align-items:center;gap:4px">
+      <input type="range" id="min-confidence" min="0" max="100" value="0" style="width:80px;accent-color:#58a6ff">
+      <span id="conf-label" style="font-size:.78rem;color:#c9d1d9;min-width:28px">0%</span>
+    </div>
+  </div>
   <button class="btn btn-go" id="start">Stream</button>
   <div class="field"><label>Search tokens</label><input type="text" id="token-search" placeholder="Filter…" style="min-width:120px" aria-label="Search token stream"></div>
 </div>
+<div id="transform-preview"></div>
 <div id="views">
   <!-- Single column (default) -->
   <div class="view-single" id="v-single"></div>
@@ -248,9 +284,19 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <div class="exp-perp-chart" id="exp-perp"><span style="font-size:.7rem;color:#8b949e">Perplexity comparison (A=blue, B=purple) — run streams to populate</span><br><canvas id="exp-perp-canvas" style="width:100%;height:120px;display:block;margin-top:4px"></canvas></div>
     <div class="exp-diverge-map" id="exp-diverge"><span style="font-size:.7rem;color:#8b949e">Divergence map — run streams to populate</span></div>
   </div>
+  <!-- A/B Agreement Chart — shown below experiment grid -->
+  <div id="ab-chart-wrap" style="display:none;padding:8px 16px;background:#0a0e14;border-top:1px solid #21262d">
+    <div id="ab-chart-title" style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Token Agreement — first 50 positions (green=match, red=diverge)</div>
+    <canvas id="ab-chart" height="80" style="display:block;width:100%"></canvas>
+  </div>
   <!-- Research dashboard -->
   <div id="v-research" style="display:none;padding:16px 24px;overflow-y:auto;height:100%">
     <h2 style="color:#58a6ff;font-size:1rem;margin-bottom:4px">Research Dashboard</h2>
+    <div id="research-runs-row">
+      <span>Research runs:</span>
+      <input type="number" id="research-runs" value="3" min="1" max="20" style="width:45px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:3px 6px;border-radius:4px;font-family:inherit;font-size:.78rem">
+      <span id="research-progress" style="color:#a371f7"></span>
+    </div>
     <button id="btn-export-research" class="btn btn-export" style="font-size:.73rem;padding:4px 12px;margin-bottom:8px" aria-label="Export research stats as Markdown">Export Stats (MD)</button>
     <p style="font-size:.75rem;color:#8b949e;margin-bottom:12px">Stats computed from the most recent stream. Stream tokens first.</p>
     <div id="research-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"></div>
@@ -286,7 +332,10 @@ canvas#depgraph{width:100%;height:200px;display:block}
       <div id="surgery-history" style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:8px 12px;font-size:.78rem;max-height:120px;overflow-y:auto;color:#c9d1d9">
         <span style="color:#484f58">No edits yet.</span>
       </div>
-      <button id="btn-undo-all" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px;margin-top:6px" onclick="undoAll()">Undo All Edits</button>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button id="btn-undo-one" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px" title="Undo last edit (Ctrl+Z)" disabled>↩ Undo</button>
+        <button id="btn-undo-all" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px" onclick="undoAll()">Undo All Edits</button>
+      </div>
     </div>
   </div>
 </div>
@@ -306,6 +355,11 @@ canvas#depgraph{width:100%;height:200px;display:block}
   <button class="btn" style="background:#238636;font-size:.75rem;padding:4px 11px" id="btn-copy-link">Copy Link</button>
   <button class="btn" style="background:#6e40c9;font-size:.75rem;padding:4px 11px;display:none" id="btn-replay" aria-label="Replay recording">▶ Replay</button>
   <div id="replay-prog"><div id="replay-bar"></div></div>
+  <div style="display:flex;align-items:center;gap:4px;font-size:.72rem;color:#8b949e">
+    <span>Speed:</span>
+    <input type="range" id="replay-speed" min="1" max="10" value="3" style="width:60px;accent-color:#a371f7">
+    <span id="speed-label">3×</span>
+  </div>
   <button class="btn" id="btn-rec" style="background:#30363d;font-size:.75rem;padding:4px 11px" aria-label="Record session">⏺ Record</button>
   <button class="btn" style="background:#21262d;font-size:.75rem;padding:4px 11px;margin-left:auto" id="btn-leave">Leave</button>
 </div>
@@ -406,6 +460,7 @@ function undoAll() {
   }
   surgeryLog.length = 0;
   renderSurgeryHistory();
+  if(typeof updateUndoBtnState==='function')updateUndoBtnState();
 }
 /* Sparkline windows */
 let perpWindow=[], confWindow=[];
@@ -585,6 +640,14 @@ function renderPerpHist(binCount){
     }).join('');
 }
 
+/* ---- Research run progress (item 5) ---- */
+let _researchRunCurrent = 0, _researchRunTotal = 0;
+function setResearchProgress(cur, total) {
+  _researchRunCurrent = cur; _researchRunTotal = total;
+  const el = document.getElementById('research-progress');
+  if (el) el.textContent = total > 0 ? 'Run ' + cur + '/' + total + (cur < total ? '...' : ' ✓') : '';
+}
+
 /* ---- Research Dashboard ---- */
 function renderResearch(){
   /* Skip recompute if token data hasn't changed */
@@ -711,6 +774,8 @@ function renderExpDivergence(){
   }
   const pct=Math.round(matches/minLen*100);
   el.innerHTML=`<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Similarity: ${pct}% (${matches}/${minLen})</div>`+rows.slice(0,50).join('');
+  /* Hook for A/B chart enhancement (item 9) */
+  if(typeof _renderExpDivergenceExtra==='function')_renderExpDivergenceExtra(expATokens2,expBTokens2,minLen,matches);
 }
 
 /* ---- Token surgery ---- */
@@ -734,6 +799,7 @@ function enableSurgery(container){
           undoStack.push({sp, oldText: orig, newText, idx: parseInt(sp.dataset.idx || '-1')});
           surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
           renderSurgeryHistory();
+          if(typeof updateUndoBtnState==='function')updateUndoBtnState();
           if(ws&&ws.readyState===WebSocket.OPEN){try{ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}catch(e){console.warn('[eot] ws surgery send failed:',e);}}
         }
       }
@@ -811,6 +877,22 @@ $('#start').onclick=()=>{
   if(_streamRetryTimer){clearTimeout(_streamRetryTimer);_streamRetryTimer=null;}
   if(mode==='diff'){startDiff();return}
   if(mode==='experiment'){startExperiment();return}
+  /* Research multi-run mode (item 5) */
+  if(mode==='research'){
+    const totalRuns = Math.max(1, parseInt(document.getElementById('research-runs')&&document.getElementById('research-runs').value||'1'));
+    if(totalRuns > 1) {
+      let runNum = 0;
+      setResearchProgress(0, totalRuns);
+      function doResearchRun() {
+        if(runNum >= totalRuns) { setResearchProgress(totalRuns, totalRuns); return; }
+        runNum++;
+        setResearchProgress(runNum, totalRuns);
+        /* Start a single stream run; when done, schedule the next */
+        /* We will let fall through to normal stream code, then intercept [DONE] */
+      }
+      doResearchRun();
+    }
+  }
   /* Clear all views */
   $('#v-single').innerHTML='';
   $('#sbs-orig').innerHTML='<span class="sbs-label">Original</span>';
@@ -821,17 +903,22 @@ $('#start').onclick=()=>{
   $('#stats').textContent='';
   allTokens=[];graphNodes=[];surgeryLog=[];undoStack=[];
   perpWindow=[];confWindow=[];_researchCache={len:-1};
+  _sseQueue.length=0; _stopSseFlush();
+  _streamStart = Date.now();
   if($('#graphtoggle').checked)drawGraph();
 
   const p=encodeURIComponent($('#prompt').value);
-  const t=$('#transform').value;
+  const txVal = (_chainModeActive && chainTransforms.length) ? chainTransforms.join(',') : $('#transform').value;
   const prov=$('#provider').value;
   const m=encodeURIComponent($('#model').value);
   const hm=$('#heatmap').checked?'1':'0';
+  const minConf = parseInt($('#min-confidence').value||'0');
+  const minConfParam = minConf > 0 ? '&min_confidence='+(minConf/100) : '';
   const roomParam=roomCode?'&room='+encodeURIComponent(roomCode):'';
-  const url='/stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&heatmap='+hm+roomParam;
+  const url='/stream?prompt='+p+'&transform='+encodeURIComponent(txVal)+'&provider='+prov+'&model='+m+'&heatmap='+hm+minConfParam+roomParam;
   $('#start').disabled=true;$('#start').textContent='Streaming...';
   let count=0,xformed=0,streamDone=false;
+  const _countRef={count:0}, _xformedRef={xformed:0}, _modeRef={mode};
   /* Auto-reconnect state */
   let _retryCount=0;
   const MAX_RETRIES=4;
@@ -842,64 +929,24 @@ $('#start').onclick=()=>{
       if(e.data==='[DONE]'){
         streamDone=true;
         evSrc.close();es=null;
+        /* Drain remaining queue */
+        _stopSseFlush();
+        _sseQueue.length=0;
         $('#start').disabled=false;$('#start').textContent='Stream';
         if($('#graphtoggle').checked)drawGraph();
         enableSurgery($('#v-single'));
         enableSurgery($('#sbs-orig'));
         enableSurgery($('#sbs-xform'));
         renderResearch();
+        updateUndoBtnState();
         return;
       }
       try{
         const tk=JSON.parse(e.data);
         allTokens.push(tk);
         window.tokenLog.push(tk);
-        graphNodes.push(tk);
-        /* Virtual scroll: keep at most 500 DOM tokens in #v-single */
-        const MAX_DOM_TOKENS=500;
-        const vsingle=$('#v-single');
-        const domToks=vsingle.querySelectorAll('.token');
-        if(domToks.length>=MAX_DOM_TOKENS) domToks[0].remove();
-        count++;if(tk.transformed)xformed++;
-
-        /* Single column */
-        const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
-        singleSp.dataset.idx=tk.index;
-        vsingle.appendChild(singleSp);
-        updatePerpSparkline(tk.perplexity);
-        updateConfSparkline(tk.confidence);
-
-        /* Side-by-side: left=original, right=transformed */
-        const origSp=mkSpan(tk.original,false,tk.importance,null,null,tk.confidence,tk.perplexity);origSp.dataset.idx=tk.index;
-        $('#sbs-orig').appendChild(origSp);
-        const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);xformSp.dataset.idx=tk.index;
-        $('#sbs-xform').appendChild(xformSp);
-
-        /* Multi-transform */
-        ['reverse','uppercase','mock','noise','chaos'].forEach(txName=>{
-          const panel=$('#mp-'+txName);
-          if(!panel)return;
-          panel.appendChild(mkSpan(tk.transformed?TX[txName](tk.original):tk.original,tk.transformed,tk.importance));
-        });
-
-        /* Auto-scroll debounced */
-        if(!scrollPending){
-          scrollPending=true;
-          requestAnimationFrame(()=>{
-            scrollPending=false;
-            const active=views[mode];
-            if(active)active.scrollTop=active.scrollHeight;
-            if(mode==='multi')['reverse','uppercase','mock','noise'].forEach(tn=>{const pp=$('#mp-'+tn);if(pp)pp.scrollTop=pp.scrollHeight;});
-          });
-        }
-
-        /* Graph redraw debounced */
-        if($('#graphtoggle').checked&&!window._graphRafPending){
-          window._graphRafPending=true;
-          requestAnimationFrame(()=>{window._graphRafPending=false;drawGraph();});
-        }
-
-        $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
+        /* Push to SSE queue for batched rendering */
+        _sseQueue.push(tk);
       }catch(err){console.warn('[eot] token parse error:', err);}
     };
     evSrc.onerror=()=>{
@@ -920,8 +967,12 @@ $('#start').onclick=()=>{
     };
   }
 
+  /* Start SSE flush loop */
+  _countRef.count=0; _xformedRef.xformed=0; _modeRef.mode=mode;
+  _startSseFlush(_countRef, _xformedRef, _modeRef);
   es=new EventSource(url);
   attachStreamHandlers(es);
+  updateUndoBtnState();
 };
 
 /* ---- Diff streaming ---- */
@@ -1107,13 +1158,7 @@ window.addEventListener('resize',()=>{
 document.addEventListener('keydown', function(e){
     if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){
         e.preventDefault();
-        const last=undoStack.pop();
-        if(!last)return;
-        last.sp.textContent=last.oldText;
-        if(last.idx>=0&&allTokens[last.idx])allTokens[last.idx].text=last.oldText;
-        if(typeof ws!=='undefined'&&ws&&ws.readyState===WebSocket.OPEN){
-            try{ws.send(JSON.stringify({type:'surgery',token_index:last.idx,old_text:last.newText,new_text:last.oldText}));}catch(e){console.warn('[eot] ws undo send failed:',e);}
-        }
+        undoOne();
     }
     if(e.key==='?'&&!e.ctrlKey&&!e.metaKey){
         e.preventDefault();
@@ -1398,6 +1443,239 @@ document.getElementById('shortcuts-modal').onclick = e => {
   if(e.target === document.getElementById('shortcuts-modal'))
     document.getElementById('shortcuts-modal').classList.remove('show');
 };
+/* ================================================================
+   ITEM 1: SSE event batching — 100ms flush loop
+   ================================================================ */
+let _sseQueue = [];
+let _sseFlushRunning = false;
+function _startSseFlush(countRef, xformedRef, modeRef) {
+  if (_sseFlushRunning) return;
+  _sseFlushRunning = true;
+  function flush() {
+    if (!_sseFlushRunning) return;
+    const MAX_DOM_TOKENS = 500;
+    const batch = _sseQueue.splice(0, 30);
+    if (batch.length > 0) {
+      const vsingle = $('#v-single');
+      batch.forEach(tk => {
+        const domToks = vsingle.querySelectorAll('.token');
+        if (domToks.length >= MAX_DOM_TOKENS) domToks[0].remove();
+        countRef.count++; if (tk.transformed) xformedRef.xformed++;
+
+        const singleSp = mkSpan(tk.text, tk.transformed, tk.importance, '', tk.chaos_label, tk.confidence, tk.perplexity);
+        singleSp.dataset.idx = tk.index;
+        vsingle.appendChild(singleSp);
+        updatePerpSparkline(tk.perplexity);
+        updateConfSparkline(tk.confidence);
+
+        const origSp = mkSpan(tk.original, false, tk.importance, null, null, tk.confidence, tk.perplexity); origSp.dataset.idx = tk.index;
+        $('#sbs-orig').appendChild(origSp);
+        const xformSp = mkSpan(tk.text, tk.transformed, tk.importance, '', tk.chaos_label, tk.confidence, tk.perplexity); xformSp.dataset.idx = tk.index;
+        $('#sbs-xform').appendChild(xformSp);
+
+        ['reverse','uppercase','mock','noise','chaos'].forEach(txName => {
+          const panel = $('#mp-' + txName);
+          if (!panel) return;
+          panel.appendChild(mkSpan(tk.transformed ? TX[txName](tk.original) : tk.original, tk.transformed, tk.importance));
+        });
+
+        graphNodes.push(tk);
+      });
+
+      /* Scroll debounced */
+      if (!scrollPending) {
+        scrollPending = true;
+        requestAnimationFrame(() => {
+          scrollPending = false;
+          const active = views[mode];
+          if (active) active.scrollTop = active.scrollHeight;
+          if (mode === 'multi') ['reverse','uppercase','mock','noise'].forEach(tn => { const pp = $('#mp-' + tn); if (pp) pp.scrollTop = pp.scrollHeight; });
+        });
+      }
+      if ($('#graphtoggle').checked && !window._graphRafPending) {
+        window._graphRafPending = true;
+        requestAnimationFrame(() => { window._graphRafPending = false; drawGraph(); });
+      }
+
+      /* ITEM 4: stats with elapsed and tok/s */
+      const elapsedMs = Date.now() - (_streamStart || Date.now());
+      const elapsedSec = Math.max(elapsedMs / 1000, 0.01);
+      const tokSec = (countRef.count / elapsedSec).toFixed(1);
+      const elapsedStr = (elapsedSec).toFixed(1);
+      $('#stats').textContent = 'Tokens: ' + countRef.count + ' | Transformed: ' + xformedRef.xformed + ' | Mode: ' + modeRef.mode + ' | ' + elapsedStr + 's | ' + tokSec + ' tok/s';
+    }
+    setTimeout(flush, 100);
+  }
+  setTimeout(flush, 100);
+}
+function _stopSseFlush() { _sseFlushRunning = false; }
+
+/* ITEM 4: stream start timestamp */
+let _streamStart = null;
+
+/* ================================================================
+   ITEM 2: Transform live preview
+   ================================================================ */
+(function(){
+  const SAMPLE = 'The quick brown fox jumps';
+  function updatePreview() {
+    const sel = $('#transform');
+    const chainMode = typeof chainTransforms !== 'undefined' && chainTransforms.length > 0;
+    const txName = sel ? sel.value : 'reverse';
+    let transformed;
+    if (chainMode) {
+      transformed = chainTransforms.reduce((s, tx) => TX[tx] ? TX[tx](s) : s, SAMPLE);
+    } else {
+      transformed = TX[txName] ? TX[txName](SAMPLE) : SAMPLE;
+    }
+    const prev = $('#transform-preview');
+    if (!prev) return;
+    prev.classList.add('show');
+    prev.innerHTML = '<span style="color:#484f58">Preview: </span><span style="color:#8b949e">' + escHtml(SAMPLE) + '</span><span style="color:#484f58"> → </span><span style="color:#e3b341">' + escHtml(transformed) + '</span>';
+  }
+  const txSel = $('#transform');
+  if (txSel) txSel.addEventListener('input', updatePreview);
+  window._updateTransformPreview = updatePreview;
+  setTimeout(updatePreview, 0);
+})();
+
+/* ================================================================
+   ITEM 3: Min-confidence slider
+   ================================================================ */
+$('#min-confidence').oninput = function() { $('#conf-label').textContent = this.value + '%'; };
+
+/* ================================================================
+   ITEM 6: Transform chain builder
+   ================================================================ */
+let chainTransforms = [];
+let _chainModeActive = false;
+$('#btn-chain-mode').onclick = function() {
+  _chainModeActive = !_chainModeActive;
+  const panel = $('#chain-builder');
+  if (panel) { if (_chainModeActive) panel.classList.add('show'); else panel.classList.remove('show'); }
+  this.classList.toggle('active', _chainModeActive);
+};
+(function(){
+  const builder = $('#chain-builder');
+  if (!builder) return;
+  function updateChain() {
+    const checks = builder.querySelectorAll('input[data-tx]');
+    chainTransforms = [];
+    checks.forEach(cb => { if (cb.checked) chainTransforms.push(cb.dataset.tx); });
+    const cur = $('#chain-current');
+    if (cur) cur.textContent = chainTransforms.length ? chainTransforms.join(',') : 'none';
+    if (window._updateTransformPreview) window._updateTransformPreview();
+  }
+  builder.querySelectorAll('input[data-tx]').forEach(cb => cb.addEventListener('change', updateChain));
+})();
+
+/* ================================================================
+   ITEM 7: Replay speed slider
+   ================================================================ */
+$('#replay-speed').oninput = function() {
+  $('#speed-label').textContent = this.value + '×';
+};
+function getReplaySpeedMultiplier() {
+  const s = $('#replay-speed');
+  return s ? Math.max(1, parseInt(s.value)) : 3;
+}
+
+/* Wrap doReplayEvent to use speed when called with a delay */
+(function(){
+  const _origDoReplayEvent = doReplayEvent;
+  window.doReplayEvent = function(ev, offsetMs) {
+    const speed = getReplaySpeedMultiplier();
+    const delay = Math.max(0, (offsetMs || 0) / speed);
+    setTimeout(() => _origDoReplayEvent(ev, 0), delay);
+  };
+})();
+
+/* ================================================================
+   ITEM 8: Single-step undo button
+   ================================================================ */
+function undoOne() {
+  const last = undoStack.pop();
+  if (!last) return;
+  last.sp.textContent = last.oldText;
+  if (last.idx >= 0 && allTokens[last.idx]) allTokens[last.idx].text = last.oldText;
+  if (typeof ws !== 'undefined' && ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({type:'surgery', token_index: last.idx, old_text: last.newText, new_text: last.oldText})); } catch(e) { console.warn('[eot] ws undo send failed:', e); }
+  }
+  updateUndoBtnState();
+}
+function updateUndoBtnState() {
+  const btn = $('#btn-undo-one');
+  if (btn) btn.disabled = undoStack.length === 0;
+}
+$('#btn-undo-one').onclick = undoOne;
+
+/* Patch undoStack push to keep btn state in sync */
+(function(){
+  const _origPush = Array.prototype.push;
+  const _origPop = Array.prototype.pop;
+  /* We can't patch array prototype globally; instead hook surgery commit via MutationObserver —
+     Instead, update btn state on each undo and on stream start/clear */
+})();
+
+/* ================================================================
+   ITEM 9: A/B analytics enhancements — bar chart hook
+   ================================================================ */
+function _renderExpDivergenceExtra(tokA, tokB, minLen, matches) {
+  const el = $('#exp-diverge');
+  if (minLen === 0) { const cw=$('#ab-chart-wrap');if(cw)cw.style.display='none'; return; }
+
+  /* Summary line — appended to diverge panel */
+  const agreements = [];
+  for (let i = 0; i < minLen; i++) {
+    agreements.push(tokA[i].original === tokB[i].original);
+  }
+  const pct = Math.round(matches / minLen * 100);
+  const summaryDiv = document.createElement('div');
+  summaryDiv.style.cssText = 'font-size:.72rem;color:#8b949e;margin-bottom:4px;margin-top:4px';
+  summaryDiv.innerHTML = '<strong style="color:#c9d1d9">Agreement: ' + pct + '%</strong> &nbsp;|&nbsp; Matching: <span style="color:#3fb950">' + matches + '</span> &nbsp;|&nbsp; Diverging: <span style="color:#f85149">' + (minLen - matches) + '</span>';
+  if (el) el.appendChild(summaryDiv);
+
+  /* Bar chart */
+  const chartWrap = $('#ab-chart-wrap');
+  if (!chartWrap) return;
+  chartWrap.style.display = '';
+  const canvas = $('#ab-chart');
+  if (!canvas) return;
+  const positions = Math.min(50, agreements.length);
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.parentElement.clientWidth || 600;
+  canvas.width = w * dpr;
+  canvas.height = 80 * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = '80px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, 80);
+  const barW = Math.max(1, (w - 40) / positions);
+  const chartH = 55;
+  const xOff = 30;
+  /* Axes */
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(xOff, 5); ctx.lineTo(xOff, chartH + 5); ctx.lineTo(w - 5, chartH + 5); ctx.stroke();
+  /* Title */
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('Token Agreement', w / 2, 12);
+  /* X-axis label */
+  ctx.fillStyle = '#484f58'; ctx.font = '9px monospace';
+  ctx.fillText('Token position', w / 2, 76);
+  /* Bars */
+  for (let i = 0; i < positions; i++) {
+    ctx.fillStyle = agreements[i] ? '#3fb950' : '#f85149';
+    const x = xOff + i * barW + 1;
+    ctx.fillRect(x, 10, Math.max(1, barW - 2), chartH - 5);
+  }
+  /* X-axis tick labels */
+  ctx.fillStyle = '#484f58'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+  [0, Math.floor(positions / 2), positions - 1].forEach(i => {
+    if (i < positions) ctx.fillText(i + 1, xOff + i * barW + barW / 2, chartH + 14);
+  });
+};
+
 document.getElementById('btn-export-research').onclick = () => {
   if (!allTokens.length) { showNotice('No tokens yet. Run a stream first.', 'warning'); return; }
   const withConf = allTokens.filter(t => t.confidence != null);

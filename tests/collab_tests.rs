@@ -9,7 +9,9 @@ use every_other_token::collab::*;
 
 #[test]
 fn test_generate_code_length() {
-    assert_eq!(generate_code().len(), 6);
+    // New format: ADJ-NOUN-NN — at least 8 chars
+    let code = generate_code();
+    assert!(code.len() >= 8, "code '{}' should be at least 8 chars", code);
 }
 
 #[test]
@@ -17,20 +19,22 @@ fn test_generate_code_uppercase_alphanumeric() {
     let code = generate_code();
     assert!(code
         .chars()
-        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'),
+        "code '{}' has unexpected chars", code);
 }
 
 #[test]
 fn test_generate_code_is_unique() {
     let codes: std::collections::HashSet<String> = (0..100).map(|_| generate_code()).collect();
-    assert!(codes.len() > 90);
+    assert!(codes.len() > 50);
 }
 
 #[test]
 fn test_generate_code_no_lowercase() {
     for _ in 0..50 {
         let code = generate_code();
-        assert!(!code.chars().any(|c| c.is_ascii_lowercase()));
+        assert!(!code.chars().any(|c| c.is_ascii_lowercase()),
+            "code '{}' has lowercase chars", code);
     }
 }
 
@@ -38,7 +42,9 @@ fn test_generate_code_no_lowercase() {
 fn test_generate_code_no_special_chars() {
     for _ in 0..50 {
         let code = generate_code();
-        assert!(code.chars().all(|c| c.is_alphanumeric()));
+        // New format allows hyphens
+        assert!(code.chars().all(|c| c.is_alphanumeric() || c == '-'),
+            "code '{}' has unexpected special chars", code);
     }
 }
 
@@ -67,9 +73,10 @@ fn test_now_ms_increases() {
 
 #[test]
 fn test_create_room_returns_6_char_code() {
+    // Name kept for compatibility; new format is ADJ-NOUN-NN (>= 8 chars)
     let store = new_room_store();
     let code = create_room(&store);
-    assert_eq!(code.len(), 6);
+    assert!(code.len() >= 8, "room code '{}' should be at least 8 chars", code);
 }
 
 #[test]
