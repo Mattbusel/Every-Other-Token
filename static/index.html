@@ -151,6 +151,16 @@ canvas#depgraph{width:100%;height:200px;display:block}
 .peer-edited{animation:peerEdit .8s ease-out forwards}
 /* Join toast */
 @keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+/* Shortcuts modal */
+#shortcuts-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;align-items:center;justify-content:center}
+#shortcuts-modal.show{display:flex}
+#shortcuts-box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 28px;min-width:320px;max-width:480px}
+#shortcuts-box h2{font-size:.9rem;color:#58a6ff;margin-bottom:12px}
+#shortcuts-box table{width:100%;border-collapse:collapse;font-size:.8rem}
+#shortcuts-box td{padding:4px 8px;color:#c9d1d9}
+#shortcuts-box td:first-child{color:#e3b341;font-weight:bold;white-space:nowrap;width:120px}
+#shortcuts-box tr:hover{background:#1f2937}
+#shortcuts-close{float:right;background:none;border:none;color:#8b949e;cursor:pointer;font-size:1.1rem;margin-top:-4px}
 /* Toast notifications */
 #toast-container{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .toast{padding:10px 16px;border-radius:6px;font-size:.8rem;color:#fff;animation:slideIn .2s ease-out;pointer-events:auto;max-width:320px;word-break:break-word}
@@ -159,6 +169,22 @@ canvas#depgraph{width:100%;height:200px;display:block}
 .toast-info{background:#1f3a5f;border:1px solid #58a6ff}
 .join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#8b949e;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #21262d;background:#0d1117}
 @media(max-width:640px){#sidebar{width:100%;position:relative;height:auto;border-left:none;border-top:1px solid #21262d}#chat-panel{right:0;width:100%;border-left:none;border-top:1px solid #21262d}body.sidebar-open{padding-right:0!important}}
+/* Mobile responsive */
+@media(max-width:768px){
+  #sidebar{display:none!important}
+  #chat-panel{display:none!important}
+  body{padding-right:0!important}
+  .hdr-right{flex-wrap:wrap;gap:4px}
+  #btn-experiment,#btn-research,#btn-multi,#btn-diff{font-size:.7rem;padding:4px 8px}
+}
+@media(max-width:640px){
+  .controls{flex-direction:column;align-items:stretch;padding:8px 12px}
+  .field input[type=text]{min-width:unset;width:100%}
+  .field select{width:100%}
+  .view-single{font-size:1.05rem}
+  .view-sidebyside,.view-diff{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+  .view-multi{grid-template-columns:1fr;grid-template-rows:repeat(4,1fr)}
+}
 </style>
 </head>
 <body>
@@ -225,6 +251,7 @@ canvas#depgraph{width:100%;height:200px;display:block}
   <!-- Research dashboard -->
   <div id="v-research" style="display:none;padding:16px 24px;overflow-y:auto;height:100%">
     <h2 style="color:#58a6ff;font-size:1rem;margin-bottom:4px">Research Dashboard</h2>
+    <button id="btn-export-research" class="btn btn-export" style="font-size:.73rem;padding:4px 12px;margin-bottom:8px" aria-label="Export research stats as Markdown">Export Stats (MD)</button>
     <p style="font-size:.75rem;color:#8b949e;margin-bottom:12px">Stats computed from the most recent stream. Stream tokens first.</p>
     <div id="research-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"></div>
     <div style="margin-top:16px">
@@ -253,6 +280,13 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <div style="margin-top:16px">
       <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Citation</div>
       <code id="research-citation" style="font-size:.7rem;color:#e3b341;white-space:pre-wrap;display:block;background:#161b22;padding:8px;border-radius:4px;border:1px solid #21262d"></code>
+    </div>
+    <div style="margin-top:16px" id="undo-history-section">
+      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Surgery Edit History</div>
+      <div id="surgery-history" style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:8px 12px;font-size:.78rem;max-height:120px;overflow-y:auto;color:#c9d1d9">
+        <span style="color:#484f58">No edits yet.</span>
+      </div>
+      <button id="btn-undo-all" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px;margin-top:6px" onclick="undoAll()">Undo All Edits</button>
     </div>
   </div>
 </div>
@@ -300,6 +334,20 @@ canvas#depgraph{width:100%;height:200px;display:block}
   </div>
 </div>
 <div id="toast-container"></div>
+<div id="shortcuts-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div id="shortcuts-box">
+    <button id="shortcuts-close" aria-label="Close shortcuts">✕</button>
+    <h2>Keyboard Shortcuts</h2>
+    <table>
+      <tr><td>?</td><td>Show this help</td></tr>
+      <tr><td>Ctrl+Z</td><td>Undo last token surgery</td></tr>
+      <tr><td>Enter</td><td>Submit prompt</td></tr>
+      <tr><td>Escape</td><td>Close modal / cancel edit</td></tr>
+      <tr><td>Ctrl+E</td><td>Export session as JSON</td></tr>
+      <tr><td>Ctrl+Shift+E</td><td>Export session as CSV</td></tr>
+    </table>
+  </div>
+</div>
 <script>
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
@@ -327,12 +375,35 @@ const TX={
 let es=null, mode='single';
 /* Token data */
 let allTokens=[], graphNodes=[], surgeryLog=[], undoStack=[];
+function renderSurgeryHistory() {
+  const el = document.getElementById('surgery-history');
+  if (!el) return;
+  if (surgeryLog.length === 0) { el.innerHTML = '<span style="color:#484f58">No edits yet.</span>'; return; }
+  el.innerHTML = surgeryLog.slice().reverse().map((e, i) =>
+    `<div style="display:flex;gap:8px;padding:2px 0;border-bottom:1px solid #21262d">
+      <span style="color:#484f58;font-size:.7rem;flex-shrink:0">#${e.index}</span>
+      <span style="color:#f85149;text-decoration:line-through;flex:1;overflow:hidden;text-overflow:ellipsis">${e.original}</span>
+      <span style="color:#3fb950;flex:1;overflow:hidden;text-overflow:ellipsis">→ ${e.replacement}</span>
+    </div>`
+  ).join('');
+}
+function undoAll() {
+  while (undoStack.length) {
+    const last = undoStack.pop();
+    last.sp.textContent = last.oldText;
+    if (last.idx >= 0 && allTokens[last.idx]) allTokens[last.idx].text = last.oldText;
+  }
+  surgeryLog.length = 0;
+  renderSurgeryHistory();
+}
 /* Sparkline windows */
 let perpWindow=[], confWindow=[];
 /* Experiment tokens */
 let expATokens=[], expBTokens=[];
 /* Performance */
 let scrollPending=false;
+/* SSE reconnect timer handle */
+let _streamRetryTimer=null;
 /* Research cache */
 let _researchCache={len:-1};
 const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff'),experiment:$('#v-experiment'),research:$('#v-research')};
@@ -416,6 +487,27 @@ function updatePerpSparkline(perplexity){
   }).join(' ');
   line.setAttribute('points',pts);
 }
+
+/* Sparkline hover tooltip */
+(function(){
+  const svg = document.getElementById('perp-spark');
+  if (!svg) return;
+  const tip = document.createElement('div');
+  tip.id = 'spark-tip';
+  tip.style.cssText = 'display:none;position:fixed;background:#1c2333;color:#a371f7;padding:2px 8px;border-radius:4px;font-size:.7rem;pointer-events:none;z-index:100;border:1px solid #30363d';
+  document.body.appendChild(tip);
+  svg.addEventListener('mousemove', e => {
+    if (!perpWindow.length) return;
+    const rect = svg.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const idx = Math.min(perpWindow.length - 1, Math.max(0, Math.round(frac * (perpWindow.length - 1))));
+    tip.textContent = 'token ' + idx + ': perplexity ' + perpWindow[idx].toFixed(2);
+    tip.style.display = '';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 8) + 'px';
+  });
+  svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+})();
 
 /* ---- Welch's t-test for significance testing ---- */
 function welchT(a, b) {
@@ -587,9 +679,13 @@ function startExperiment(){
         $('#exp-b').appendChild(sp);$('#exp-b').scrollTop=$('#exp-b').scrollHeight;
       }
       $('#stats').textContent='A: '+expATokens2.length+' tokens | B: '+expBTokens2.length+' tokens';
-    }catch(_){}
+    }catch(err){console.warn('[eot] token parse error:', err);}
   };
-  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';$('#stats').textContent='⚠ Experiment stream disconnected. Click Stream to retry.'};
+  es.onerror=()=>{
+  es.close();es=null;
+  $('#start').disabled=false;$('#start').textContent='Stream';
+  showNotice('Stream interrupted or disconnected.','warning');
+};;
 }
 function renderExpDivergence(){
   const el=$('#exp-diverge');if(!el)return;
@@ -626,6 +722,7 @@ function enableSurgery(container){
         if(newText!==orig){
           undoStack.push({sp, oldText: orig, newText, idx: parseInt(sp.dataset.idx || '-1')});
           surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
+          renderSurgeryHistory();
           if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}
         }
       }
@@ -702,6 +799,7 @@ $('#start').onclick=()=>{
   if(mode==='diff'){startDiff();return}
   if(mode==='experiment'){startExperiment();return}
   if(es){es.close();es=null}
+  if(_streamRetryTimer){clearTimeout(_streamRetryTimer);_streamRetryTimer=null;}
   /* Clear all views */
   $('#v-single').innerHTML='';
   $('#sbs-orig').innerHTML='<span class="sbs-label">Original</span>';
@@ -711,6 +809,7 @@ $('#start').onclick=()=>{
   });
   $('#stats').textContent='';
   allTokens=[];graphNodes=[];surgeryLog=[];undoStack=[];
+  perpWindow=[];confWindow=[];_researchCache={len:-1};
   if($('#graphtoggle').checked)drawGraph();
 
   const p=encodeURIComponent($('#prompt').value);
@@ -722,74 +821,96 @@ $('#start').onclick=()=>{
   const url='/stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&heatmap='+hm+roomParam;
   $('#start').disabled=true;$('#start').textContent='Streaming...';
   let count=0,xformed=0,streamDone=false;
-  es=new EventSource(url);
-  es.onmessage=e=>{
-    if(e.data==='[DONE]'){
-      streamDone=true;
-      es.close();es=null;
-      $('#start').disabled=false;$('#start').textContent='Stream';
-      if($('#graphtoggle').checked)drawGraph();
-      /* Enable token surgery on all rendered containers */
-      enableSurgery($('#v-single'));
-      enableSurgery($('#sbs-orig'));
-      enableSurgery($('#sbs-xform'));
-      /* Update research dashboard */
-      renderResearch();
-      return;
-    }
-    try{
-      const tk=JSON.parse(e.data);
-      allTokens.push(tk);
-      window.tokenLog.push(tk);
-      graphNodes.push(tk);
-      count++;if(tk.transformed)xformed++;
+  /* Auto-reconnect state */
+  let _retryCount=0;
+  const MAX_RETRIES=4;
 
-      /* Single column */
-      const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
-      singleSp.dataset.idx=tk.index;
-      $('#v-single').appendChild(singleSp);
-      updatePerpSparkline(tk.perplexity);
-      updateConfSparkline(tk.confidence);
-
-      /* Side-by-side: left=original, right=transformed */
-      const origSp=mkSpan(tk.original,false,tk.importance,null,null,tk.confidence,tk.perplexity);origSp.dataset.idx=tk.index;
-      $('#sbs-orig').appendChild(origSp);
-      const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);xformSp.dataset.idx=tk.index;
-      $('#sbs-xform').appendChild(xformSp);
-
-      /* Multi-transform: apply all 4+chaos transforms to original for odd tokens */
-      ['reverse','uppercase','mock','noise','chaos'].forEach(txName=>{
-        const panel=$('#mp-'+txName);
-        if(!panel)return;
-        if(tk.transformed){
-          const applied=TX[txName](tk.original);
-          panel.appendChild(mkSpan(applied,true,tk.importance));
-        } else {
-          panel.appendChild(mkSpan(tk.original,false,tk.importance));
-        }
-      });
-
-      /* Auto-scroll active view — debounced to avoid reflow per token */
-      if(!scrollPending){
-        scrollPending=true;
-        requestAnimationFrame(()=>{
-          scrollPending=false;
-          const active=views[mode];
-          if(active)active.scrollTop=active.scrollHeight;
-          if(mode==='multi')['reverse','uppercase','mock','noise'].forEach(t=>{const p=$('#mp-'+t);if(p)p.scrollTop=p.scrollHeight;});
-        });
+  function attachStreamHandlers(evSrc){
+    evSrc.onmessage=e=>{
+      _retryCount=0; /* reset on successful message */
+      if(e.data==='[DONE]'){
+        streamDone=true;
+        evSrc.close();es=null;
+        $('#start').disabled=false;$('#start').textContent='Stream';
+        if($('#graphtoggle').checked)drawGraph();
+        enableSurgery($('#v-single'));
+        enableSurgery($('#sbs-orig'));
+        enableSurgery($('#sbs-xform'));
+        renderResearch();
+        return;
       }
+      try{
+        const tk=JSON.parse(e.data);
+        allTokens.push(tk);
+        window.tokenLog.push(tk);
+        graphNodes.push(tk);
+        /* Virtual scroll: keep at most 500 DOM tokens in #v-single */
+        const MAX_DOM_TOKENS=500;
+        const vsingle=$('#v-single');
+        const domToks=vsingle.querySelectorAll('.token');
+        if(domToks.length>=MAX_DOM_TOKENS) domToks[0].remove();
+        count++;if(tk.transformed)xformed++;
 
-      /* Redraw graph periodically */
-      if($('#graphtoggle').checked&&count%10===0)drawGraph();
+        /* Single column */
+        const singleSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
+        singleSp.dataset.idx=tk.index;
+        vsingle.appendChild(singleSp);
+        updatePerpSparkline(tk.perplexity);
+        updateConfSparkline(tk.confidence);
 
-      $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
-    }catch(_){}
-  };
-  es.onerror=()=>{
-    es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';
-    if(!streamDone)$('#stats').textContent='⚠ Stream disconnected. Click Stream to retry.';
-  };
+        /* Side-by-side: left=original, right=transformed */
+        const origSp=mkSpan(tk.original,false,tk.importance,null,null,tk.confidence,tk.perplexity);origSp.dataset.idx=tk.index;
+        $('#sbs-orig').appendChild(origSp);
+        const xformSp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);xformSp.dataset.idx=tk.index;
+        $('#sbs-xform').appendChild(xformSp);
+
+        /* Multi-transform */
+        ['reverse','uppercase','mock','noise','chaos'].forEach(txName=>{
+          const panel=$('#mp-'+txName);
+          if(!panel)return;
+          panel.appendChild(mkSpan(tk.transformed?TX[txName](tk.original):tk.original,tk.transformed,tk.importance));
+        });
+
+        /* Auto-scroll debounced */
+        if(!scrollPending){
+          scrollPending=true;
+          requestAnimationFrame(()=>{
+            scrollPending=false;
+            const active=views[mode];
+            if(active)active.scrollTop=active.scrollHeight;
+            if(mode==='multi')['reverse','uppercase','mock','noise'].forEach(tn=>{const pp=$('#mp-'+tn);if(pp)pp.scrollTop=pp.scrollHeight;});
+          });
+        }
+
+        /* Graph redraw debounced */
+        if($('#graphtoggle').checked&&!window._graphRafPending){
+          window._graphRafPending=true;
+          requestAnimationFrame(()=>{window._graphRafPending=false;drawGraph();});
+        }
+
+        $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
+      }catch(err){console.warn('[eot] token parse error:', err);}
+    };
+    evSrc.onerror=()=>{
+      if(streamDone)return; /* normal close after [DONE] */
+      evSrc.close();es=null;
+      if(_retryCount<MAX_RETRIES){
+        const delay=Math.min(1000*Math.pow(2,_retryCount),16000);
+        _retryCount++;
+        $('#stats').textContent='Connection lost — reconnecting in '+(delay/1000).toFixed(0)+'s… (attempt '+_retryCount+'/'+MAX_RETRIES+')';
+        _streamRetryTimer=setTimeout(()=>{
+          es=new EventSource(url);
+          attachStreamHandlers(es);
+        },delay);
+      } else {
+        $('#start').disabled=false;$('#start').textContent='Stream';
+        showNotice('Stream disconnected after '+MAX_RETRIES+' retries.','warning');
+      }
+    };
+  }
+
+  es=new EventSource(url);
+  attachStreamHandlers(es);
 };
 
 /* ---- Diff streaming ---- */
@@ -830,9 +951,13 @@ function startDiff(){
         $('#diff-anthropic').scrollTop=$('#diff-anthropic').scrollHeight;
       }
       $('#stats').textContent='OpenAI: '+diffOpenaiTokens.length+' tokens | Anthropic: '+diffAnthropicTokens.length+' tokens';
-    }catch(_){}
+    }catch(err){console.warn('[eot] token parse error:', err);}
   };
-  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';$('#stats').textContent='⚠ Diff stream disconnected. Click Stream to retry.'};
+  es.onerror=()=>{
+  es.close();es=null;
+  $('#start').disabled=false;$('#start').textContent='Stream';
+  showNotice('Stream interrupted or disconnected.','warning');
+};;
 }
 function applyDiffHighlights(){
   const oSpans=Array.from($('#diff-openai').querySelectorAll('.token'));
@@ -979,6 +1104,25 @@ document.addEventListener('keydown', function(e){
             ws.send(JSON.stringify({type:'surgery',token_index:last.idx,old_text:last.newText,new_text:last.oldText}));
         }
     }
+    if(e.key==='?'&&!e.ctrlKey&&!e.metaKey){
+        e.preventDefault();
+        document.getElementById('shortcuts-modal').classList.toggle('show');
+    }
+    if(e.key==='Escape'){
+        document.getElementById('shortcuts-modal').classList.remove('show');
+    }
+    if((e.ctrlKey||e.metaKey)&&e.key==='e'&&!e.shiftKey){
+        e.preventDefault();
+        document.getElementById('btn-export').click();
+    }
+    if((e.ctrlKey||e.metaKey)&&e.key==='E'&&e.shiftKey){
+        e.preventDefault();
+        document.getElementById('btn-export-csv').click();
+    }
+    if(e.key==='Enter'&&e.target.id==='prompt'&&!e.shiftKey){
+        e.preventDefault();
+        document.getElementById('start').click();
+    }
 });
 
 /* ================================================================
@@ -1113,7 +1257,12 @@ function renderChatMsg(m){
   author.style.color=safeCssColor(m.author_color);author.textContent=m.author_name;
   const sep=document.createTextNode(' ');
   const body=document.createElement('span');body.className='chat-text';body.textContent=m.text;
-  d.appendChild(author);d.appendChild(sep);d.appendChild(body);
+  const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const tsSpan=document.createElement('span');
+  tsSpan.title=new Date().toISOString();
+  tsSpan.style.cssText='font-size:.6rem;color:#484f58;cursor:help;margin-left:4px';
+  tsSpan.textContent=ts;
+  d.appendChild(author);d.appendChild(sep);d.appendChild(body);d.appendChild(tsSpan);
   if(m.token_index!=null){
     const ref=document.createElement('div');ref.className='chat-ref';ref.textContent='re: token #'+m.token_index;
     d.appendChild(ref);
@@ -1149,7 +1298,7 @@ $('#btn-host').onclick=async()=>{
     amHost=true; myName='Host';
     initRoom(d.code,true);
   }catch(e){
-    alert('Could not create room: '+e.message);
+    showNotice('Could not create room: '+e.message, 'error');
   }finally{
     btn.disabled=false;btn.textContent='Host Session';
   }
@@ -1158,7 +1307,7 @@ $('#btn-host').onclick=async()=>{
 /* Join session */
 $('#btn-join').onclick=()=>{
   const c=$('#join-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if(c.length!==6){alert('Room code must be 6 characters.');return;}
+  if(c.length!==6){showNotice('Room code must be 6 characters.', 'warning'); return;}
   myName='Guest'; initRoom(c,false);
 };
 
@@ -1231,6 +1380,57 @@ $('#start').onclick=function(){
 
 /* Surgery WS broadcast is handled directly in the enableSurgery commit
    function above (sendWs call on line with {type:'surgery',...}). No
-   MutationObserver needed. */</script>
+   MutationObserver needed. */
+document.getElementById('shortcuts-close').onclick = () =>
+  document.getElementById('shortcuts-modal').classList.remove('show');
+document.getElementById('shortcuts-modal').onclick = e => {
+  if(e.target === document.getElementById('shortcuts-modal'))
+    document.getElementById('shortcuts-modal').classList.remove('show');
+};
+document.getElementById('btn-export-research').onclick = () => {
+  if (!allTokens.length) { showNotice('No tokens yet. Run a stream first.', 'warning'); return; }
+  const withConf = allTokens.filter(t => t.confidence != null);
+  const withPerp = allTokens.filter(t => t.perplexity != null);
+  const avgConf = withConf.length ? (withConf.reduce((s,t)=>s+t.confidence,0)/withConf.length*100).toFixed(1)+'%' : 'n/a';
+  const avgPerp = withPerp.length ? (withPerp.reduce((s,t)=>s+t.perplexity,0)/withPerp.length).toFixed(3) : 'n/a';
+  const unique = new Set(allTokens.map(t=>t.original.toLowerCase())).size;
+  const diversity = (unique/allTokens.length).toFixed(3);
+  const ts = new Date().toISOString();
+  const md = [
+    '# Every-Other-Token Research Export',
+    '',
+    `**Exported:** ${ts}`,
+    `**Prompt:** ${document.getElementById('prompt').value}`,
+    `**Provider:** ${document.getElementById('provider').value}`,
+    `**Model:** ${document.getElementById('model').value || 'auto'}`,
+    `**Transform:** ${document.getElementById('transform').value}`,
+    '',
+    '## Aggregate Stats',
+    '',
+    `| Metric | Value |`,
+    `|--------|-------|`,
+    `| Token count | ${allTokens.length} |`,
+    `| Transformed | ${allTokens.filter(t=>t.transformed).length} |`,
+    `| Vocab diversity | ${diversity} |`,
+    `| Avg confidence | ${avgConf} |`,
+    `| Avg perplexity | ${avgPerp} |`,
+    '',
+    '## Top 10 High-Perplexity Tokens',
+    '',
+    ...withPerp.sort((a,b)=>b.perplexity-a.perplexity).slice(0,10).map((t,i)=>
+      `${i+1}. \`${t.original}\` — perplexity ${t.perplexity.toFixed(2)}`
+    ),
+    '',
+    '## Surgery Log',
+    '',
+    surgeryLog.length ? surgeryLog.map(e=>`- token #${e.index}: \`${e.original}\` → \`${e.replacement}\``).join('\n') : '_(no edits)_',
+  ].join('\n');
+  const blob = new Blob([md], {type:'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'eot-research-' + Date.now() + '.md';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+};</script>
 </body>
 </html>
