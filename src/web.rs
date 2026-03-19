@@ -20,6 +20,10 @@
 
 use colored::*;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -29,6 +33,34 @@ use crate::collab::RoomStore;
 use crate::providers::Provider;
 use crate::transforms::Transform;
 use crate::{TokenEvent, TokenInterceptor};
+
+/// Per-IP sliding-window rate limiter for the /stream endpoint.
+/// Allows at most `MAX_REQUESTS` requests in `WINDOW_SECS` seconds per IP.
+const RATE_LIMIT_MAX: u32 = 10;
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+
+type RateLimiter = Arc<Mutex<HashMap<IpAddr, (Instant, u32)>>>;
+
+fn new_rate_limiter() -> RateLimiter {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// Returns `true` if the request should be allowed, `false` if rate-limited.
+fn rate_limit_check(limiter: &RateLimiter, addr: IpAddr) -> bool {
+    let mut map = limiter.lock().unwrap_or_else(|e| e.into_inner());
+    let now = Instant::now();
+    let entry = map.entry(addr).or_insert((now, 0));
+    if now.duration_since(entry.0) >= RATE_LIMIT_WINDOW {
+        // Window expired — reset
+        *entry = (now, 1);
+        true
+    } else if entry.1 < RATE_LIMIT_MAX {
+        entry.1 += 1;
+        true
+    } else {
+        false
+    }
+}
 
 // Default model names used when the query string omits a model parameter.
 // Centralised here so web.rs, cli.rs, and lib.rs all stay in sync.
@@ -230,6 +262,7 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     let api_key: Option<String> = default_args.api_key.clone();
 
     let room_store = crate::collab::new_room_store();
+    let rate_limiter = new_rate_limiter();
 
     // If HelixRouter integration is configured, start the bridge + orchestrator.
     // This closes the cross-repo feedback loop: HelixRouter pressure → TelemetryBus
@@ -267,12 +300,14 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     }
 
     loop {
-        let (stream, _addr) = listener.accept().await?;
+        let (stream, addr) = listener.accept().await?;
         let provider = default_provider.clone();
         let store = room_store.clone();
         let conn_api_key = api_key.clone();
+        let limiter = rate_limiter.clone();
+        let peer_ip = addr.ip();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key).await {
+            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key, limiter, peer_ip).await {
                 eprintln!("  connection error: {}", e);
             }
         });
@@ -285,6 +320,8 @@ async fn handle_connection(
     orchestrator: bool,
     store: RoomStore,
     api_key: Option<String>,
+    limiter: RateLimiter,
+    peer_ip: IpAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::AsyncReadExt;
 
@@ -381,6 +418,17 @@ async fn handle_connection(
             stream.write_all(response.as_bytes()).await?;
         }
         "/stream" => {
+            // Rate limiting: max RATE_LIMIT_MAX requests per IP per RATE_LIMIT_WINDOW.
+            if !rate_limit_check(&limiter, peer_ip) {
+                let body = r#"{"error":"Too Many Requests"}"#;
+                let response = format!(
+                    "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nContent-Length: {}\r\nRetry-After: 60\r\nConnection: close\r\n\r\n{}",
+                    body.len(), body
+                );
+                stream.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+
             let params = parse_query(query_str);
             let sp = parse_stream_params(&params);
             let prompt = sp.prompt;
@@ -1837,5 +1885,38 @@ mod tests {
     fn test_url_decode_incomplete_percent_no_panic() {
         // Should not panic on truncated percent-encoded sequence
         let _ = url_decode("a%2");
+    }
+
+    // -- Rate limiter tests --
+
+    #[test]
+    fn test_rate_limit_allows_up_to_max() {
+        let limiter = new_rate_limiter();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX {
+            assert!(rate_limit_check(&limiter, ip), "should allow within limit");
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_blocks_over_max() {
+        let limiter = new_rate_limiter();
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX {
+            rate_limit_check(&limiter, ip);
+        }
+        assert!(!rate_limit_check(&limiter, ip), "should block when over limit");
+    }
+
+    #[test]
+    fn test_rate_limit_different_ips_independent() {
+        let limiter = new_rate_limiter();
+        let ip1: IpAddr = "1.1.1.1".parse().unwrap();
+        let ip2: IpAddr = "2.2.2.2".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX {
+            rate_limit_check(&limiter, ip1);
+        }
+        // ip2 is unaffected by ip1's exhaustion
+        assert!(rate_limit_check(&limiter, ip2));
     }
 }
