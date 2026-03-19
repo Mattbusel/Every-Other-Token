@@ -17,6 +17,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut args = Args::parse();
 
+    // No-argument fallback: if the user gave no prompt and no action flags
+    // (happens when double-clicking the .exe on Windows, or running bare),
+    // auto-launch the web UI instead of printing help and exiting immediately.
+    if args.prompt.is_empty()
+        && !args.web
+        && !args.research
+        && !args.dry_run
+        && args.record.is_none()
+        && args.replay.is_none()
+        && !args.validate_config
+        && args.list_models.is_none()
+        && !args.json_schema
+        && !args.diff_terminal
+    {
+        eprintln!("[eot] No prompt given — launching web UI at http://localhost:{}", args.port);
+        eprintln!("[eot] Tip: set OPENAI_API_KEY or ANTHROPIC_API_KEY in your environment.");
+        eprintln!("[eot] Run with --help for full CLI usage.");
+        args.web = true;
+    }
+
     // Config file support (#16): apply .eot.toml / ~/.eot.toml defaults only
     // when the user has not explicitly overridden the corresponding CLI flag
     // (identified by comparing to its default value).
