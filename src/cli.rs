@@ -270,16 +270,18 @@ pub fn validate_model(provider: &Provider, model: &str) {
 }
 
 /// Parse "MIN-MAX" rate range string. Returns (min, max) or None on error.
+///
+/// Uses `rfind('-')` to locate the separator so that scientific-notation
+/// values such as `"1e-3-0.5"` are parsed correctly (`1e-3` = 0.001).
 pub fn parse_rate_range(s: &str) -> Option<(f64, f64)> {
-    let parts: Vec<&str> = s.splitn(2, '-').collect();
-    if parts.len() == 2 {
-        let min = parts[0].parse::<f64>().ok()?;
-        let max = parts[1].parse::<f64>().ok()?;
-        if min <= max && min >= 0.0 && max <= 1.0 {
-            return Some((min, max));
-        }
+    let sep = s.rfind('-')?;
+    let min = s[..sep].parse::<f64>().ok()?;
+    let max = s[sep + 1..].parse::<f64>().ok()?;
+    if min <= max && min >= 0.0 && max <= 1.0 {
+        Some((min, max))
+    } else {
+        None
     }
-    None
 }
 
 /// Apply template substitution: replace "{input}" with the prompt.
@@ -533,6 +535,21 @@ mod tests {
     #[test]
     fn test_parse_rate_range_min_greater_than_max() {
         assert_eq!(parse_rate_range("0.8-0.2"), None);
+    }
+
+    #[test]
+    fn test_parse_rate_range_scientific_notation() {
+        // rfind ensures the separator is the last '-', so "1e-3" parses correctly.
+        let result = parse_rate_range("1e-3-0.5");
+        assert!(result.is_some());
+        let (min, max) = result.unwrap();
+        assert!((min - 0.001).abs() < 1e-9);
+        assert!((max - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_parse_rate_range_no_separator_returns_none() {
+        assert_eq!(parse_rate_range("0.5"), None);
     }
 
     #[test]
