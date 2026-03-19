@@ -96,6 +96,9 @@ pub struct ResearchAggregate {
     /// Cross-run mean perplexity by transform label.
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub mean_per_transform_perplexity: std::collections::HashMap<String, f64>,
+    /// True when `total_runs < 30`; the Z-score CI and t-test p-values are
+    /// approximations that may be unreliable at small sample sizes.
+    pub small_n_warning: bool,
 }
 
 fn std_dev(values: &[f64]) -> f64 {
@@ -204,8 +207,9 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             args.system_a.clone()
         };
         interceptor.top_logprobs = args.top_logprobs;
-        if args.rate != 0.5 {
-            interceptor = interceptor.with_rate(args.rate);
+        interceptor.min_confidence = args.min_confidence;
+        if let Some(rate) = args.rate {
+            interceptor = interceptor.with_rate(rate);
         }
         if let Some(seed) = args.seed {
             interceptor = interceptor.with_seed(seed);
@@ -462,20 +466,7 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
 fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
     if runs.is_empty() {
-        return ResearchAggregate {
-            total_runs,
-            mean_token_count: 0.0,
-            mean_confidence: None,
-            mean_perplexity: None,
-            mean_vocab_diversity: 0.0,
-            std_dev_confidence: None,
-            std_dev_perplexity: None,
-            std_dev_token_count: 0.0,
-            confidence_interval_95_confidence: None,
-            confidence_interval_95_perplexity: None,
-            aligned_length: 0,
-            mean_per_transform_perplexity: std::collections::HashMap::new(),
-        };
+        return ResearchAggregate::empty(total_runs);
     }
 
     let token_counts: Vec<f64> = runs.iter().map(|r| r.token_count as f64).collect();
@@ -546,6 +537,27 @@ fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
         confidence_interval_95_perplexity,
         aligned_length,
         mean_per_transform_perplexity,
+        small_n_warning: total_runs < 30,
+    }
+}
+
+impl ResearchAggregate {
+    fn empty(total_runs: u32) -> Self {
+        ResearchAggregate {
+            total_runs,
+            mean_token_count: 0.0,
+            mean_confidence: None,
+            mean_perplexity: None,
+            mean_vocab_diversity: 0.0,
+            std_dev_confidence: None,
+            std_dev_perplexity: None,
+            std_dev_token_count: 0.0,
+            confidence_interval_95_confidence: None,
+            confidence_interval_95_perplexity: None,
+            aligned_length: 0,
+            mean_per_transform_perplexity: std::collections::HashMap::new(),
+            small_n_warning: total_runs < 30,
+        }
     }
 }
 
@@ -659,8 +671,8 @@ async fn run_research_for_prompt(
             false,
         )?;
         interceptor.web_tx = Some(tx);
-        if args.rate != 0.5 {
-            interceptor = interceptor.with_rate(args.rate);
+        if let Some(rate) = args.rate {
+            interceptor = interceptor.with_rate(rate);
         }
         if let Some(seed) = args.seed {
             interceptor = interceptor.with_seed(seed);
@@ -977,6 +989,7 @@ mod tests {
                 confidence_interval_95_perplexity: None,
                 aligned_length: 0,
                 mean_per_transform_perplexity: std::collections::HashMap::new(),
+                small_n_warning: false,
             },
         };
         let json = serde_json::to_string(&output).expect("serialize");

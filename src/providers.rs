@@ -73,6 +73,7 @@ impl ProviderPlugin for OpenAiPlugin {
 }
 
 /// Anthropic API version header value. Update here when Anthropic releases a new stable version.
+/// As of 2026-03: Anthropic has not published a newer stable version header. Revisit quarterly.
 pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
 impl ProviderPlugin for AnthropicPlugin {

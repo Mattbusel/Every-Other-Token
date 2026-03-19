@@ -38,6 +38,10 @@ pub struct EotConfig {
     pub top_logprobs: Option<u8>,
     /// System prompt for provider A in a two-provider comparison run.
     pub system_a: Option<String>,
+    /// Maximum tokens in the Anthropic response. Overrides the CLI default of 4096.
+    pub anthropic_max_tokens: Option<u32>,
+    /// Optional bearer token required for /api/ web UI endpoints.
+    pub api_key: Option<String>,
 }
 
 impl EotConfig {
@@ -77,6 +81,12 @@ impl EotConfig {
         if other.system_a.is_some() {
             self.system_a = other.system_a;
         }
+        if other.anthropic_max_tokens.is_some() {
+            self.anthropic_max_tokens = other.anthropic_max_tokens;
+        }
+        if other.api_key.is_some() {
+            self.api_key = other.api_key;
+        }
     }
 }
 
@@ -101,6 +111,10 @@ fn load_file(path: &PathBuf) -> EotConfig {
             cfg
         }
         Err(e) => {
+            eprintln!(
+                "[eot][config] warning: failed to parse {:?}: {} — using defaults",
+                path, e
+            );
             tracing::warn!(
                 path = %path.display(),
                 error = %e,
@@ -223,6 +237,8 @@ mod tests {
             port: Some(9999),
             top_logprobs: Some(10),
             system_a: Some("Be concise.".to_string()),
+            anthropic_max_tokens: None,
+            api_key: None,
         };
         base.merge(other);
         assert_eq!(base.provider.as_deref(), Some("openai"));

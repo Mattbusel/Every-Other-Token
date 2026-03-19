@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org/)
 [![GitHub Stars](https://img.shields.io/github/stars/Mattbusel/Every-Other-Token?style=social)](https://github.com/Mattbusel/Every-Other-Token)
+[![API Reference](https://img.shields.io/badge/docs-api%20reference-blue)](docs/api.md)
 
 A real-time LLM token stream interceptor for interpretability research. Sits between your application and the model, mutates tokens mid-generation, captures per-token confidence and perplexity signals, and renders results in a zero-dependency terminal or web UI.
 

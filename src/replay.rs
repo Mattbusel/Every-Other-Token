@@ -82,6 +82,38 @@ impl Replayer {
         }
         Ok(())
     }
+
+    /// Send records into `tx` with timing simulation based on recorded timestamps.
+    ///
+    /// `speed` controls playback rate: `1.0` = real-time, `2.0` = double speed,
+    /// `0.0` (or any non-positive value) = instant (no delays).
+    ///
+    /// # Errors
+    /// Returns an error if the channel is closed before all records are sent.
+    pub async fn replay_to_channel_timed(
+        records: Vec<ReplayRecord>,
+        tx: UnboundedSender<TokenEvent>,
+        speed: f64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let start_wall = std::time::Instant::now();
+        let first_ts = records.first().map(|r| r.timestamp_ms).unwrap_or(0);
+        for record in records {
+            if speed > 0.0 {
+                let offset_ms = record.timestamp_ms.saturating_sub(first_ts);
+                let target_wall_ms = (offset_ms as f64 / speed) as u64;
+                let elapsed_ms = start_wall.elapsed().as_millis() as u64;
+                if target_wall_ms > elapsed_ms {
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        target_wall_ms - elapsed_ms,
+                    ))
+                    .await;
+                }
+            }
+            tx.send(record.event)
+                .map_err(|e| format!("send error: {}", e))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
