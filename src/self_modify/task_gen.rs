@@ -336,6 +336,7 @@ pub struct TaskGenerator {
 }
 
 impl TaskGenerator {
+    /// Create a new task generator with the given rate-limit and dedup configuration.
     pub fn new(config: TaskGenConfig) -> Self {
         let rl = RateLimiter::new(config.max_per_window, config.rate_window);
         Self {

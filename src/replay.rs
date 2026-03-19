@@ -166,4 +166,75 @@ mod tests {
         let received = rx.try_recv().expect("recv");
         assert_eq!(received.index, 0);
     }
+
+    #[test]
+    fn test_recorder_timestamps_non_decreasing() {
+        let mut rec = Recorder::new();
+        rec.record(&make_event(0));
+        rec.record(&make_event(1));
+        rec.record(&make_event(2));
+        let times: Vec<u64> = rec.records.iter().map(|r| r.timestamp_ms).collect();
+        for i in 1..times.len() {
+            assert!(
+                times[i] >= times[i - 1],
+                "timestamps must be non-decreasing: {} < {}",
+                times[i],
+                times[i - 1]
+            );
+        }
+    }
+
+    #[test]
+    fn test_replayer_load_empty_array() {
+        let tmp = std::env::temp_dir().join("replay_empty.json");
+        std::fs::write(&tmp, "[]").expect("write");
+        let records = Replayer::load(tmp.to_str().unwrap()).expect("load empty");
+        assert!(records.is_empty());
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_replayer_load_invalid_json_returns_err() {
+        let tmp = std::env::temp_dir().join("replay_bad.json");
+        std::fs::write(&tmp, "not json at all").expect("write");
+        assert!(Replayer::load(tmp.to_str().unwrap()).is_err());
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_replay_to_channel_preserves_order() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let records: Vec<ReplayRecord> = (0..5)
+            .map(|i| ReplayRecord {
+                timestamp_ms: i as u64 * 100,
+                event: make_event(i),
+            })
+            .collect();
+        Replayer::replay_to_channel(records, tx).expect("replay");
+        for expected_idx in 0..5 {
+            let ev = rx.try_recv().expect("recv");
+            assert_eq!(ev.index, expected_idx);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_replay_to_channel_timed_instant_speed() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let records: Vec<ReplayRecord> = (0..3)
+            .map(|i| ReplayRecord {
+                timestamp_ms: i as u64 * 1_000, // 1s apart
+                event: make_event(i),
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        Replayer::replay_to_channel_timed(records, tx, 0.0)
+            .await
+            .expect("timed replay");
+        // speed=0.0 should be instant — well under 100ms
+        assert!(start.elapsed().as_millis() < 100);
+        for expected in 0..3 {
+            let ev = rx.try_recv().expect("recv");
+            assert_eq!(ev.index, expected);
+        }
+    }
 }

@@ -169,4 +169,69 @@ mod tests {
             .expect("export empty");
         std::fs::remove_file(&tmp).ok();
     }
+
+    #[test]
+    fn test_nan_confidence_sorts_last() {
+        let mut exporter = HeatmapExporter::new();
+        // Run 1: positions with NaN and valid confidence
+        let events = vec![
+            make_event(0, Some(0.9)),
+            make_event(1, None),  // will produce NaN mean
+            make_event(2, Some(0.5)),
+        ];
+        exporter.record_run(&events);
+
+        let tmp = std::env::temp_dir().join("heatmap_nan_test.csv");
+        exporter
+            .export_csv(tmp.to_str().unwrap(), 0.0, "confidence")
+            .expect("export");
+        let content = std::fs::read_to_string(&tmp).expect("read");
+        std::fs::remove_file(&tmp).ok();
+
+        // The highest confidence row (0.9) should appear before the lowest (0.5)
+        let lines: Vec<&str> = content.lines().collect();
+        // First line is the header; subsequent are data rows sorted by confidence desc
+        assert!(lines.len() >= 3, "should have header + 3 data rows");
+        // The last data row should be position 1 (NaN sorts last)
+        let last_row = lines.last().unwrap();
+        assert!(last_row.starts_with("1,"), "NaN-confidence row should sort last");
+    }
+
+    #[test]
+    fn test_min_confidence_filter() {
+        let mut exporter = HeatmapExporter::new();
+        let events = vec![
+            make_event(0, Some(0.9)),
+            make_event(1, Some(0.1)),
+        ];
+        exporter.record_run(&events);
+
+        let tmp = std::env::temp_dir().join("heatmap_filter_test.csv");
+        exporter
+            .export_csv(tmp.to_str().unwrap(), 0.5, "position")
+            .expect("export");
+        let content = std::fs::read_to_string(&tmp).expect("read");
+        std::fs::remove_file(&tmp).ok();
+
+        // Only position 0 (confidence 0.9) should be in the output
+        assert!(content.contains("0,0.9"), "high-confidence row should be present");
+        assert!(!content.contains("1,0.1"), "low-confidence row should be filtered");
+    }
+
+    #[test]
+    fn test_multiple_runs_alignment() {
+        let mut exporter = HeatmapExporter::new();
+        exporter.record_run(&[make_event(0, Some(0.8)), make_event(1, Some(0.7))]);
+        exporter.record_run(&[make_event(0, Some(0.6))]);  // shorter run
+
+        let tmp = std::env::temp_dir().join("heatmap_multirun.csv");
+        exporter
+            .export_csv(tmp.to_str().unwrap(), 0.0, "position")
+            .expect("export");
+        let content = std::fs::read_to_string(&tmp).expect("read");
+        std::fs::remove_file(&tmp).ok();
+
+        assert!(content.contains("run_0"));
+        assert!(content.contains("run_1"));
+    }
 }
