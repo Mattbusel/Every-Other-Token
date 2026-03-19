@@ -1143,7 +1143,7 @@ let ws=null, myId=null, myColor='#58a6ff', myName='Guest', amHost=false;
 let roomCode=null, isRecording=false, hasReplay=false;
 const peerColors={};
 
-function sendWs(obj){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));}
+function sendWs(obj){if(ws&&ws.readyState===WebSocket.OPEN){try{ws.send(JSON.stringify(obj));}catch(e){console.warn('[eot] ws send failed:',e);}}}
 
 /* ---- Security helpers ---- */
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}

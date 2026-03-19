@@ -1897,6 +1897,20 @@ mod tests {
         assert_eq!(sp.rate, 0.5);
     }
 
+    #[test]
+    fn test_parse_stream_params_top_logprobs_clamped_to_20() {
+        let params = parse_query("top_logprobs=255");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.top_logprobs, 20);
+    }
+
+    #[test]
+    fn test_parse_stream_params_top_logprobs_valid_unchanged() {
+        let params = parse_query("top_logprobs=10");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.top_logprobs, 10);
+    }
+
     // -- url_decode UTF-8 multi-byte (item 1) --
 
     #[test]
