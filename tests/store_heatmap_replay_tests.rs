@@ -22,6 +22,7 @@ fn make_event(idx: usize, confidence: Option<f32>) -> TokenEvent {
         perplexity: confidence.map(|c| 1.0 / c.max(0.01)),
         alternatives: vec![],
         is_error: false,
+        arrival_ms: None,
     }
 }
 

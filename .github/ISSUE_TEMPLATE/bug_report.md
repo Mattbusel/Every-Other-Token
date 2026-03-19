@@ -1,21 +1,31 @@
 ---
-name: Bug Report
-title: '[BUG] '
+name: Bug report
+about: Report a bug in Every-Other-Token
 labels: bug
 ---
 
-**Describe the bug**
-A clear description of what the bug is.
+## Describe the bug
+<!-- Clear description of what went wrong -->
 
-**To Reproduce**
-Steps to reproduce the behavior.
+## To reproduce
+Steps:
+1.
+2.
 
-**Expected behavior**
-What you expected to happen.
+## Expected behavior
+<!-- What should happen -->
 
-**Environment**
+## Actual behavior
+<!-- What actually happens -->
+
+## Environment
 - OS:
-- Rust version:
-- Crate version/commit:
+- Rust version (`rustc --version`):
+- EOT version / commit:
+- Provider: openai / anthropic / mock
+- Features enabled:
 
-**Additional context**
+## Logs
+```
+<!-- paste relevant output here -->
+```

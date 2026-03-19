@@ -1,9 +1,67 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
 jobs:
-  check:
+  test:
+    name: Test (default features)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test
+
+      - name: ratio check
+        if: ${{ hashFiles('scripts/ratio_check.sh') != '' }}
+        run: bash scripts/ratio_check.sh
+
+  feature-matrix:
+    name: Feature matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "sqlite-log"
+          - "self-improving"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-feat-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-feat-${{ matrix.features }}-
+
+      - name: cargo check (features=${{ matrix.features }})
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo check --no-default-features
+          else
+            cargo check --features "${{ matrix.features }}" --no-default-features
+          fi

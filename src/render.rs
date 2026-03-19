@@ -257,6 +257,7 @@ mod tests {
             perplexity,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         }
     }
 

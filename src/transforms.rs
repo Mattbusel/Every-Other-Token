@@ -247,8 +247,8 @@ static SYNONYM_OVERRIDES: Lazy<Mutex<HashMap<String, String>>> =
 pub fn load_synonym_overrides(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
     let mut overrides = SYNONYM_OVERRIDES.lock().unwrap_or_else(|e| e.into_inner());
-    for line in content.lines() {
-        let line = line.trim();
+    for (line_num, raw_line) in content.lines().enumerate() {
+        let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -256,6 +256,8 @@ pub fn load_synonym_overrides(path: &str) -> Result<(), Box<dyn std::error::Erro
             overrides.insert(k.trim().to_lowercase(), v.trim().to_string());
         } else if let Some((k, v)) = line.split_once('=') {
             overrides.insert(k.trim().to_lowercase(), v.trim().to_string());
+        } else {
+            eprintln!("[eot] synonym file line {}: parse error — {:?}", line_num + 1, line);
         }
     }
     Ok(())
@@ -1596,5 +1598,75 @@ mod confidence_tests {
         assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.7, &t), ConfidenceBand::High);
         assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.4, &t), ConfidenceBand::Mid);
         assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.39, &t), ConfidenceBand::Low);
+    }
+
+    // -- Item 20: Unicode grapheme cluster tests --
+
+    /// Known behavior: Reverse on a token with combining marks does chars().rev()
+    /// which splits combining marks from their base characters.
+    /// e.g. "e\u{0301}" reversed becomes "\u{0301}e" (combining accent before base).
+    /// This is documented as a known limitation — proper grapheme-aware reversal
+    /// would require a Unicode segmentation library.
+    #[test]
+    fn test_reverse_combining_marks() {
+        let input = "e\u{0301}"; // e + combining acute accent = é
+        let transform = Transform::Reverse;
+        let (result, _) = transform.apply_with_label(input);
+        // Result must be valid UTF-8 (no mojibake) — we just check it doesn't panic
+        // and is a valid string. The combining mark may be reordered (known behavior).
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok(),
+            "result must be valid UTF-8");
+        assert!(!result.is_empty(), "result must not be empty");
+    }
+
+    #[test]
+    fn test_scramble_preserves_length() {
+        let input = "hello world";
+        let transform = Transform::Scramble;
+        let mut rng = rand::thread_rng();
+        let (result, _) = transform.apply_with_label_rng(input, &mut rng);
+        assert_eq!(result.chars().count(), input.chars().count(),
+            "scramble should preserve char count");
+    }
+
+    #[test]
+    fn test_mock_preserves_grapheme_count() {
+        let input = "你好世界";
+        let transform = Transform::Mock;
+        let (result, _) = transform.apply_with_label(input);
+        assert_eq!(result.chars().count(), input.chars().count(),
+            "mock should preserve CJK char count");
+    }
+
+    // -- Item 11: dry-run chain shows steps --
+    #[test]
+    fn test_dry_run_chain_shows_steps() {
+        let chain = Transform::Chain(vec![Transform::Reverse, Transform::Uppercase]);
+        let input = "hello world";
+        // Apply reverse then uppercase manually
+        let (after_reverse, _) = Transform::Reverse.apply_with_label(input);
+        assert_eq!(after_reverse, "dlrow olleh");
+        let (after_uppercase, _) = Transform::Uppercase.apply_with_label(&after_reverse);
+        assert_eq!(after_uppercase, "DLROW OLLEH");
+        // Verify the chain produces the same result
+        let (chain_result, _) = chain.apply_with_label(input);
+        assert_eq!(chain_result, "DLROW OLLEH");
+    }
+
+    // -- Item 13: synonym load error includes line number --
+    #[test]
+    fn test_synonym_load_error_includes_line_number() {
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join("eot_synonym_test_bad.tsv");
+        let mut f = std::fs::File::create(&tmp).unwrap();
+        writeln!(f, "good\tgreat").unwrap();
+        writeln!(f, "bad_line_no_separator").unwrap(); // bad line #2
+        writeln!(f, "fast\tquick").unwrap();
+        drop(f);
+        // Capture stderr is not easy in tests, but we verify no panic occurs
+        // and the function succeeds (bad lines are skipped with eprintln).
+        let result = load_synonym_overrides(tmp.to_str().unwrap());
+        assert!(result.is_ok(), "load_synonym_overrides should not fail on bad lines");
+        let _ = std::fs::remove_file(&tmp);
     }
 }

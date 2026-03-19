@@ -83,6 +83,70 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         every_other_token::cli::validate_model(&args.provider, &model);
     }
 
+    // --validate-config: print resolved config values and exit
+    if args.validate_config {
+        use every_other_token::config::EotConfig;
+        let cfg = EotConfig::load();
+        println!("[eot config] provider: {}", args.provider);
+        println!("[eot config] model: {}", args.model);
+        println!("[eot config] transform: {}", args.transform);
+        println!("[eot config] rate: {}", args.rate.unwrap_or(0.5));
+        println!("[eot config] port: {}", args.port);
+        println!("[eot config] top_logprobs: {}", args.top_logprobs);
+        println!("[eot config] max_retries: {}", args.max_retries);
+        println!("[eot config] timeout: {}", args.timeout);
+        println!("[eot config] anthropic_max_tokens: {}", args.anthropic_max_tokens);
+        if let Some(ref sa) = args.system_a { println!("[eot config] system_a: {}", sa); }
+        drop(cfg); // cfg loaded for side-effects
+        std::process::exit(0);
+    }
+
+    // --list-models: print known models and exit
+    if let Some(ref provider_filter) = args.list_models.clone() {
+        let openai_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+        let anthropic_models = [
+            "claude-3-5-haiku-20241022",
+            "claude-3-5-sonnet-20241022",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+        ];
+        let show_openai = provider_filter == "openai" || provider_filter == "all";
+        let show_anthropic = provider_filter == "anthropic" || provider_filter == "all";
+        if show_openai {
+            println!("[openai models]");
+            for m in &openai_models { println!("  {}", m); }
+        }
+        if show_anthropic {
+            println!("[anthropic models]");
+            for m in &anthropic_models { println!("  {}", m); }
+        }
+        if !show_openai && !show_anthropic {
+            // unknown filter value — show all
+            for m in &openai_models { println!("  {}", m); }
+            for m in &anthropic_models { println!("  {}", m); }
+        }
+        std::process::exit(0);
+    }
+
+    // --json-schema: print embedded research schema and exit
+    if args.json_schema {
+        const RESEARCH_SCHEMA: &str = include_str!("../docs/research-schema.json");
+        println!("{}", RESEARCH_SCHEMA);
+        std::process::exit(0);
+    }
+
+    // --record early path check: verify the file is writable before making API calls
+    if let Some(ref record_path) = args.record {
+        if let Err(e) = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(record_path)
+        {
+            eprintln!("[eot] cannot open record file '{}': {}", record_path, e);
+            std::process::exit(1);
+        }
+    }
+
     // Shell completion generation
     if let Some(shell) = args.completions {
         clap_complete::generate(
@@ -104,14 +168,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let sample_tokens = [
             "The", " quick", " brown", " fox", " jumps", " over", " the", " lazy", " dog",
         ];
-        for (i, token) in sample_tokens.iter().enumerate() {
-            let (result, label) = transform.apply_with_label(token);
-            let marker = if (i % 2) == 1 {
-                "→ TRANSFORMED"
-            } else {
-                "  (pass-through)"
-            };
-            println!("  [{}] {:15} {} {:?} ({})", i, token, marker, result, label);
+        // For Chain transforms, show intermediate outputs at each step.
+        if let every_other_token::transforms::Transform::Chain(ref steps) = transform {
+            let step_names: Vec<String> = steps.iter().map(|s| format!("{:?}", s)).collect();
+            println!("Dry-run: Chain [{}]", step_names.join(", "));
+            for token in &sample_tokens {
+                println!("  Input: {:?}", token);
+                let mut current = token.to_string();
+                for step in steps {
+                    let (next, _label) = step.apply_with_label(&current);
+                    println!("  After {:?}: {:?}", step, next);
+                    current = next;
+                }
+            }
+        } else {
+            for (i, token) in sample_tokens.iter().enumerate() {
+                let (result, label) = transform.apply_with_label(token);
+                let marker = if (i % 2) == 1 {
+                    "→ TRANSFORMED"
+                } else {
+                    "  (pass-through)"
+                };
+                println!("  [{}] {:15} {} {:?} ({})", i, token, marker, result, label);
+            }
         }
         return Ok(());
     }
@@ -216,6 +295,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     interceptor.max_retries = args.max_retries;
     interceptor.min_confidence = args.min_confidence;
     interceptor.anthropic_max_tokens = args.anthropic_max_tokens;
+    if args.timeout > 0 {
+        interceptor = interceptor.with_timeout(args.timeout);
+    }
 
     tokio::select! {
         result = interceptor.intercept_stream(&args.prompt) => {

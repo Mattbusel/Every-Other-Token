@@ -25,3 +25,9 @@ LLM interpretability research.
 - Every new module needs a corresponding test file
 - Run ./scripts/ratio_check.sh before committing
 - cargo test must show 0 failures
+
+## CI / Pre-commit
+- Run `make test` before committing
+- Run `make ratio` to verify 1:1 test-to-production line ratio
+- The pre-commit hook at `scripts/pre-commit.sh` automates both
+- GitHub Actions runs the full matrix on every push
