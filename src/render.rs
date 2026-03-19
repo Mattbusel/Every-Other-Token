@@ -23,8 +23,29 @@ pub enum ConfidenceBand {
     Low,
 }
 
+/// Runtime-configurable thresholds for confidence band classification.
+///
+/// Defaults match the historical hard-coded values (high=0.7, mid=0.4).
+/// Override via `--confidence-high` / `--confidence-mid` CLI flags.
+#[derive(Debug, Clone, Copy)]
+pub struct ConfidenceThresholds {
+    /// Minimum confidence to classify as `High`. Default: 0.7.
+    pub high: f32,
+    /// Minimum confidence to classify as `Mid` (below `high`). Default: 0.4.
+    pub mid: f32,
+}
+
+impl Default for ConfidenceThresholds {
+    fn default() -> Self {
+        ConfidenceThresholds {
+            high: 0.7,
+            mid: 0.4,
+        }
+    }
+}
+
 impl ConfidenceBand {
-    /// Classify a raw confidence value in `[0.0, 1.0]`.
+    /// Classify a raw confidence value using the default thresholds (0.7 / 0.4).
     ///
     /// # Examples
     /// ```
@@ -34,9 +55,14 @@ impl ConfidenceBand {
     /// assert_eq!(ConfidenceBand::from_confidence(0.1), ConfidenceBand::Low);
     /// ```
     pub fn from_confidence(c: f32) -> Self {
-        if c >= 0.7 {
+        Self::from_confidence_with_thresholds(c, &ConfidenceThresholds::default())
+    }
+
+    /// Classify a raw confidence value using caller-supplied thresholds.
+    pub fn from_confidence_with_thresholds(c: f32, t: &ConfidenceThresholds) -> Self {
+        if c >= t.high {
             ConfidenceBand::High
-        } else if c >= 0.4 {
+        } else if c >= t.mid {
             ConfidenceBand::Mid
         } else {
             ConfidenceBand::Low

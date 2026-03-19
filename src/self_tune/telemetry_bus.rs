@@ -31,8 +31,11 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 
 /// Number of samples held in each rolling window ring buffer.
 pub const WINDOW_1M_CAP: usize = 60; // one sample per second
+/// Capacity of the 5-minute rolling window ring buffer.
 pub const WINDOW_5M_CAP: usize = 300;
+/// Capacity of the 15-minute rolling window ring buffer.
 pub const WINDOW_15M_CAP: usize = 900;
+/// Capacity of the 1-hour rolling window ring buffer.
 pub const WINDOW_1H_CAP: usize = 3_600;
 
 /// Broadcast channel capacity (number of snapshots in flight).
@@ -93,6 +96,11 @@ pub struct RingBuffer {
 }
 
 impl RingBuffer {
+    /// Create a new ring buffer with the given fixed capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is zero.
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "RingBuffer capacity must be > 0");
         Self {
@@ -117,6 +125,7 @@ impl RingBuffer {
         self.len
     }
 
+    /// Returns `true` if the buffer contains no samples.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -250,6 +259,7 @@ pub struct TelemetrySnapshot {
 }
 
 impl TelemetrySnapshot {
+    /// Construct a snapshot with all counters and rates set to zero.
     pub fn zero() -> Self {
         Self {
             captured_at: Instant::now(),

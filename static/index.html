@@ -726,7 +726,7 @@ $('#start').onclick=()=>{
       }
 
       /* Redraw graph periodically */
-      if($('#graphtoggle').checked&&count%5===0)drawGraph();
+      if($('#graphtoggle').checked&&count%10===0)drawGraph();
 
       $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
     }catch(_){}

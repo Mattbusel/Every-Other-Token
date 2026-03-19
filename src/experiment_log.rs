@@ -94,6 +94,52 @@ mod inner {
             )?;
             Ok(())
         }
+
+        /// Return all stored experiment rows as a JSON array string.
+        ///
+        /// Each element is an object with the same columns as the `experiments`
+        /// table.  Returns `"[]"` if the table is empty.
+        pub fn list(&self) -> Result<String> {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, run_ts, prompt_hash, prompt, provider, transform, model,
+                        runs_count, mean_token_count, mean_confidence, mean_perplexity,
+                        mean_vocab_diversity, output_path
+                 FROM experiments ORDER BY id DESC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(format!(
+                    r#"{{"id":{},"run_ts":{},"prompt_hash":{},"prompt":{},"provider":{},"transform":{},"model":{},"runs_count":{},"mean_token_count":{},"mean_confidence":{},"mean_perplexity":{},"mean_vocab_diversity":{},"output_path":{}}}"#,
+                    row.get::<_, i64>(0)?,
+                    serde_json_str(row.get::<_, String>(1)?),
+                    serde_json_str(row.get::<_, String>(2)?),
+                    serde_json_str(row.get::<_, String>(3)?),
+                    serde_json_str(row.get::<_, String>(4)?),
+                    serde_json_str(row.get::<_, String>(5)?),
+                    serde_json_str(row.get::<_, String>(6)?),
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, f64>(8)?,
+                    row.get::<_, Option<f64>>(9)?.map_or("null".to_string(), |v| v.to_string()),
+                    row.get::<_, Option<f64>>(10)?.map_or("null".to_string(), |v| v.to_string()),
+                    row.get::<_, f64>(11)?,
+                    serde_json_str(row.get::<_, String>(12)?),
+                ))
+            })?;
+
+            let items: Vec<String> = rows.filter_map(|r| r.ok()).collect();
+            Ok(format!("[{}]", items.join(",")))
+        }
+    }
+
+    /// Escape a string for embedding in a JSON literal (no external dep).
+    fn serde_json_str(s: String) -> String {
+        let escaped = s
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        format!("\"{}\"", escaped)
     }
 
     /// Format unix timestamp as ISO-8601 date-time string (no chrono dep needed).

@@ -616,8 +616,20 @@ pub async fn handle_ws(
                             }
                         }
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        // Receiver fell behind; continue without the missed messages.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        // Receiver fell behind; notify the client and continue.
+                        tracing::warn!(
+                            participant = %participant_id,
+                            skipped = n,
+                            "WS client lagged — skipped broadcast messages"
+                        );
+                        let warn = serde_json::json!({
+                            "type": "lag_warning",
+                            "skipped": n,
+                        });
+                        if let Ok(s) = serde_json::to_string(&warn) {
+                            let _ = ws_sink.send(WsMessage::Text(s)).await;
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
@@ -1484,7 +1496,7 @@ mod tests {
         {
             let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
             let (tx, _) = tokio::sync::broadcast::channel(16);
-            let mut room = Room {
+            let room = Room {
                 code: code.clone(),
                 host_id: String::new(),
                 participants: Vec::new(),

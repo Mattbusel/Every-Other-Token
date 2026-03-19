@@ -71,6 +71,7 @@ pub struct CheckResult {
 }
 
 impl CheckResult {
+    /// Construct a passing result for the named check.
     pub fn passed(name: impl Into<String>, duration: Duration) -> Self {
         Self {
             name: name.into(),
@@ -80,6 +81,7 @@ impl CheckResult {
         }
     }
 
+    /// Construct a failed result for the named check with an explanatory reason.
     pub fn failed(name: impl Into<String>, reason: impl Into<String>, duration: Duration) -> Self {
         Self {
             name: name.into(),
@@ -91,6 +93,7 @@ impl CheckResult {
         }
     }
 
+    /// Construct a skipped result for the named check with an explanatory reason.
     pub fn skipped(name: impl Into<String>, reason: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -102,6 +105,7 @@ impl CheckResult {
         }
     }
 
+    /// Attach additional diagnostic lines to this result (builder style).
     pub fn with_details(mut self, details: Vec<String>) -> Self {
         self.details = details;
         self
@@ -132,10 +136,12 @@ impl BenchmarkSample {
         }
     }
 
+    /// Regression as a signed percentage (positive = slower).
     pub fn pct_change(&self) -> f64 {
         self.regression_fraction() * 100.0
     }
 
+    /// Returns `true` if the regression fraction exceeds `threshold`.
     pub fn is_regression(&self, threshold: f64) -> bool {
         self.regression_fraction() > threshold
     }
@@ -156,6 +162,7 @@ pub struct StagingMetric {
 }
 
 impl StagingMetric {
+    /// Returns `true` if `observed` lies within `[min, max]`.
     pub fn passes(&self) -> bool {
         self.observed >= self.min && self.observed <= self.max
     }
@@ -276,6 +283,7 @@ impl std::fmt::Display for RecommendedAction {
 }
 
 impl ValidationReport {
+    /// Return all checks whose status is `Failed`.
     pub fn failed_checks(&self) -> Vec<&CheckResult> {
         self.checks
             .iter()
@@ -283,6 +291,7 @@ impl ValidationReport {
             .collect()
     }
 
+    /// Return all checks whose status is `Passed`.
     pub fn passed_checks(&self) -> Vec<&CheckResult> {
         self.checks
             .iter()
@@ -290,6 +299,7 @@ impl ValidationReport {
             .collect()
     }
 
+    /// Return all checks whose status is `Skipped`.
     pub fn skipped_checks(&self) -> Vec<&CheckResult> {
         self.checks
             .iter()

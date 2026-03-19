@@ -225,14 +225,98 @@ pub struct TokenInterceptor {
     last_token_instant: Option<std::time::Instant>,
     /// Maximum retry attempts for API calls on 429/5xx (configurable via --max-retries).
     pub max_retries: u32,
+    /// Maximum tokens in the Anthropic response (configurable via --anthropic-max-tokens).
+    pub anthropic_max_tokens: u32,
 }
 
 // ---------------------------------------------------------------------------
-// HTTP retry helper (#5)
+// HTTP retry helper (#5) + circuit breaker (#12)
 // ---------------------------------------------------------------------------
+
+/// Per-provider circuit breaker state stored in a global registry.
+///
+/// The breaker has three states:
+/// - **Closed** (normal) — requests pass through.
+/// - **Open** — consecutive failures exceeded `TRIP_THRESHOLD`; requests are
+///   rejected immediately for `RECOVERY_MS` milliseconds.
+/// - **Half-open** — a single probe request is allowed through after recovery;
+///   success resets the counter, failure re-opens for another `RECOVERY_MS`.
+static CIRCUIT_BREAKER: std::sync::OnceLock<
+    std::sync::Mutex<CircuitBreakerState>,
+> = std::sync::OnceLock::new();
+
+struct CircuitBreakerState {
+    consecutive_failures: u32,
+    open_until_ms: u64,
+}
+
+/// Trip after this many consecutive failures.
+const CB_TRIP_THRESHOLD: u32 = 5;
+/// Duration the breaker stays open after tripping (30 seconds).
+const CB_RECOVERY_MS: u64 = 30_000;
+
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Returns `true` if the circuit breaker is currently open (requests should
+/// be short-circuited), `false` if the request should be attempted.
+fn circuit_is_open() -> bool {
+    let state = CIRCUIT_BREAKER.get_or_init(|| {
+        std::sync::Mutex::new(CircuitBreakerState {
+            consecutive_failures: 0,
+            open_until_ms: 0,
+        })
+    });
+    if let Ok(s) = state.lock() {
+        s.open_until_ms > now_unix_ms()
+    } else {
+        false
+    }
+}
+
+fn circuit_record_success() {
+    let state = CIRCUIT_BREAKER.get_or_init(|| {
+        std::sync::Mutex::new(CircuitBreakerState {
+            consecutive_failures: 0,
+            open_until_ms: 0,
+        })
+    });
+    if let Ok(mut s) = state.lock() {
+        s.consecutive_failures = 0;
+        s.open_until_ms = 0;
+    }
+}
+
+fn circuit_record_failure() {
+    let state = CIRCUIT_BREAKER.get_or_init(|| {
+        std::sync::Mutex::new(CircuitBreakerState {
+            consecutive_failures: 0,
+            open_until_ms: 0,
+        })
+    });
+    if let Ok(mut s) = state.lock() {
+        s.consecutive_failures += 1;
+        if s.consecutive_failures >= CB_TRIP_THRESHOLD {
+            s.open_until_ms = now_unix_ms() + CB_RECOVERY_MS;
+            tracing::warn!(
+                consecutive_failures = s.consecutive_failures,
+                recovery_ms = CB_RECOVERY_MS,
+                "circuit breaker tripped — blocking requests for recovery period"
+            );
+        }
+    }
+}
 
 /// Execute a pre-built `reqwest::Request`, retrying up to `max_attempts`
 /// times on 429 / 5xx responses and network errors with exponential back-off.
+///
+/// Integrates with a process-wide circuit breaker: after `CB_TRIP_THRESHOLD`
+/// consecutive failures the breaker opens for `CB_RECOVERY_MS` ms, rejecting
+/// all requests immediately.  A single successful response resets the counter.
 ///
 /// Returns the first successful (or non-retryable) response.
 async fn execute_with_retry(
@@ -240,6 +324,10 @@ async fn execute_with_retry(
     req: reqwest::Request,
     max_attempts: u32,
 ) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
+    if circuit_is_open() {
+        return Err("circuit breaker open — provider unavailable, try again shortly".into());
+    }
+
     let mut last_err: Option<String> = None;
     for attempt in 0..max_attempts {
         if attempt > 0 {
@@ -262,11 +350,14 @@ async fn execute_with_retry(
                 {
                     tracing::warn!(status, attempt, "got retryable HTTP status");
                     last_err = Some(format!("HTTP {status}"));
+                    circuit_record_failure();
                     continue;
                 }
+                circuit_record_success();
                 return Ok(resp);
             }
             Err(e) => {
+                circuit_record_failure();
                 if attempt + 1 < max_attempts {
                     tracing::warn!(error = %e, attempt, "network error, will retry");
                     last_err = Some(e.to_string());
@@ -349,6 +440,7 @@ impl TokenInterceptor {
             min_confidence: None,
             last_token_instant: None,
             max_retries: 3,
+            anthropic_max_tokens: 4096,
         })
     }
 
@@ -361,6 +453,58 @@ impl TokenInterceptor {
     /// Seed the internal RNG for reproducible Noise/Chaos output.
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.rng = StdRng::seed_from_u64(seed);
+        self
+    }
+
+    /// Set the channel used to fan out token events to the web UI.
+    ///
+    /// Calling this completes the builder chain for web-mode construction
+    /// so callers do not need to set `web_tx` as a bare field assignment.
+    pub fn with_web_tx(mut self, tx: mpsc::UnboundedSender<TokenEvent>) -> Self {
+        self.web_tx = Some(tx);
+        self
+    }
+
+    /// Set an optional provider label attached to every emitted [`TokenEvent`].
+    /// Used in diff mode to tag events with `"openai"` or `"anthropic"`.
+    pub fn with_provider_label(mut self, label: impl Into<String>) -> Self {
+        self.web_provider_label = Some(label.into());
+        self
+    }
+
+    /// Prepend a system prompt to the conversation.
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Number of top alternative tokens to request per position (OpenAI only, 0–20).
+    pub fn with_top_logprobs(mut self, n: u8) -> Self {
+        self.top_logprobs = n;
+        self
+    }
+
+    /// Enable JSON-stream mode: emit one JSON line per token instead of ANSI text.
+    pub fn with_json_stream(mut self, enabled: bool) -> Self {
+        self.json_stream = enabled;
+        self
+    }
+
+    /// Override the MCP orchestrator base URL (default: `http://localhost:3000`).
+    pub fn with_orchestrator_url(mut self, url: impl Into<String>) -> Self {
+        self.orchestrator_url = url.into();
+        self
+    }
+
+    /// Maximum retry attempts on 429/5xx errors.
+    pub fn with_max_retries(mut self, n: u32) -> Self {
+        self.max_retries = n;
+        self
+    }
+
+    /// Only transform tokens whose API confidence is at or below this threshold.
+    pub fn with_min_confidence(mut self, threshold: f64) -> Self {
+        self.min_confidence = Some(threshold);
         self
     }
 
@@ -646,7 +790,7 @@ impl TokenInterceptor {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
-            max_tokens: 4096,
+            max_tokens: self.anthropic_max_tokens,
             stream: true,
             temperature: 0.7,
             system: self.system_prompt.clone(),
@@ -1306,6 +1450,7 @@ mod tests {
             min_confidence: None,
             last_token_instant: None,
             max_retries: 3,
+            anthropic_max_tokens: 4096,
         }
     }
 
@@ -2253,6 +2398,7 @@ mod research_tests {
             min_confidence: None,
             last_token_instant: None,
             max_retries: 3,
+            anthropic_max_tokens: 4096,
         }
     }
 

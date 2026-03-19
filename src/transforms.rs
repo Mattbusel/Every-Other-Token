@@ -22,6 +22,7 @@ use colored::*;
 use once_cell::sync::Lazy;
 use rand::Rng;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 const NOISE_CHARS: [char; 7] = ['*', '+', '~', '@', '#', '$', '%'];
 
@@ -228,6 +229,56 @@ static SYNONYM_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m
 });
 
+/// Runtime synonym overrides, merged with SYNONYM_MAP at lookup time.
+/// Set via [`set_synonym_overrides`].
+static SYNONYM_OVERRIDES: Lazy<Mutex<HashMap<String, String>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Load synonym pairs from a file and register them as runtime overrides.
+///
+/// Supports two line formats:
+/// - TSV: `word\treplacement`
+/// - Key-value: `word = replacement`
+///
+/// Lines starting with `#` are treated as comments and skipped.
+///
+/// # Errors
+/// Returns an error if the file cannot be read. Individual malformed lines are silently skipped.
+pub fn load_synonym_overrides(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(path)?;
+    let mut overrides = SYNONYM_OVERRIDES.lock().unwrap_or_else(|e| e.into_inner());
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('\t') {
+            overrides.insert(k.trim().to_lowercase(), v.trim().to_string());
+        } else if let Some((k, v)) = line.split_once('=') {
+            overrides.insert(k.trim().to_lowercase(), v.trim().to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Replace the current runtime synonym overrides with the given map.
+pub fn set_synonym_overrides(map: HashMap<String, String>) {
+    let mut overrides = SYNONYM_OVERRIDES.lock().unwrap_or_else(|e| e.into_inner());
+    *overrides = map;
+}
+
+/// Look up a token in the synonym map, checking runtime overrides first.
+fn synonym_lookup(token: &str) -> Option<String> {
+    let lower = token.to_lowercase();
+    {
+        let overrides = SYNONYM_OVERRIDES.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(v) = overrides.get(lower.as_str()) {
+            return Some(v.clone());
+        }
+    }
+    SYNONYM_MAP.get(lower.as_str()).map(|s| s.to_string())
+}
+
 /// The set of token mutation strategies available at the interception layer.
 ///
 /// Each variant describes a different way to perturb a token in the stream.
@@ -285,6 +336,12 @@ impl Transform {
     ///
     /// Returns `Err(String)` if any component name is unrecognised.
     pub fn from_str_loose(s: &str) -> Result<Self, String> {
+        // Handle "chain:reverse,uppercase" prefix syntax as an alias for "reverse,uppercase"
+        let s = if let Some(rest) = s.strip_prefix("chain:") {
+            rest
+        } else {
+            s
+        };
         // Handle comma-separated chain: "reverse,uppercase"
         if s.contains(',') {
             let parts: Result<Vec<Transform>, String> = s
@@ -353,9 +410,8 @@ impl Transform {
             }
             Transform::Delete => (String::new(), "delete".to_string()),
             Transform::Synonym => {
-                let lower = token.to_lowercase();
-                let result = SYNONYM_MAP.get(lower.as_str()).copied().unwrap_or(token);
-                (result.to_string(), "synonym".to_string())
+                let result = synonym_lookup(token).unwrap_or_else(|| token.to_string());
+                (result, "synonym".to_string())
             }
             Transform::Delay(_) => (token.to_string(), "delay".to_string()),
             Transform::Chaos => match rng.gen_range(0u8..4) {
@@ -414,6 +470,18 @@ fn apply_mock(token: &str) -> String {
         .collect()
 }
 
+/// Returns true if `ch` is a CJK ideographic character that should be its own token.
+fn is_cjk(ch: char) -> bool {
+    matches!(ch,
+        '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
+        | '\u{3400}'..='\u{4DBF}' // CJK Extension A
+        | '\u{20000}'..='\u{2A6DF}' // CJK Extension B
+        | '\u{F900}'..='\u{FAFF}' // CJK Compatibility Ideographs
+        | '\u{3000}'..='\u{303F}' // CJK Symbols and Punctuation
+        | '\u{FF00}'..='\u{FFEF}' // Halfwidth/Fullwidth Forms
+    )
+}
+
 /// Returns true if `ch` should be treated as a word-boundary punctuation character
 /// (split out as a single-char token, just like ASCII punctuation).
 fn is_word_boundary_punct(ch: char) -> bool {
@@ -453,6 +521,13 @@ pub fn tokenize(text: &str) -> Vec<String> {
             if ch.is_whitespace() {
                 tokens.push(ch.to_string());
             }
+        } else if is_cjk(ch) {
+            // Each CJK ideograph is its own token (no spaces separate them).
+            if !current_token.is_empty() {
+                tokens.push(current_token.clone());
+                current_token.clear();
+            }
+            tokens.push(ch.to_string());
         } else {
             current_token.push(ch);
         }

@@ -336,6 +336,7 @@ dependencies = [
  "clap_complete",
  "colored",
  "futures-util",
+ "httparse",
  "js-sys",
  "once_cell",
  "rand",

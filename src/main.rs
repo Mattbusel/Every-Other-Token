@@ -41,9 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.transform = t;
             }
         }
-        if (args.rate - 0.5).abs() < 1e-9 {
+        if args.rate.is_none() {
             if let Some(r) = cfg.rate {
-                args.rate = r;
+                args.rate = Some(r);
             }
         }
         if args.port == 8888 {
@@ -58,6 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if args.system_a.is_none() {
             args.system_a = cfg.system_a;
+        }
+        if args.anthropic_max_tokens == 4096 {
+            if let Some(t) = cfg.anthropic_max_tokens {
+                args.anthropic_max_tokens = t;
+            }
+        }
+        if args.api_key.is_none() {
+            args.api_key = cfg.api_key;
         }
     }
 
@@ -91,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let transform = every_other_token::transforms::Transform::from_str_loose(&args.transform)
             .map_err(|e| format!("Invalid transform: {}", e))?;
         println!("[dry-run] Transform: {:?}", transform);
-        println!("[dry-run] Rate: {}", args.rate);
+        println!("[dry-run] Rate: {}", args.rate.unwrap_or(0.5));
         println!("[dry-run] Sample token transformations:");
         let sample_tokens = [
             "The", " quick", " brown", " fox", " jumps", " over", " the", " lazy", " dog",
@@ -118,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some((min, max)) = every_other_token::cli::parse_rate_range(range_str) {
             use rand::Rng;
             let rate = rand::thread_rng().gen_range(min..=max);
-            args.rate = rate;
+            args.rate = Some(rate);
             eprintln!(
                 "[rate-range] Selected rate: {:.4} from range [{}, {}]",
                 rate, min, max
@@ -174,6 +182,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Load synonym overrides from file if provided
+    if let Some(ref path) = args.synonym_file {
+        every_other_token::transforms::load_synonym_overrides(path)
+            .map_err(|e| format!("Failed to load synonym file '{}': {}", path, e))?;
+    }
+
     let transform = Transform::from_str_loose(&args.transform)
         .map_err(|e| format!("Invalid transform: {}", e))?;
 
@@ -189,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.heatmap,
             args.orchestrator,
         )?
-        .with_rate(args.rate);
+        .with_rate(args.rate.unwrap_or(0.5));
         if let Some(seed) = args.seed {
             i = i.with_seed(seed);
         }
@@ -200,6 +214,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     interceptor.json_stream = args.json_stream;
     interceptor.orchestrator_url = args.orchestrator_url.clone();
     interceptor.max_retries = args.max_retries;
+    interceptor.min_confidence = args.min_confidence;
+    interceptor.anthropic_max_tokens = args.anthropic_max_tokens;
 
     tokio::select! {
         result = interceptor.intercept_stream(&args.prompt) => {

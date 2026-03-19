@@ -99,7 +99,14 @@ impl HeatmapExporter {
             .collect();
 
         if sort_by == "confidence" {
-            rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            rows.sort_by(|a, b| {
+                match (a.1.is_nan(), b.1.is_nan()) {
+                    (true, true) => std::cmp::Ordering::Equal,
+                    (true, false) => std::cmp::Ordering::Greater, // NaN sorts last
+                    (false, true) => std::cmp::Ordering::Less,
+                    (false, false) => b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal),
+                }
+            });
         }
 
         for (_, _, row) in &rows {

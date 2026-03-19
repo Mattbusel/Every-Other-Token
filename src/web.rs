@@ -30,6 +30,12 @@ use crate::providers::Provider;
 use crate::transforms::Transform;
 use crate::{TokenEvent, TokenInterceptor};
 
+// Default model names used when the query string omits a model parameter.
+// Centralised here so web.rs, cli.rs, and lib.rs all stay in sync.
+const DEFAULT_OPENAI_MODEL: &str = "gpt-3.5-turbo";
+const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-6";
+const DEFAULT_MOCK_MODEL: &str = "mock-fixture-v1";
+
 /// Wraps a `TokenEvent` with a provider-side label for diff streaming.
 #[derive(Debug, Serialize)]
 struct DiffTokenEvent<'a> {
@@ -111,7 +117,6 @@ pub fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
 }
 
 /// Query parameters parsed from a /stream request.
-#[allow(dead_code)]
 struct StreamParams {
     prompt: String,
     transform: String,
@@ -222,6 +227,7 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
 
     let default_provider = default_args.provider.clone();
     let orchestrator = default_args.orchestrator;
+    let api_key: Option<String> = default_args.api_key.clone();
 
     let room_store = crate::collab::new_room_store();
 
@@ -264,8 +270,9 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
         let (stream, _addr) = listener.accept().await?;
         let provider = default_provider.clone();
         let store = room_store.clone();
+        let conn_api_key = api_key.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, provider, orchestrator, store).await {
+            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key).await {
                 eprintln!("  connection error: {}", e);
             }
         });
@@ -277,11 +284,13 @@ async fn handle_connection(
     default_provider: Provider,
     orchestrator: bool,
     store: RoomStore,
+    api_key: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::AsyncReadExt;
 
     // Peek at the first bytes to detect WebSocket upgrade requests.
-    let mut peek_buf = [0u8; 512];
+    // 4096 bytes ensures we capture full HTTP headers even with many/large header values.
+    let mut peek_buf = [0u8; 4096];
     let peek_n = stream.peek(&mut peek_buf).await.unwrap_or(0);
     let peek_str = String::from_utf8_lossy(&peek_buf[..peek_n]);
     let peek_first_line = peek_str.lines().next().unwrap_or("").to_string();
@@ -316,15 +325,19 @@ async fn handle_connection(
 
     let mut buf = vec![0u8; 8192];
     let n = stream.read(&mut buf).await?;
-    let request = String::from_utf8_lossy(&buf[..n]);
 
-    // Parse the request line: "GET /path?query HTTP/1.1"
-    let first_line = request.lines().next().unwrap_or("");
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Ok(());
-    }
-    let path_and_query = parts[1];
+    // Use httparse for robust HTTP/1.x request-line and header parsing.
+    // This correctly handles folded headers, extra whitespace, and
+    // requests where headers extend beyond a simple first-line split.
+    let mut headers = [httparse::EMPTY_HEADER; 32];
+    let mut req = httparse::Request::new(&mut headers);
+    let path_owned: String = match req.parse(&buf[..n]) {
+        Ok(httparse::Status::Complete(_)) | Ok(httparse::Status::Partial) => {
+            req.path.unwrap_or("/").to_string()
+        }
+        Err(_) => return Ok(()),
+    };
+    let path_and_query = path_owned.as_str();
 
     // Split path and query
     let (path, query_str) = if let Some(idx) = path_and_query.find('?') {
@@ -332,6 +345,31 @@ async fn handle_connection(
     } else {
         (path_and_query, "")
     };
+
+    // API key authentication: if api_key is configured, require it on /api/ routes.
+    if path.starts_with("/api/") {
+        if let Some(ref required_key) = api_key {
+            let auth_header = req
+                .headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case("authorization"))
+                .and_then(|h| std::str::from_utf8(h.value).ok());
+            let authorized = auth_header
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|token| token == required_key.as_str())
+                .unwrap_or(false);
+            if !authorized {
+                let body = r#"{"error":"Unauthorized"}"#;
+                let response = format!(
+                    "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nWWW-Authenticate: Bearer\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+        }
+    }
 
     match path {
         "/" => {
@@ -347,6 +385,11 @@ async fn handle_connection(
             let sp = parse_stream_params(&params);
             let prompt = sp.prompt;
             let transform_str = sp.transform;
+            let rate = sp.rate;
+            let seed = sp.seed;
+            let top_logprobs = sp.top_logprobs;
+            let system = sp.system;
+            let visual = sp.visual;
             let provider_str = if sp.provider == "openai" {
                 default_provider.to_string()
             } else {
@@ -362,9 +405,9 @@ async fn handle_connection(
 
             let model = if model_input.is_empty() {
                 match provider {
-                    Provider::Openai => "gpt-3.5-turbo".to_string(),
-                    Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
-                    Provider::Mock => "mock-fixture-v1".to_string(),
+                    Provider::Openai => DEFAULT_OPENAI_MODEL.to_string(),
+                    Provider::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
+                    Provider::Mock => DEFAULT_MOCK_MODEL.to_string(),
                 }
             } else {
                 model_input
@@ -377,14 +420,14 @@ async fn handle_connection(
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
             stream.write_all(headers.as_bytes()).await?;
 
-            // Create channel for token events
+            // Create channel for token events.
             let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
 
             let interceptor_result = TokenInterceptor::new(
                 provider,
                 transform,
                 model,
-                true, // visual mode always on for web
+                visual,
                 heatmap,
                 orchestrator,
             );
@@ -394,6 +437,12 @@ async fn handle_connection(
             let interceptor_result = interceptor_result.map_err(|e| e.to_string());
             let mut interceptor = match interceptor_result {
                 Ok(mut i) => {
+                    i = i.with_rate(rate);
+                    if let Some(s) = seed {
+                        i = i.with_seed(s);
+                    }
+                    i.top_logprobs = top_logprobs;
+                    i.system_prompt = system;
                     i.web_tx = Some(tx);
                     i
                 }
@@ -413,7 +462,10 @@ async fn handle_connection(
                 let _ = interceptor.intercept_stream(&prompt_clone).await;
             });
 
-            // Forward token events as SSE; also fan-out to collab room if active
+            // Forward token events as SSE; also fan-out to collab room if active.
+            // Abort the LLM background task immediately on client disconnect to
+            // avoid making unnecessary API calls for a dropped connection.
+            let mut client_disconnected = false;
             while let Some(event) = rx.recv().await {
                 if let Some(ref code) = stream_room_code {
                     if let Ok(token_val) = serde_json::to_value(&event) {
@@ -424,12 +476,17 @@ async fn handle_connection(
                 if let Ok(json) = serde_json::to_string(&event) {
                     let sse = format!("data: {}\n\n", json);
                     if stream.write_all(sse.as_bytes()).await.is_err() {
+                        client_disconnected = true;
                         break;
                     }
                 }
             }
 
-            let _ = stream_task.await;
+            if client_disconnected {
+                stream_task.abort();
+            } else {
+                let _ = stream_task.await;
+            }
 
             // Send done signal
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
@@ -447,12 +504,12 @@ async fn handle_connection(
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
 
             let openai_model = if model_input.is_empty() {
-                "gpt-3.5-turbo".to_string()
+                DEFAULT_OPENAI_MODEL.to_string()
             } else {
                 model_input.clone()
             };
             let anthropic_model = if model_input.is_empty() {
-                "claude-sonnet-4-20250514".to_string()
+                DEFAULT_ANTHROPIC_MODEL.to_string()
             } else {
                 model_input.clone()
             };
@@ -563,9 +620,9 @@ async fn handle_connection(
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
             let model = if model_input.is_empty() {
                 match ab_provider {
-                    Provider::Openai => "gpt-3.5-turbo".to_string(),
-                    Provider::Anthropic => "claude-sonnet-4-20250514".to_string(),
-                    Provider::Mock => "mock-fixture-v1".to_string(),
+                    Provider::Openai => DEFAULT_OPENAI_MODEL.to_string(),
+                    Provider::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
+                    Provider::Mock => DEFAULT_MOCK_MODEL.to_string(),
                 }
             } else {
                 model_input
@@ -670,6 +727,35 @@ async fn handle_connection(
             } else {
                 r#"{"error":"internal error"}"#.to_string()
             };
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await?;
+        }
+        "/api/experiments" => {
+            // Returns stored experiment runs from the SQLite log when the
+            // sqlite-log feature is enabled and a --log-db path is provided.
+            // Without the feature or a database file the endpoint returns an
+            // empty array so the web UI always gets a well-formed response.
+            let _db_path = parse_query(query_str)
+                .get("db")
+                .cloned()
+                .unwrap_or_else(|| "experiments.db".to_string());
+
+            #[cfg(feature = "sqlite-log")]
+            let body = {
+                use crate::experiment_log::ExperimentLog;
+                match ExperimentLog::open(std::path::Path::new(&_db_path)) {
+                    Ok(log) => log.list().unwrap_or_else(|_| "[]".to_string()),
+                    Err(_) => "[]".to_string(),
+                }
+            };
+
+            #[cfg(not(feature = "sqlite-log"))]
+            let body = "[]".to_string();
+
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
                 body.len(),

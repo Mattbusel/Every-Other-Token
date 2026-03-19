@@ -103,8 +103,12 @@ pub struct Args {
     /// At 0.5 every other token is transformed; at 0.3 roughly one in three.
     /// Uses a deterministic Bresenham spread so results are reproducible when
     /// combined with --seed.
-    #[arg(long, default_value = "0.5")]
-    pub rate: f64,
+    ///
+    /// Stored as `Option<f64>` so the config-file loader can distinguish
+    /// "the user explicitly passed --rate" from "the user left it at the
+    /// default".  The effective value is `rate.unwrap_or(0.5)`.
+    #[arg(long)]
+    pub rate: Option<f64>,
 
     /// Fixed RNG seed for reproducible Noise/Chaos transforms.
     /// Omit to use entropy-seeded randomness (default behaviour).
@@ -183,6 +187,25 @@ pub struct Args {
     /// Maximum API retry attempts on 429/5xx errors (default: 3).
     #[arg(long, default_value = "3")]
     pub max_retries: u32,
+
+    /// Maximum tokens in the Anthropic response (default: 4096).
+    /// Ignored when using the OpenAI provider.
+    #[arg(long, default_value = "4096")]
+    pub anthropic_max_tokens: u32,
+
+    /// Path to a TSV or key=value file of additional synonym pairs to merge with the built-in map.
+    /// Format: one `word\treplacement` or `word = replacement` pair per line.
+    #[arg(long)]
+    pub synonym_file: Option<String>,
+
+    /// Optional API key required for /api/ endpoints in web UI mode.
+    /// When set, requests to /api/* must include `Authorization: Bearer <key>`.
+    #[arg(long)]
+    pub api_key: Option<String>,
+
+    /// Replay speed multiplier for --replay mode. 1.0 = real-time, 2.0 = double speed, 0.0 = instant.
+    #[arg(long, default_value = "1.0")]
+    pub replay_speed: f64,
 }
 
 /// Select the appropriate default model for the given provider when the user
