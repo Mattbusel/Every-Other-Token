@@ -176,12 +176,15 @@ fn parse_stream_params(query: &std::collections::HashMap<String, String>) -> Str
         model: query.get("model").cloned().unwrap_or_default(),
         rate: query
             .get("rate")
-            .and_then(|r| r.parse().ok())
+            .and_then(|r| r.parse::<f64>().ok())
+            .filter(|r| r.is_finite())
+            .map(|r| r.clamp(0.0, 1.0))
             .unwrap_or(0.5),
         seed: query.get("seed").and_then(|s| s.parse().ok()),
         top_logprobs: query
             .get("top_logprobs")
-            .and_then(|t| t.parse().ok())
+            .and_then(|t| t.parse::<u8>().ok())
+            .map(|v| v.clamp(0, 20))
             .unwrap_or(5),
         system: query.get("system").filter(|s| !s.is_empty()).cloned(),
         visual: query
@@ -1871,6 +1874,27 @@ mod tests {
         let params = parse_query("system=");
         let sp = parse_stream_params(&params);
         assert_eq!(sp.system, None);
+    }
+
+    #[test]
+    fn test_parse_stream_params_rate_negative_clamped() {
+        let params = parse_query("rate=-1");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.rate, 0.0);
+    }
+
+    #[test]
+    fn test_parse_stream_params_rate_over_one_clamped() {
+        let params = parse_query("rate=2.0");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.rate, 1.0);
+    }
+
+    #[test]
+    fn test_parse_stream_params_rate_nan_uses_default() {
+        let params = parse_query("rate=nan");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.rate, 0.5);
     }
 
     // -- url_decode UTF-8 multi-byte (item 1) --

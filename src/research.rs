@@ -131,6 +131,9 @@ fn ci_95(mean: f64, sd: f64, n: usize) -> (f64, f64) {
 /// Returns an error if the transform string is invalid, the API call fails,
 /// or output file I/O fails.
 pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    if args.runs == 0 {
+        return Err("--runs must be at least 1".into());
+    }
     let provider = args.provider.clone();
     let transform_str = args.transform.clone();
     let transform =
@@ -445,13 +448,12 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     eprintln!("[research] wrote {} bytes to {}", json.len(), args.output);
 
     // Cost estimate summary (#13).
-    // GPT-3.5-Turbo at $0.002/1K tokens is used as a proxy; actual costs vary
-    // by model and direction (prompt vs. completion tokens).
     let total_tokens: usize = output.runs.iter().map(|r| r.token_count).sum();
-    let estimated_cost = total_tokens as f64 / 1000.0 * 0.002;
+    let rate = cost_per_1k_tokens(&model);
+    let estimated_cost = total_tokens as f64 / 1000.0 * rate;
     eprintln!(
-        "[research] total tokens: {} | estimated cost: ${:.4} (GPT-3.5 proxy — verify for your model)",
-        total_tokens, estimated_cost
+        "[research] total tokens: {} | estimated cost: ${:.4} ({}, ${:.3}/1K tokens)",
+        total_tokens, estimated_cost, model, rate
     );
 
     // Perplexity normalisation note (#20).
@@ -467,6 +469,21 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     }
 
     Ok(())
+}
+
+// Cost estimate per model (output tokens, $/1K tokens).
+// These are approximate list prices; verify at platform.openai.com / anthropic.com.
+fn cost_per_1k_tokens(model: &str) -> f64 {
+    match model {
+        m if m.starts_with("gpt-4o") => 0.015,
+        m if m.starts_with("gpt-4.1") => 0.010,
+        m if m.starts_with("gpt-4") => 0.030,
+        m if m.starts_with("gpt-3.5") => 0.002,
+        m if m.contains("claude") && m.contains("opus") => 0.075,
+        m if m.contains("claude") && m.contains("sonnet") => 0.015,
+        m if m.contains("claude") && m.contains("haiku") => 0.001,
+        _ => 0.002,
+    }
 }
 
 fn build_aggregate(total_runs: u32, runs: &[ResearchRun]) -> ResearchAggregate {
@@ -1059,6 +1076,82 @@ mod tests {
         let b = vec![1.0, 1.0, 1.0, 1.0];
         // Zero variance — should return None
         assert!(two_sample_t_test(&a, &b).is_none());
+    }
+
+    #[test]
+    fn test_two_sample_t_test_different_means_returns_some() {
+        let a = vec![0.9, 0.8, 0.85, 0.9, 0.88];
+        let b = vec![0.1, 0.2, 0.15, 0.1, 0.12];
+        let p = two_sample_t_test(&a, &b);
+        assert!(p.is_some(), "should return Some for clearly different means");
+        assert!(p.unwrap() < 0.05, "p-value should be significant for large difference");
+    }
+
+    #[test]
+    fn test_two_sample_t_test_too_few_samples_returns_none() {
+        assert!(two_sample_t_test(&[0.5], &[0.6]).is_none());
+        assert!(two_sample_t_test(&[], &[0.5, 0.6]).is_none());
+    }
+
+    #[test]
+    fn test_cost_per_1k_tokens_known_models() {
+        assert_eq!(cost_per_1k_tokens("gpt-3.5-turbo"), 0.002);
+        assert_eq!(cost_per_1k_tokens("gpt-4o"), 0.015);
+        assert_eq!(cost_per_1k_tokens("claude-sonnet-4-6"), 0.015);
+        assert_eq!(cost_per_1k_tokens("claude-opus-4-6"), 0.075);
+    }
+
+    #[tokio::test]
+    async fn test_run_research_runs_zero_returns_error() {
+        use crate::providers::Provider;
+        let args = crate::cli::Args {
+            prompt: "test".to_string(),
+            transform: "reverse".to_string(),
+            model: "gpt-3.5-turbo".to_string(),
+            provider: Provider::Mock,
+            visual: false,
+            heatmap: false,
+            orchestrator: false,
+            web: false,
+            port: 8888,
+            research: true,
+            runs: 0,
+            output: "/tmp/test_research_out.json".to_string(),
+            system_a: None,
+            top_logprobs: 5,
+            system_b: None,
+            db: None,
+            significance: false,
+            heatmap_export: None,
+            heatmap_min_confidence: 0.0,
+            heatmap_sort_by: "position".to_string(),
+            record: None,
+            replay: None,
+            rate: None,
+            seed: None,
+            log_db: None,
+            baseline: false,
+            prompt_file: None,
+            diff_terminal: false,
+            json_stream: false,
+            completions: None,
+            rate_range: None,
+            dry_run: false,
+            template: None,
+            min_confidence: None,
+            format: "json".to_string(),
+            collapse_window: 5,
+            orchestrator_url: "http://localhost:3000".to_string(),
+            max_retries: 3,
+            anthropic_max_tokens: 4096,
+            synonym_file: None,
+            api_key: None,
+            replay_speed: 1.0,
+            timeout: 120,
+        };
+        let result = run_research(&args).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("--runs must be at least 1"));
     }
 
     #[test]
