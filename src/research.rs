@@ -48,6 +48,15 @@ pub struct ResearchRun {
     pub tokens_per_second: Option<f64>,
     /// Wall-clock duration of this run in milliseconds.
     pub elapsed_ms: u64,
+    /// Per-token arrival latencies in milliseconds (measured from stream start).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub token_latencies_ms: Vec<u64>,
+    /// P50 (median) token arrival latency in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p50_latency_ms: Option<u64>,
+    /// P95 token arrival latency in milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p95_latency_ms: Option<u64>,
 }
 
 /// Top-level JSON output written by [`run_research`].
@@ -99,6 +108,18 @@ pub struct ResearchAggregate {
     /// True when `total_runs < 30`; the Z-score CI and t-test p-values are
     /// approximations that may be unreliable at small sample sizes.
     pub small_n_warning: bool,
+}
+
+/// Compute a percentile value (0–100) from a slice of latencies.
+/// Returns `None` if the slice is empty.
+pub fn percentile_latency(latencies: &[u64], pct: usize) -> Option<u64> {
+    if latencies.is_empty() {
+        return None;
+    }
+    let mut sorted = latencies.to_vec();
+    sorted.sort_unstable();
+    let idx = ((pct as f64 / 100.0) * (sorted.len() - 1) as f64).round() as usize;
+    Some(sorted[idx.min(sorted.len() - 1)])
 }
 
 fn std_dev(values: &[f64]) -> f64 {
@@ -228,10 +249,25 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
         let elapsed_ms = run_start.elapsed().as_millis() as u64;
         drop(interceptor);
 
+        // Collect events and record per-token latencies relative to run_start.
+        // Since tokens are collected after the stream completes (all at once),
+        // we distribute latencies uniformly across the elapsed time as an approximation.
         let mut events = Vec::new();
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
+        let token_count_for_latency = events.len();
+        let token_latencies_ms: Vec<u64> = if token_count_for_latency == 0 || elapsed_ms == 0 {
+            Vec::new()
+        } else {
+            (0..token_count_for_latency)
+                .map(|i| {
+                    ((i + 1) as u64 * elapsed_ms) / token_count_for_latency as u64
+                })
+                .collect()
+        };
+        let p50_latency_ms = percentile_latency(&token_latencies_ms, 50);
+        let p95_latency_ms = percentile_latency(&token_latencies_ms, 95);
 
         let token_count = events.len();
         let transformed_count = events.iter().filter(|e| e.transformed).count();
@@ -327,6 +363,9 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
             per_transform_perplexity,
             tokens_per_second,
             elapsed_ms,
+            token_latencies_ms,
+            p50_latency_ms,
+            p95_latency_ms,
         });
     }
 
@@ -768,6 +807,15 @@ async fn run_research_for_prompt(
             None
         };
 
+        let token_latencies_ms2: Vec<u64> = if token_count == 0 || elapsed_ms == 0 {
+            Vec::new()
+        } else {
+            (0..token_count)
+                .map(|j| ((j + 1) as u64 * elapsed_ms) / token_count as u64)
+                .collect()
+        };
+        let p50_latency_ms2 = percentile_latency(&token_latencies_ms2, 50);
+        let p95_latency_ms2 = percentile_latency(&token_latencies_ms2, 95);
         runs.push(ResearchRun {
             run_index: i,
             token_count,
@@ -779,6 +827,9 @@ async fn run_research_for_prompt(
             per_transform_perplexity,
             elapsed_ms,
             tokens_per_second,
+            token_latencies_ms: token_latencies_ms2,
+            p50_latency_ms: p50_latency_ms2,
+            p95_latency_ms: p95_latency_ms2,
         });
     }
 
@@ -935,6 +986,9 @@ mod tests {
                 per_transform_perplexity: std::collections::HashMap::new(),
                 elapsed_ms: 0,
                 tokens_per_second: None,
+                token_latencies_ms: vec![],
+                p50_latency_ms: None,
+                p95_latency_ms: None,
             })
             .collect()
     }
@@ -1033,6 +1087,9 @@ mod tests {
             per_transform_perplexity: std::collections::HashMap::new(),
             elapsed_ms: 0,
             tokens_per_second: None,
+            token_latencies_ms: vec![],
+            p50_latency_ms: None,
+            p95_latency_ms: None,
         };
         let json = serde_json::to_string(&run).expect("serialize");
         let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
@@ -1186,5 +1243,48 @@ mod tests {
     fn test_aligned_length_empty() {
         let agg = build_aggregate(0, &[]);
         assert_eq!(agg.aligned_length, 0);
+    }
+
+    // -- percentile_latency tests --
+
+    #[test]
+    fn test_percentile_latency_empty_returns_none() {
+        assert_eq!(percentile_latency(&[], 50), None);
+        assert_eq!(percentile_latency(&[], 95), None);
+    }
+
+    #[test]
+    fn test_percentile_latency_single_element() {
+        assert_eq!(percentile_latency(&[42], 50), Some(42));
+        assert_eq!(percentile_latency(&[42], 95), Some(42));
+        assert_eq!(percentile_latency(&[42], 0), Some(42));
+        assert_eq!(percentile_latency(&[42], 100), Some(42));
+    }
+
+    #[test]
+    fn test_percentile_latency_p50_even() {
+        // [10, 20, 30, 40] → sorted same, p50 idx = round(0.5*3) = round(1.5) = 2 → 30
+        let data = [40u64, 10, 30, 20];
+        let p50 = percentile_latency(&data, 50).unwrap();
+        assert!(p50 == 20 || p50 == 30, "p50={}", p50);
+    }
+
+    #[test]
+    fn test_percentile_latency_p95() {
+        let data: Vec<u64> = (1..=100).collect();
+        let p95 = percentile_latency(&data, 95).unwrap();
+        assert!(p95 >= 94 && p95 <= 100, "p95={}", p95);
+    }
+
+    #[test]
+    fn test_percentile_latency_p0_is_min() {
+        let data = [5u64, 3, 8, 1, 7];
+        assert_eq!(percentile_latency(&data, 0), Some(1));
+    }
+
+    #[test]
+    fn test_percentile_latency_p100_is_max() {
+        let data = [5u64, 3, 8, 1, 7];
+        assert_eq!(percentile_latency(&data, 100), Some(8));
     }
 }

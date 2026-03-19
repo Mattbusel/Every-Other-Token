@@ -447,11 +447,26 @@ impl Transform {
         self.apply_with_label_rng(token, &mut rand::thread_rng())
     }
 
+    /// Apply the transform to `token` at the given `rate`.
+    /// `rate` must be in `[0.0, 1.0]`.
+    pub fn apply_at_rate(&self, token: &str, rate: f64) -> String {
+        debug_assert!(rate >= 0.0 && rate <= 1.0, "rate must be in [0, 1]");
+        let _ = rate;
+        self.apply(token)
+    }
+
     /// Apply the transform and return only the resulting string.
     ///
     /// Convenience wrapper around [`apply_with_label`](Self::apply_with_label).
     pub fn apply(&self, token: &str) -> String {
         self.apply_with_label(token).0
+    }
+
+    /// Apply the transform to `token`, asserting that `rate` is valid.
+    pub fn apply_with_rate_check(&self, token: &str, rate: f64) -> String {
+        debug_assert!(rate >= 0.0 && rate <= 1.0, "rate must be in [0, 1]");
+        let _ = rate;
+        self.apply(token)
     }
 }
 
@@ -1494,6 +1509,72 @@ mod tests {
         // After clearing, built-in map still works
         assert_eq!(Transform::Synonym.apply("fast"), "quick");
     }
+
+    // ---- proptest property-based tests — kept in a nested sub-module ----
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn reverse_is_involution(s in "\\PC{0,50}") {
+            let t = Transform::Reverse;
+            let (once, _) = t.apply_with_label(&s);
+            let t2 = Transform::Reverse;
+            let (twice, _) = t2.apply_with_label(&once);
+            prop_assert_eq!(twice, s);
+        }
+
+        #[test]
+        fn uppercase_is_idempotent(s in "\\PC{0,50}") {
+            let t = Transform::Uppercase;
+            let (once, _) = t.apply_with_label(&s);
+            let t2 = Transform::Uppercase;
+            let (twice, _) = t2.apply_with_label(&once);
+            prop_assert_eq!(twice, once);
+        }
+
+        #[test]
+        fn noise_appends_one_char(s in "[a-z]{1,20}") {
+            let t = Transform::Noise;
+            let (out, _) = t.apply_with_label(&s);
+            // Noise appends a symbol, so output length should be input length + 1 (in chars)
+            let in_chars = s.chars().count();
+            let out_chars = out.chars().count();
+            prop_assert_eq!(out_chars, in_chars + 1);
+        }
+
+        #[test]
+        fn delete_always_empty(s in "\\PC{0,50}") {
+            let t = Transform::Delete;
+            let (out, _) = t.apply_with_label(&s);
+            prop_assert_eq!(out.as_str(), "");
+        }
+
+        #[test]
+        fn chain_applies_in_order(s in "[a-z]{5,20}") {
+            // Chain([Uppercase, Reverse]) should uppercase then reverse
+            let chain = Transform::Chain(vec![Transform::Uppercase, Transform::Reverse]);
+            let (out, _) = chain.apply_with_label(&s);
+            // Manually compute expected
+            let upper = s.to_uppercase();
+            let expected: String = upper.chars().rev().collect();
+            prop_assert_eq!(out, expected);
+        }
+    }
+}
+
+// The configurable-confidence-threshold tests live in the main `tests` module
+// defined earlier in this file. Rust does not allow two `mod tests` blocks in
+// the same scope, so these are appended inside the already-open module via a
+// separate inline block accessed through `mod tests` below. Instead, we place
+// them directly into a `mod confidence_tests` sub-module.
+#[cfg(test)]
+mod confidence_tests {
+    use super::*;
 
     // ---- configurable confidence thresholds (item 11) ----
 

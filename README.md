@@ -428,3 +428,19 @@ MIT — see [LICENSE](LICENSE).
 - [tokio-prompt-orchestrator](https://github.com/Mattbusel/tokio-prompt-orchestrator) — the orchestration layer that uses Every-Other-Token telemetry to drive HelixRouter adaptation
 - [LLM-Hallucination-Detection-Script](https://github.com/Mattbusel/LLM-Hallucination-Detection-Script) — companion tool for output-level reliability analysis
 - [Token-Visualizer](https://github.com/Mattbusel/Token-Visualizer) — interactive tokenizer and prompt-engineering visualization tool
+
+---
+
+## Troubleshooting
+
+**"Missing API key"** — Set the `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable before running. Use `export OPENAI_API_KEY=sk-...` (Linux/macOS) or `set OPENAI_API_KEY=sk-...` (Windows).
+
+**"Model not found"** — Check the model name spelling; valid examples are `gpt-4o`, `gpt-3.5-turbo`, `claude-sonnet-4-6`. Use `--dry-run` to test transform logic without making any API call.
+
+**"Rate limited (429)"** — The built-in circuit breaker will retry automatically after a backoff. If the circuit opens (5 consecutive failures), it stays open for 30 seconds then resets. Wait 30 s and retry, or reduce request frequency.
+
+**"Stream times out"** — Try a shorter prompt or a faster model. Increase the timeout with `--timeout 300` (seconds) if the model is legitimately slow. Default timeout is 120 s.
+
+**"Web UI blank"** — Open the browser developer console (F12) and check for errors. Common causes: `--provider` does not match the API key that is set, the server is not running on the expected port, or a browser extension is blocking the SSE connection.
+
+**"Port already in use"** — Use `--port 9000` (or any free port) to pick a different port. Find the occupying process with `lsof -i :<port>` (Linux/macOS) or `netstat -ano | findstr :<port>` (Windows).

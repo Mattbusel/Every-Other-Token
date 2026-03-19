@@ -30,6 +30,18 @@ const ROOM_IDLE_TTL_MS: u64 = 3_600_000;
 /// Maximum number of events stored in a room's recording buffer.
 const DEFAULT_RECORDING_CAP: usize = 10_000;
 
+/// Adjectives used for memorable room code generation.
+const CODE_ADJECTIVES: &[&str] = &[
+    "SWIFT", "BRAVE", "CALM", "DARK", "EPIC", "FAST", "GOLD", "KEEN", "LOUD", "MILD",
+    "NEAT", "OPEN", "PURE", "QUIET", "RICH", "SHARP", "TALL", "VAST", "WARM", "WISE",
+];
+
+/// Nouns used for memorable room code generation.
+const CODE_NOUNS: &[&str] = &[
+    "LION", "BEAR", "WOLF", "HAWK", "DEER", "FROG", "CRAB", "CROW", "DOVE", "DUCK",
+    "FISH", "HARE", "KITE", "LYNX", "MOLE", "NEWT", "PUMA", "SWAN", "TOAD", "WREN",
+];
+
 /// Colors assigned to participants in round-robin order.
 pub const PARTICIPANT_COLORS: &[&str] = &[
     "#58a6ff", "#f0883e", "#a371f7", "#3fb950", "#e3b341", "#f85149",
@@ -121,22 +133,19 @@ pub fn new_room_store() -> RoomStore {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-/// Generate a random 6-character uppercase alphanumeric room code.
+/// Generate a memorable uppercase room code in the format `ADJ-NOUN-NN`.
 ///
-/// ## Entropy analysis
-/// Alphabet: 36 chars (A–Z + 0–9). Code length: 6 chars.
-/// Search space: 36^6 = 2,176,782,336 (~2.1 × 10⁹).
+/// Example: `SWIFT-LION-42`
 ///
-/// Uses [`rand::thread_rng()`] which is seeded from OS entropy and backed
-/// by ChaCha12, a CSPRNG. Suitable for ephemeral room codes. At 1,000
-/// concurrent rooms, collision probability ≈ 0.023% (birthday paradox).
+/// The code is uppercase and compatible with the existing `/join/:code` and
+/// `/ws/:code` path parsing which uses prefix stripping.
 pub fn generate_code() -> String {
     use rand::Rng;
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut rng = rand::thread_rng();
-    (0..6)
-        .map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char)
-        .collect()
+    let adj = CODE_ADJECTIVES[rng.gen_range(0..CODE_ADJECTIVES.len())];
+    let noun = CODE_NOUNS[rng.gen_range(0..CODE_NOUNS.len())];
+    let num: u8 = rng.gen_range(10..=99);
+    format!("{}-{}-{}", adj, noun, num)
 }
 
 /// Truncate `s` to at most `max_bytes` bytes while respecting UTF-8 char boundaries.
@@ -458,12 +467,15 @@ pub async fn handle_ws(
 
     // Main loop: multiplex incoming WS frames and broadcast messages.
     let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    let idle_timeout = std::time::Duration::from_secs(3600);
+    let mut last_msg_at = tokio::time::Instant::now();
     loop {
         tokio::select! {
             // Message from this client.
             msg = ws_stream.next() => {
                 match msg {
                     Some(Ok(WsMessage::Text(text))) => {
+                        last_msg_at = tokio::time::Instant::now();
                         if text.len() > 65_536 {
                             let err = serde_json::json!({"type": "error", "message": "message too large"});
                             if let Ok(s) = serde_json::to_string(&err) {
@@ -653,6 +665,14 @@ pub async fn handle_ws(
 
             // Keepalive ping to prevent idle connection teardown.
             _ = ping_interval.tick() => {
+                // Idle timeout: close if no message received in the last 3600 seconds.
+                if last_msg_at.elapsed() >= idle_timeout {
+                    tracing::info!(
+                        participant = %participant_id,
+                        "WS idle timeout — closing connection"
+                    );
+                    break;
+                }
                 if ws_sink.send(WsMessage::Ping(vec![])).await.is_err() {
                     break;
                 }
@@ -759,8 +779,10 @@ mod tests {
     // -- generate_code -------------------------------------------------------
 
     #[test]
-    fn test_generate_code_length_is_six() {
-        assert_eq!(generate_code().len(), 6);
+    fn test_generate_code_length_is_reasonable() {
+        // New format: ADJ-NOUN-NN — at least 8 chars (e.g. "CALM-BEAR-10")
+        let code = generate_code();
+        assert!(code.len() >= 8, "code '{}' is too short", code);
     }
 
     #[test]
@@ -768,8 +790,8 @@ mod tests {
         let code = generate_code();
         assert!(
             code.chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
-            "code '{}' contains non-uppercase-alphanumeric chars",
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'),
+            "code '{}' contains unexpected chars",
             code
         );
     }
@@ -778,9 +800,9 @@ mod tests {
     fn test_generate_code_uniqueness_across_calls() {
         let codes: Vec<String> = (0..30).map(|_| generate_code()).collect();
         let unique: std::collections::HashSet<&String> = codes.iter().collect();
-        // With 36^6 ≈ 2.1 billion possibilities, 30 calls should all be unique.
+        // With 20*20*90 = 36,000 possibilities, 30 calls should all be unique.
         assert!(
-            unique.len() >= 28,
+            unique.len() >= 20,
             "expected near-unique codes, got {} unique out of 30",
             unique.len()
         );
@@ -851,10 +873,12 @@ mod tests {
     }
 
     #[test]
-    fn test_create_room_returns_six_char_code() {
+    fn test_create_room_returns_meaningful_code() {
         let store = new_room_store();
         let code = create_room(&store);
-        assert_eq!(code.len(), 6);
+        // New memorable format: ADJ-NOUN-NN
+        assert!(code.len() >= 8, "code too short: {}", code);
+        assert_eq!(code.split('-').count(), 3, "expected 3 parts: {}", code);
     }
 
     #[test]
@@ -863,7 +887,7 @@ mod tests {
         let code = create_room(&store);
         assert!(code
             .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'));
     }
 
     #[test]
@@ -2062,21 +2086,22 @@ mod tests {
 
     #[test]
     fn test_generate_code_no_collision_at_small_scale() {
-        let codes: Vec<String> = (0..1000).map(|_| generate_code()).collect();
+        // With 20*20*90=36000 possibilities, generate 200 codes; expect high uniqueness.
+        let codes: Vec<String> = (0..200).map(|_| generate_code()).collect();
         for code in &codes {
-            assert_eq!(code.len(), 6, "code must be 6 chars: {}", code);
+            assert!(code.len() >= 8, "code must be at least 8 chars: {}", code);
             assert!(
                 code.chars()
-                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()),
-                "code contains non-uppercase-alphanumeric chars: {}",
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-'),
+                "code contains unexpected chars: {}",
                 code
             );
         }
         let unique: std::collections::HashSet<&String> = codes.iter().collect();
-        assert_eq!(
-            unique.len(),
-            codes.len(),
-            "found duplicate codes among 1000 generated"
+        assert!(
+            unique.len() >= 190,
+            "expected high uniqueness, got {} unique out of 200",
+            unique.len()
         );
     }
 
@@ -2122,5 +2147,110 @@ mod tests {
         evict_idle_rooms(&store);
         let is_alive = store.lock().unwrap().get(&code).is_some();
         assert!(is_alive, "active room should not be evicted");
+    }
+
+    // -- Item 10: Concurrent room operations --
+
+    #[tokio::test]
+    async fn test_concurrent_room_creation() {
+        let store = new_room_store();
+        let mut handles = vec![];
+        for _ in 0..20 {
+            let store_clone = store.clone();
+            handles.push(tokio::spawn(async move {
+                create_room(&store_clone)
+            }));
+        }
+        let mut codes = vec![];
+        for h in handles {
+            codes.push(h.await.expect("task should not panic"));
+        }
+        // All 20 rooms should have unique codes.
+        let unique: std::collections::HashSet<&String> = codes.iter().collect();
+        assert_eq!(unique.len(), 20, "all room codes should be unique");
+        // All 20 rooms should exist in the store.
+        let guard = store.lock().unwrap();
+        for code in &codes {
+            assert!(guard.contains_key(code), "room {} should exist", code);
+        }
+    }
+
+    #[test]
+    fn test_room_not_found_returns_none() {
+        let store = new_room_store();
+        // Looking up a non-existent room should return None/error.
+        let result = join_room(&store, "NONEXISTENT-CODE", "Alice", false);
+        assert!(result.is_err(), "non-existent room should return an error");
+        // vote returns None for non-existent rooms.
+        let vote_result = vote(&store, "NONEXISTENT-CODE", "reverse", "up");
+        assert!(vote_result.is_none(), "vote on non-existent room should return None");
+        // room_state_snapshot returns Null for non-existent rooms.
+        let snap = room_state_snapshot(&store, "NONEXISTENT-CODE");
+        assert!(snap.is_null(), "snapshot of non-existent room should be null");
+    }
+
+    // -- Item 11: WS message parsing edge cases --
+
+    #[test]
+    fn test_ws_msg_malformed_json_ignored() {
+        // Verify that serde_json gracefully handles malformed JSON without panicking.
+        let malformed = "{ this is not valid json }";
+        let result: Result<serde_json::Value, _> = serde_json::from_str(malformed);
+        assert!(result.is_err(), "malformed JSON should parse to Err, not panic");
+    }
+
+    #[test]
+    fn test_ws_msg_unknown_type_ignored() {
+        // Verify that JSON with an unknown type field is parsed without panicking.
+        let msg = r#"{"type":"unknown_type_xyz","data":"something"}"#;
+        let parsed: serde_json::Value = serde_json::from_str(msg).expect("valid JSON");
+        let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        // The handle_ws match arm falls through to the unknown/warn branch — no panic.
+        assert_eq!(msg_type, "unknown_type_xyz");
+        // Simulate the match: none of the known types match.
+        let known = ["set_name", "vote", "surgery", "chat", "record_start",
+                     "record_stop", "replay_request", "ping", "token", "_record_token", "stream_done"];
+        assert!(!known.contains(&msg_type), "unknown_type_xyz should not match any known type");
+    }
+
+    // -- Memorable code format tests --
+
+    #[test]
+    fn test_generate_code_has_hyphen_format() {
+        for _ in 0..20 {
+            let code = generate_code();
+            let parts: Vec<&str> = code.split('-').collect();
+            assert_eq!(parts.len(), 3, "code should have 3 hyphen-separated parts: {}", code);
+            // Third part should be a number 10-99
+            let num: u8 = parts[2].parse().expect("third part should be a number");
+            assert!(num >= 10 && num <= 99, "number part should be 10-99: {}", num);
+        }
+    }
+
+    #[test]
+    fn test_generate_code_all_uppercase() {
+        for _ in 0..20 {
+            let code = generate_code();
+            assert!(code.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c.is_ascii_digit()),
+                "code should be uppercase: {}", code);
+        }
+    }
+
+    #[test]
+    fn test_generate_code_adjective_from_list() {
+        for _ in 0..50 {
+            let code = generate_code();
+            let adj = code.split('-').next().unwrap();
+            assert!(CODE_ADJECTIVES.contains(&adj), "adjective {} not in list", adj);
+        }
+    }
+
+    #[test]
+    fn test_generate_code_noun_from_list() {
+        for _ in 0..50 {
+            let code = generate_code();
+            let parts: Vec<&str> = code.split('-').collect();
+            assert!(CODE_NOUNS.contains(&parts[1]), "noun {} not in list", parts[1]);
+        }
     }
 }

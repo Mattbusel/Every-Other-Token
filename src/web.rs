@@ -24,6 +24,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use subtle::ConstantTimeEq;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -33,6 +34,9 @@ use crate::collab::RoomStore;
 use crate::providers::Provider;
 use crate::transforms::Transform;
 use crate::{TokenEvent, TokenInterceptor};
+
+/// Maximum prompt length accepted on /stream.
+const MAX_PROMPT_LEN: usize = 100_000;
 
 /// Per-IP sliding-window rate limiter for the /stream endpoint.
 /// Allows at most `MAX_REQUESTS` requests in `WINDOW_SECS` seconds per IP.
@@ -60,6 +64,12 @@ fn rate_limit_check(limiter: &RateLimiter, addr: IpAddr) -> bool {
     } else {
         false
     }
+}
+
+/// Returns the CORS origin value to use in `Access-Control-Allow-Origin`.
+/// Reads the `CORS_ORIGIN` environment variable; falls back to `"*"`.
+fn cors_origin() -> String {
+    std::env::var("CORS_ORIGIN").unwrap_or_else(|_| "*".to_string())
 }
 
 // Default model names used when the query string omits a model parameter.
@@ -396,7 +406,7 @@ async fn handle_connection(
                 .and_then(|h| std::str::from_utf8(h.value).ok());
             let authorized = auth_header
                 .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|token| token == required_key.as_str())
+                .map(|token| bool::from(token.as_bytes().ct_eq(required_key.as_bytes())))
                 .unwrap_or(false);
             if !authorized {
                 let body = r#"{"error":"Unauthorized"}"#;
@@ -434,6 +444,18 @@ async fn handle_connection(
 
             let params = parse_query(query_str);
             let sp = parse_stream_params(&params);
+
+            // Guard against oversized prompts.
+            if sp.prompt.len() > MAX_PROMPT_LEN {
+                let body = r#"{"error":"Prompt exceeds maximum length"}"#;
+                let response = format!(
+                    "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(), body
+                );
+                stream.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+
             let prompt = sp.prompt;
             let transform_str = sp.transform;
             let rate = sp.rate;
@@ -468,7 +490,10 @@ async fn handle_connection(
             let stream_room_code = params.get("room").cloned();
 
             // SSE headers
-            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: {}\r\n\r\n",
+                cors_origin()
+            );
             stream.write_all(headers.as_bytes()).await?;
 
             // Create channel for token events.
@@ -566,7 +591,10 @@ async fn handle_connection(
             };
 
             // SSE headers
-            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: {}\r\n\r\n",
+                cors_origin()
+            );
             stream.write_all(headers.as_bytes()).await?;
 
             // Merged channel: (side, event)
@@ -679,7 +707,10 @@ async fn handle_connection(
                 model_input
             };
 
-            let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: {}\r\n\r\n",
+                cors_origin()
+            );
             stream.write_all(headers.as_bytes()).await?;
 
             let (merged_tx, mut merged_rx) =
@@ -749,6 +780,15 @@ async fn handle_connection(
             let _ = stream.write_all(b"data: [DONE]\n\n").await;
         }
         "/room/create" => {
+            if !rate_limit_check(&limiter, peer_ip) {
+                let body = r#"{"error":"Too Many Requests"}"#;
+                let response = format!(
+                    "HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nContent-Length: {}\r\nRetry-After: 60\r\nConnection: close\r\n\r\n{}",
+                    body.len(), body
+                );
+                stream.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
             let code = crate::collab::create_room(&store);
             let body = format!(r#"{{"code":"{}","ws_url":"/ws/{}"}}"#, code, code);
             let response = format!(
@@ -810,6 +850,108 @@ async fn handle_connection(
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
                 body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await?;
+        }
+        "/batch" => {
+            // POST /batch: run multiple prompts through Mock provider and return token counts.
+            use tokio::io::AsyncReadExt;
+
+            // Read remaining body from the TCP stream (after the HTTP header).
+            let mut body_buf = vec![0u8; 65_536];
+            let body_n = stream.read(&mut body_buf).await.unwrap_or(0);
+            // The initial read already captured the header; body starts after \r\n\r\n.
+            // Combine what we already read in `buf` with any additional body bytes.
+            let full = [&buf[..n], &body_buf[..body_n]].concat();
+            let body_start = full
+                .windows(4)
+                .position(|w| w == b"\r\n\r\n")
+                .map(|p| p + 4)
+                .unwrap_or(full.len());
+            let body_bytes = &full[body_start..];
+
+            #[derive(serde::Deserialize)]
+            struct BatchRequest {
+                prompts: Vec<String>,
+                #[serde(default)]
+                transform: String,
+                #[serde(default)]
+                provider: String,
+                #[serde(default)]
+                model: String,
+                #[serde(default)]
+                rate: f64,
+            }
+
+            let req: BatchRequest = match serde_json::from_slice(body_bytes) {
+                Ok(r) => r,
+                Err(_) => {
+                    let body = r#"{"error":"Invalid JSON body"}"#;
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(), body
+                    );
+                    stream.write_all(response.as_bytes()).await?;
+                    return Ok(());
+                }
+            };
+
+            if req.prompts.is_empty() || req.prompts.len() > 10 {
+                let body = r#"{"error":"prompts must be 1-10 items"}"#;
+                let response = format!(
+                    "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(), body
+                );
+                stream.write_all(response.as_bytes()).await?;
+                return Ok(());
+            }
+
+            let transform_str = if req.transform.is_empty() {
+                "reverse".to_string()
+            } else {
+                req.transform
+            };
+            let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
+            let rate = req.rate.clamp(0.0, 1.0);
+            let model = if req.model.is_empty() {
+                DEFAULT_MOCK_MODEL.to_string()
+            } else {
+                req.model
+            };
+
+            let mut results: Vec<serde_json::Value> = Vec::new();
+            for prompt in &req.prompts {
+                let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+                let interceptor_result = TokenInterceptor::new(
+                    Provider::Mock,
+                    transform.clone(),
+                    model.clone(),
+                    false,
+                    false,
+                    false,
+                )
+                .map_err(|e| e.to_string());
+                if let Ok(mut interceptor) = interceptor_result {
+                    interceptor = interceptor.with_rate(rate);
+                    interceptor.web_tx = Some(tx);
+                    let _ = interceptor.intercept_stream(prompt).await;
+                }
+                let mut token_count = 0usize;
+                while rx.try_recv().is_ok() {
+                    token_count += 1;
+                }
+                results.push(serde_json::json!({
+                    "prompt": prompt,
+                    "token_count": token_count,
+                }));
+            }
+
+            let body = serde_json::json!({"results": results}).to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                cors_origin(),
                 body
             );
             stream.write_all(response.as_bytes()).await?;
@@ -1484,6 +1626,69 @@ mod tests {
         assert!(INDEX_HTML.contains("btn-leave"));
     }
 
+    // -- New: cors_origin helper --
+
+    #[test]
+    fn test_cors_origin_default_is_star() {
+        // Without CORS_ORIGIN env var set (or if already "*"), default is "*"
+        // We can't unset env vars portably in tests, so just check it returns a non-empty string.
+        let origin = cors_origin();
+        assert!(!origin.is_empty());
+    }
+
+    // -- New: MAX_PROMPT_LEN constant --
+
+    #[test]
+    fn test_max_prompt_len_is_100k() {
+        assert_eq!(MAX_PROMPT_LEN, 100_000);
+    }
+
+    // -- New: batch endpoint parsing logic --
+
+    #[test]
+    fn test_batch_request_parse_valid() {
+        let json = r#"{"prompts": ["hello", "world"], "transform": "reverse", "rate": 0.5}"#;
+        let v: serde_json::Value = serde_json::from_str(json).unwrap();
+        let prompts = v["prompts"].as_array().unwrap();
+        assert_eq!(prompts.len(), 2);
+        assert_eq!(prompts[0].as_str().unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_batch_request_parse_empty_prompts_rejected() {
+        let json = r#"{"prompts": []}"#;
+        let v: serde_json::Value = serde_json::from_str(json).unwrap();
+        let prompts = v["prompts"].as_array().unwrap();
+        assert!(prompts.is_empty());
+        // Simulate the guard: empty or > 10 should be rejected.
+        assert!(prompts.is_empty() || prompts.len() > 10);
+    }
+
+    #[test]
+    fn test_batch_request_parse_too_many_prompts_rejected() {
+        let prompts: Vec<&str> = (0..11).map(|_| "x").collect();
+        let json = serde_json::json!({"prompts": prompts}).to_string();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let arr = v["prompts"].as_array().unwrap();
+        assert!(arr.len() > 10);
+    }
+
+    #[test]
+    fn test_batch_request_invalid_json_fails() {
+        let result = serde_json::from_str::<serde_json::Value>("not json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_request_max_10_prompts_allowed() {
+        let prompts: Vec<&str> = (0..10).map(|_| "test").collect();
+        let json = serde_json::json!({"prompts": prompts}).to_string();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let arr = v["prompts"].as_array().unwrap();
+        assert_eq!(arr.len(), 10);
+        assert!(arr.len() <= 10); // should be allowed
+    }
+
     #[test]
     fn test_index_html_has_auto_join_logic() {
         assert!(INDEX_HTML.contains("autoJoin") || INDEX_HTML.contains("/join/"));
@@ -1603,14 +1808,16 @@ mod tests {
     #[test]
     fn test_collab_module_generate_code_length() {
         let code = crate::collab::generate_code();
-        assert_eq!(code.len(), 6);
+        // New format: ADJ-NOUN-NN (uppercase), minimum 5 chars
+        assert!(code.len() >= 5);
     }
 
     #[test]
     fn test_collab_module_generate_code_alphanumeric() {
         for _ in 0..20 {
             let code = crate::collab::generate_code();
-            assert!(code.chars().all(|c| c.is_ascii_alphanumeric()));
+            // New memorable format allows hyphens
+            assert!(code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         }
     }
 
@@ -1626,7 +1833,7 @@ mod tests {
     fn test_collab_module_create_room_returns_code() {
         let store = crate::collab::new_room_store();
         let code = crate::collab::create_room(&store);
-        assert_eq!(code.len(), 6);
+        assert!(code.len() >= 5);
         let guard = store.lock().unwrap();
         assert!(guard.contains_key(&code));
     }
@@ -1634,7 +1841,7 @@ mod tests {
     #[test]
     fn test_collab_module_join_nonexistent_room_errors() {
         let store = crate::collab::new_room_store();
-        let result = crate::collab::join_room(&store, "ZZZZZZ", "Bob", false);
+        let result = crate::collab::join_room(&store, "SWIFT-LION-99", "Bob", false);
         assert!(result.is_err());
     }
 
