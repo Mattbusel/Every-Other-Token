@@ -1764,4 +1764,78 @@ mod tests {
     fn test_parse_query_empty_string_no_panic() {
         let _ = parse_query("");
     }
+
+    // -- parse_stream_params tests (item 13) --
+
+    #[test]
+    fn test_parse_stream_params_defaults() {
+        let params = parse_query("");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.prompt, "");
+        assert_eq!(sp.transform, "reverse");
+        assert_eq!(sp.provider, "openai");
+        assert_eq!(sp.model, "");
+        assert!((sp.rate - 0.5).abs() < 1e-9);
+        assert_eq!(sp.seed, None);
+        assert_eq!(sp.top_logprobs, 5);
+        assert_eq!(sp.system, None);
+        assert!(!sp.visual);
+        assert!(!sp.heatmap);
+    }
+
+    #[test]
+    fn test_parse_stream_params_seed_parsed() {
+        let params = parse_query("seed=42");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.seed, Some(42));
+    }
+
+    #[test]
+    fn test_parse_stream_params_visual_flag_one() {
+        let params = parse_query("visual=1");
+        let sp = parse_stream_params(&params);
+        assert!(sp.visual);
+    }
+
+    #[test]
+    fn test_parse_stream_params_visual_flag_true() {
+        let params = parse_query("visual=true");
+        let sp = parse_stream_params(&params);
+        assert!(sp.visual);
+    }
+
+    #[test]
+    fn test_parse_stream_params_rate_parsed() {
+        let params = parse_query("rate=0.8");
+        let sp = parse_stream_params(&params);
+        assert!((sp.rate - 0.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_parse_stream_params_system_prompt() {
+        let params = parse_query("system=Be+concise");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.system.as_deref(), Some("Be concise"));
+    }
+
+    #[test]
+    fn test_parse_stream_params_empty_system_is_none() {
+        let params = parse_query("system=");
+        let sp = parse_stream_params(&params);
+        assert_eq!(sp.system, None);
+    }
+
+    // -- url_decode UTF-8 multi-byte (item 1) --
+
+    #[test]
+    fn test_url_decode_utf8_multibyte_é() {
+        // %C3%A9 is UTF-8 for 'é'
+        assert_eq!(url_decode("%C3%A9"), "é");
+    }
+
+    #[test]
+    fn test_url_decode_incomplete_percent_no_panic() {
+        // Should not panic on truncated percent-encoded sequence
+        let _ = url_decode("a%2");
+    }
 }

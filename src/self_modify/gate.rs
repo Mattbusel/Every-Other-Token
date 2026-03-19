@@ -333,14 +333,17 @@ pub struct ValidationGate {
 }
 
 impl ValidationGate {
+    /// Create a new gate with the given configuration.
     pub fn new(config: GateConfig) -> Self {
         Self { config }
     }
 
+    /// Return a reference to the gate's current configuration.
     pub fn config(&self) -> &GateConfig {
         &self.config
     }
 
+    /// Override the trust level without replacing the rest of the configuration.
     pub fn set_trust_level(&mut self, level: TrustLevel) {
         self.config.trust_level = level;
     }
@@ -507,10 +510,15 @@ impl ValidationGate {
 
 /// Abstracts the execution of each check so tests can inject deterministic results.
 pub trait CheckRunner {
+    /// Execute the test suite using the given command string and return the result.
     fn run_tests(&self, cmd: &str) -> CheckResult;
+    /// Execute clippy using the given command string and return the result.
     fn run_clippy(&self, cmd: &str) -> CheckResult;
+    /// Run criterion benchmarks and return raw samples for regression analysis.
     fn run_benchmarks(&self) -> Vec<BenchmarkSample>;
+    /// Execute the smoke-test command and return the result.
     fn run_smoke(&self, cmd: &str) -> CheckResult;
+    /// Collect post-deploy staging metrics for bounds validation.
     fn staging_metrics(&self) -> Vec<StagingMetric>;
 }
 

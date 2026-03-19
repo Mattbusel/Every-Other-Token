@@ -208,6 +208,11 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
         };
         interceptor.top_logprobs = args.top_logprobs;
         interceptor.min_confidence = args.min_confidence;
+        // Enable in-session semantic dedup when the feature is compiled in.
+        // Repeated identical prompts (common in research mode) hit the cache
+        // after the first run, avoiding redundant API spend.
+        #[cfg(feature = "self-modify")]
+        interceptor.enable_dedup(300_000, 1_024);
         if let Some(rate) = args.rate {
             interceptor = interceptor.with_rate(rate);
         }

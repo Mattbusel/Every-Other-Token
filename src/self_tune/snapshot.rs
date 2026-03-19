@@ -117,10 +117,12 @@ pub struct ParamDiff {
 }
 
 impl ParamDiff {
+    /// Absolute change: `after − before`.
     pub fn delta(&self) -> f64 {
         self.after - self.before
     }
 
+    /// Percentage change relative to `before` (0.0 if `before` is zero).
     pub fn pct_change(&self) -> f64 {
         if self.before == 0.0 {
             0.0
@@ -139,6 +141,7 @@ pub struct ConfigDiff {
 }
 
 impl ConfigDiff {
+    /// Returns `true` if no parameters changed between the two snapshots.
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }

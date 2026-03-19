@@ -80,6 +80,7 @@ pub struct ModificationRecord {
 }
 
 impl ModificationRecord {
+    /// Returns `true` if the outcome of this modification was [`Outcome::Success`].
     pub fn was_successful(&self) -> bool {
         self.outcome == Outcome::Success
     }
@@ -176,6 +177,7 @@ pub struct DeadEnd {
 // MemoryConfig
 // ---------------------------------------------------------------------------
 
+/// Capacity limits for each knowledge category stored in [`AgentMemory`].
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
     /// Maximum modification records to retain (oldest evicted).
@@ -231,6 +233,7 @@ pub struct AgentMemory {
 }
 
 impl AgentMemory {
+    /// Create a new, empty memory store with the given capacity configuration.
     pub fn new(config: MemoryConfig) -> Self {
         Self {
             config,
@@ -476,6 +479,7 @@ impl AgentMemory {
     // Stats
     // -----------------------------------------------------------------------
 
+    /// Return a lightweight summary of the current memory store state.
     pub fn stats(&self) -> MemoryStats {
         MemoryStats {
             modification_count: self.modifications.len(),
@@ -548,16 +552,19 @@ pub struct InMemoryBackend {
 }
 
 impl InMemoryBackend {
+    /// Create a new in-memory backend with the given capacity configuration.
     pub fn new(config: MemoryConfig) -> Self {
         Self {
             inner: AgentMemory::new(config),
         }
     }
 
+    /// Borrow the underlying [`AgentMemory`] for inspection.
     pub fn inner(&self) -> &AgentMemory {
         &self.inner
     }
 
+    /// Mutably borrow the underlying [`AgentMemory`].
     pub fn inner_mut(&mut self) -> &mut AgentMemory {
         &mut self.inner
     }

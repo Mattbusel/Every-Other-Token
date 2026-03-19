@@ -1401,4 +1401,119 @@ mod tests {
             );
         }
     }
+
+    // ---- chain: prefix syntax (item 12) ----
+
+    #[test]
+    fn test_chain_prefix_two_transforms() {
+        let t = Transform::from_str_loose("chain:reverse,uppercase").unwrap();
+        assert!(matches!(t, Transform::Chain(_)));
+    }
+
+    #[test]
+    fn test_chain_prefix_single_unwraps() {
+        let t = Transform::from_str_loose("chain:reverse").unwrap();
+        assert!(matches!(t, Transform::Reverse));
+    }
+
+    #[test]
+    fn test_chain_prefix_invalid_propagates_err() {
+        assert!(Transform::from_str_loose("chain:notreal,reverse").is_err());
+    }
+
+    #[test]
+    fn test_chain_prefix_equivalent_to_comma() {
+        let with_prefix = Transform::from_str_loose("chain:reverse,uppercase").unwrap();
+        let without_prefix = Transform::from_str_loose("reverse,uppercase").unwrap();
+        // Both should be Chain variants with same length
+        match (with_prefix, without_prefix) {
+            (Transform::Chain(a), Transform::Chain(b)) => assert_eq!(a.len(), b.len()),
+            _ => panic!("both should be Chain variants"),
+        }
+    }
+
+    // ---- CJK tokenization (item 7) ----
+
+    #[test]
+    fn test_tokenize_cjk_individual_chars() {
+        let tokens = tokenize("你好");
+        assert_eq!(tokens, vec!["你", "好"], "each CJK char should be its own token");
+    }
+
+    #[test]
+    fn test_tokenize_cjk_mixed_with_latin() {
+        let tokens = tokenize("hello你好world");
+        assert!(tokens.contains(&"你".to_string()));
+        assert!(tokens.contains(&"好".to_string()));
+        assert!(tokens.contains(&"hello".to_string()));
+        assert!(tokens.contains(&"world".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_cjk_with_spaces() {
+        let tokens = tokenize("你 好");
+        // CJK chars with space between them: "你", " ", "好"
+        assert!(tokens.contains(&"你".to_string()));
+        assert!(tokens.contains(&"好".to_string()));
+    }
+
+    // ---- synonym file loading / runtime overrides (item 18) ----
+    // All override tests are in a single test to avoid race conditions on the
+    // global SYNONYM_OVERRIDES state when tests run in parallel.
+
+    #[test]
+    fn test_synonym_overrides_all() {
+        // Builtin fallback still works (no overrides set yet — cleared at end)
+        assert_eq!(Transform::Synonym.apply("bad"), "poor");
+
+        // Runtime override takes priority over built-in
+        set_synonym_overrides(
+            vec![("good".to_string(), "fantastic".to_string())]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(Transform::Synonym.apply("good"), "fantastic");
+        set_synonym_overrides(std::collections::HashMap::new());
+
+        // TSV file format
+        let tmp_tsv = std::env::temp_dir().join("synonyms_test_seq.tsv");
+        std::fs::write(&tmp_tsv, "zephyr\tbreeze\n# comment line\n").expect("write");
+        load_synonym_overrides(tmp_tsv.to_str().unwrap()).expect("load tsv");
+        assert_eq!(Transform::Synonym.apply("zephyr"), "breeze");
+        std::fs::remove_file(&tmp_tsv).ok();
+        set_synonym_overrides(std::collections::HashMap::new());
+
+        // Key-value file format
+        let tmp_kv = std::env::temp_dir().join("synonyms_kv_seq.txt");
+        std::fs::write(&tmp_kv, "crimson = scarlet\n").expect("write");
+        load_synonym_overrides(tmp_kv.to_str().unwrap()).expect("load kv");
+        assert_eq!(Transform::Synonym.apply("crimson"), "scarlet");
+        std::fs::remove_file(&tmp_kv).ok();
+        set_synonym_overrides(std::collections::HashMap::new());
+
+        // After clearing, built-in map still works
+        assert_eq!(Transform::Synonym.apply("fast"), "quick");
+    }
+
+    // ---- configurable confidence thresholds (item 11) ----
+
+    #[test]
+    fn test_confidence_thresholds_custom() {
+        use crate::render::{ConfidenceBand, ConfidenceThresholds};
+        let t = ConfidenceThresholds { high: 0.9, mid: 0.6 };
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.95, &t), ConfidenceBand::High);
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.75, &t), ConfidenceBand::Mid);
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.3, &t), ConfidenceBand::Low);
+    }
+
+    #[test]
+    fn test_confidence_thresholds_default_unchanged() {
+        use crate::render::{ConfidenceBand, ConfidenceThresholds};
+        let t = ConfidenceThresholds::default();
+        assert_eq!(t.high, 0.7);
+        assert_eq!(t.mid, 0.4);
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.7, &t), ConfidenceBand::High);
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.4, &t), ConfidenceBand::Mid);
+        assert_eq!(ConfidenceBand::from_confidence_with_thresholds(0.39, &t), ConfidenceBand::Low);
+    }
 }
