@@ -12,7 +12,8 @@ use clap::Parser;
 #[command(version = "4.0.0")]
 #[command(about = "A real-time token stream mutator for LLM interpretability research")]
 pub struct Args {
-    /// Input prompt to send to the LLM
+    /// Input prompt to send to the LLM (optional when using --web)
+    #[arg(default_value = "")]
     pub prompt: String,
 
     /// Transformation type (reverse, uppercase, mock, noise)
