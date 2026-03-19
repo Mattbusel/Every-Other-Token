@@ -379,13 +379,24 @@ function renderSurgeryHistory() {
   const el = document.getElementById('surgery-history');
   if (!el) return;
   if (surgeryLog.length === 0) { el.innerHTML = '<span style="color:#484f58">No edits yet.</span>'; return; }
-  el.innerHTML = surgeryLog.slice().reverse().map((e, i) =>
-    `<div style="display:flex;gap:8px;padding:2px 0;border-bottom:1px solid #21262d">
-      <span style="color:#484f58;font-size:.7rem;flex-shrink:0">#${e.index}</span>
-      <span style="color:#f85149;text-decoration:line-through;flex:1;overflow:hidden;text-overflow:ellipsis">${e.original}</span>
-      <span style="color:#3fb950;flex:1;overflow:hidden;text-overflow:ellipsis">→ ${e.replacement}</span>
-    </div>`
-  ).join('');
+  const frag=document.createDocumentFragment();
+  surgeryLog.slice().reverse().forEach(e=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;gap:8px;padding:2px 0;border-bottom:1px solid #21262d';
+    const idx=document.createElement('span');
+    idx.style.cssText='color:#484f58;font-size:.7rem;flex-shrink:0';
+    idx.textContent='#'+e.index;
+    const orig=document.createElement('span');
+    orig.style.cssText='color:#f85149;text-decoration:line-through;flex:1;overflow:hidden;text-overflow:ellipsis';
+    orig.textContent=e.original;
+    const repl=document.createElement('span');
+    repl.style.cssText='color:#3fb950;flex:1;overflow:hidden;text-overflow:ellipsis';
+    repl.textContent='→ '+e.replacement;
+    row.appendChild(idx);row.appendChild(orig);row.appendChild(repl);
+    frag.appendChild(row);
+  });
+  el.innerHTML='';
+  el.appendChild(frag);
 }
 function undoAll() {
   while (undoStack.length) {
@@ -723,7 +734,7 @@ function enableSurgery(container){
           undoStack.push({sp, oldText: orig, newText, idx: parseInt(sp.dataset.idx || '-1')});
           surgeryLog.push({index:parseInt(sp.dataset.idx||'0'),original:orig,replacement:newText,timestamp:new Date().toISOString()});
           renderSurgeryHistory();
-          if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}
+          if(ws&&ws.readyState===WebSocket.OPEN){try{ws.send(JSON.stringify({type:'surgery',token_index:parseInt(sp.dataset.idx||'0'),old_text:orig,new_text:newText}))}catch(e){console.warn('[eot] ws surgery send failed:',e);}}
         }
       }
       inp.addEventListener('blur',commit);
@@ -796,10 +807,10 @@ function drawGraph(){
 
 /* ---- Streaming ---- */
 $('#start').onclick=()=>{
-  if(mode==='diff'){startDiff();return}
-  if(mode==='experiment'){startExperiment();return}
   if(es){es.close();es=null}
   if(_streamRetryTimer){clearTimeout(_streamRetryTimer);_streamRetryTimer=null;}
+  if(mode==='diff'){startDiff();return}
+  if(mode==='experiment'){startExperiment();return}
   /* Clear all views */
   $('#v-single').innerHTML='';
   $('#sbs-orig').innerHTML='<span class="sbs-label">Original</span>';
@@ -1101,7 +1112,7 @@ document.addEventListener('keydown', function(e){
         last.sp.textContent=last.oldText;
         if(last.idx>=0&&allTokens[last.idx])allTokens[last.idx].text=last.oldText;
         if(typeof ws!=='undefined'&&ws&&ws.readyState===WebSocket.OPEN){
-            ws.send(JSON.stringify({type:'surgery',token_index:last.idx,old_text:last.newText,new_text:last.oldText}));
+            try{ws.send(JSON.stringify({type:'surgery',token_index:last.idx,old_text:last.newText,new_text:last.oldText}));}catch(e){console.warn('[eot] ws undo send failed:',e);}
         }
     }
     if(e.key==='?'&&!e.ctrlKey&&!e.metaKey){

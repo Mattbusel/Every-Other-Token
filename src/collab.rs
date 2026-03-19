@@ -2029,4 +2029,48 @@ mod tests {
             "found duplicate codes among 1000 generated"
         );
     }
+
+    #[test]
+    fn test_maybe_record_cap_enforced() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        start_recording(&store, &code);
+        // Set recording_cap to 3
+        if let Ok(mut guard) = store.lock() {
+            if let Some(room) = guard.get_mut(&code) {
+                room.recording_cap = 3;
+            }
+        }
+        for i in 0..5 {
+            maybe_record(&store, &code, serde_json::json!({"i": i}));
+        }
+        // Should only have recording_cap events
+        let recorded_len = store.lock().unwrap().get(&code).map(|r| r.recorded_events.len()).unwrap_or(0);
+        assert!(recorded_len <= 3);
+    }
+
+    #[test]
+    fn test_evict_idle_rooms_removes_stale() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // Backdating last_activity_ms to beyond TTL
+        if let Ok(mut guard) = store.lock() {
+            if let Some(room) = guard.get_mut(&code) {
+                room.last_activity_ms = 0; // epoch 0 is definitely stale
+            }
+        }
+        evict_idle_rooms(&store);
+        let is_gone = store.lock().unwrap().get(&code).is_none();
+        assert!(is_gone, "stale room should be evicted");
+    }
+
+    #[test]
+    fn test_evict_idle_rooms_keeps_active() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // last_activity_ms is set to now_ms() in create_room — should survive
+        evict_idle_rooms(&store);
+        let is_alive = store.lock().unwrap().get(&code).is_some();
+        assert!(is_alive, "active room should not be evicted");
+    }
 }

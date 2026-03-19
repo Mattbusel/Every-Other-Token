@@ -206,6 +206,11 @@ pub struct Args {
     /// Replay speed multiplier for --replay mode. 1.0 = real-time, 2.0 = double speed, 0.0 = instant.
     #[arg(long, default_value = "1.0")]
     pub replay_speed: f64,
+
+    /// Stream hang timeout in seconds. The stream is forcibly dropped if no token
+    /// arrives within this duration. Default: 120 (2 minutes). Set to 0 to disable.
+    #[arg(long, default_value = "120")]
+    pub timeout: u64,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -664,5 +669,23 @@ mod tests {
     fn test_args_max_retries_zero() {
         let args = Args::parse_from(["eot", "prompt", "--max-retries", "0"]);
         assert_eq!(args.max_retries, 0);
+    }
+
+    #[test]
+    fn test_args_timeout_default() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert_eq!(args.timeout, 120);
+    }
+
+    #[test]
+    fn test_args_timeout_custom() {
+        let args = Args::parse_from(["eot", "prompt", "--timeout", "60"]);
+        assert_eq!(args.timeout, 60);
+    }
+
+    #[test]
+    fn test_args_timeout_zero_disables() {
+        let args = Args::parse_from(["eot", "prompt", "--timeout", "0"]);
+        assert_eq!(args.timeout, 0);
     }
 }
