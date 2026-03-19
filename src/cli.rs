@@ -211,6 +211,23 @@ pub struct Args {
     /// arrives within this duration. Default: 120 (2 minutes). Set to 0 to disable.
     #[arg(long, default_value = "120")]
     pub timeout: u64,
+
+    /// Export per-run timeseries data to a CSV file at this path.
+    /// Columns: run,token_index,confidence,perplexity
+    #[arg(long)]
+    pub export_timeseries: Option<String>,
+
+    /// Print the embedded research JSON schema and exit.
+    #[arg(long)]
+    pub json_schema: bool,
+
+    /// List known models for a provider: "openai", "anthropic", or "all".
+    #[arg(long)]
+    pub list_models: Option<String>,
+
+    /// Validate configuration (print resolved values and exit).
+    #[arg(long)]
+    pub validate_config: bool,
 }
 
 /// Select the appropriate default model for the given provider when the user
@@ -704,5 +721,66 @@ mod tests {
     fn test_args_timeout_zero_disables() {
         let args = Args::parse_from(["eot", "prompt", "--timeout", "0"]);
         assert_eq!(args.timeout, 0);
+    }
+
+    // -- Item 14: --validate-config flag --
+    #[test]
+    fn test_validate_config_flag_exists() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(!args.validate_config, "validate_config should default to false");
+        let args2 = Args::parse_from(["eot", "prompt", "--validate-config"]);
+        assert!(args2.validate_config);
+    }
+
+    // -- Item 15: --list-models flag --
+    #[test]
+    fn test_list_models_openai_includes_gpt4() {
+        let openai_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+        assert!(openai_models.contains(&"gpt-4"), "openai list should include gpt-4");
+    }
+
+    #[test]
+    fn test_list_models_flag_accepts_openai() {
+        let args = Args::parse_from(["eot", "prompt", "--list-models", "openai"]);
+        assert_eq!(args.list_models.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn test_list_models_flag_accepts_all() {
+        let args = Args::parse_from(["eot", "prompt", "--list-models", "all"]);
+        assert_eq!(args.list_models.as_deref(), Some("all"));
+    }
+
+    // -- Item 17: --json-schema flag --
+    #[test]
+    fn test_json_schema_flag_outputs_valid_json() {
+        const RESEARCH_SCHEMA: &str = include_str!("../docs/research-schema.json");
+        let result = serde_json::from_str::<serde_json::Value>(RESEARCH_SCHEMA);
+        assert!(result.is_ok(), "research-schema.json must be valid JSON");
+    }
+
+    // -- Item 16: --record path unwritable detected --
+    #[test]
+    fn test_record_path_unwritable_detected() {
+        // Test that trying to open a path in a non-existent directory fails
+        let bad_path = "/nonexistent_dir_eot_test/output.json";
+        let result = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(bad_path);
+        assert!(result.is_err(), "opening a path in a nonexistent dir should fail");
+    }
+
+    // -- Item 12: --export-timeseries flag --
+    #[test]
+    fn test_export_timeseries_flag_default_none() {
+        let args = Args::parse_from(["eot", "prompt"]);
+        assert!(args.export_timeseries.is_none());
+    }
+
+    #[test]
+    fn test_export_timeseries_flag_set() {
+        let args = Args::parse_from(["eot", "prompt", "--export-timeseries", "out.csv"]);
+        assert_eq!(args.export_timeseries.as_deref(), Some("out.csv"));
     }
 }

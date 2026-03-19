@@ -183,6 +183,21 @@ canvas#depgraph{width:100%;height:200px;display:block}
 .toast-info{background:#1f3a5f;border:1px solid #58a6ff}
 .join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#8b949e;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #21262d;background:#0d1117}
 @media(max-width:640px){#sidebar{width:100%;position:relative;height:auto;border-left:none;border-top:1px solid #21262d}#chat-panel{right:0;width:100%;border-left:none;border-top:1px solid #21262d}body.sidebar-open{padding-right:0!important}}
+/* Deleted token placeholder */
+.token-deleted{color:#484f58;text-decoration:line-through;font-style:italic}
+/* Host badge */
+.host-badge{background:#1f6feb;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:700;letter-spacing:.05em}
+/* Colorblind-safe heatmap */
+body.cb-mode .heat-0{background:#000!important;color:#fff!important}
+body.cb-mode .heat-1{background:#555!important}
+body.cb-mode .heat-2{background:#999!important}
+body.cb-mode .heat-3{background:#ccc!important;color:#000!important}
+body.cb-mode .heat-4{background:#fff!important;color:#000!important;border:1px solid #ccc}
+body.cb-mode .heat-0::after{content:'●';font-size:.5em}
+body.cb-mode .heat-1::after{content:'◕';font-size:.5em}
+body.cb-mode .heat-2::after{content:'◑';font-size:.5em}
+body.cb-mode .heat-3::after{content:'◔';font-size:.5em}
+body.cb-mode .heat-4::after{content:'○';font-size:.5em}
 /* Mobile responsive */
 @media(max-width:768px){
   #sidebar{display:none!important}
@@ -215,6 +230,7 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" style="background:#4a7c59" aria-label="Export session as CSV">Export CSV</button>
     <button class="btn btn-export" id="btn-import" title="Import a previously exported JSON session" style="background:#3a4a6a" aria-label="Import JSON session">Import JSON</button>
     <input type="file" id="import-file" accept=".json" style="display:none" aria-label="Select JSON file to import">
+    <button class="btn btn-mode" id="btn-cb-mode" aria-label="Toggle colorblind-safe mode" title="Colorblind safe" style="font-size:.78rem;padding:4px 10px">◑ CB</button>
     <button class="btn btn-mode" id="btn-theme" title="Toggle dark/light theme" style="font-size:1rem;padding:4px 10px" aria-label="Toggle dark/light theme"><span aria-hidden="true">🌙</span></button>
     <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session" aria-label="Host a collaborative session">Host Session</button>
     <input type="text" id="join-code" placeholder="Room code" maxlength="6" pattern="[A-Z0-9]+" inputmode="text" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px" aria-label="Room code">
@@ -506,7 +522,14 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity)
     const h=importance>=.8?4:importance>=.6?3:importance>=.4?2:importance>=.2?1:0;
     s.classList.add('heat-'+h);
   }
-  if(chaosLabel&&isOdd)s.title='chaos → '+chaosLabel;
+  /* Deleted token placeholder */
+  if(chaosLabel==='deleted'||text===''){
+    s.textContent='⌀';
+    s.classList.add('token-deleted');
+    s.title='Token deleted';
+    s.style.opacity='0.4';
+  }
+  if(chaosLabel&&isOdd&&chaosLabel!=='deleted')s.title='chaos → '+chaosLabel;
   /* Confidence bar: colored underline */
   if(confidence!=null){
     const cls=confidence>=0.7?'conf-high':confidence>=0.4?'conf-mid':'conf-low';
@@ -515,7 +538,7 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity)
   }
   /* Perplexity pulse for surprising tokens (perplexity > 5) */
   if(perplexity!=null&&perplexity>5)s.classList.add('high-perp');
-  s.textContent=text;
+  if(chaosLabel!=='deleted'&&text!=='')s.textContent=text;
   s.addEventListener('contextmenu',function(e){
     e.preventDefault();
     navigator.clipboard&&navigator.clipboard.writeText(s.textContent).then(()=>{
@@ -970,8 +993,20 @@ $('#start').onclick=()=>{
   /* Start SSE flush loop */
   _countRef.count=0; _xformedRef.xformed=0; _modeRef.mode=mode;
   _startSseFlush(_countRef, _xformedRef, _modeRef);
-  es=new EventSource(url);
-  attachStreamHandlers(es);
+  /* 429 preflight check before opening EventSource */
+  (async()=>{
+    try{
+      const probe=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(3000)});
+      if(probe.status===429){
+        _stopSseFlush();
+        $('#start').disabled=false;$('#start').textContent='Stream';
+        showNotice('Rate limited (429) — please wait 60s','error');
+        return;
+      }
+    }catch(_){}
+    es=new EventSource(url);
+    attachStreamHandlers(es);
+  })();
   updateUndoBtnState();
 };
 
@@ -1057,6 +1092,18 @@ function updateConfSparkline(confidence){
   });
   ctx.stroke();
 }
+
+/* ---- Colorblind-safe mode ---- */
+(function(){
+  if(localStorage.getItem('eot-cb-mode')==='1')document.body.classList.add('cb-mode');
+})();
+document.getElementById('btn-cb-mode').onclick=function(){
+  const on=document.body.classList.toggle('cb-mode');
+  localStorage.setItem('eot-cb-mode',on?'1':'0');
+  this.classList.toggle('active',on);
+};
+/* Reflect saved cb-mode on btn on load */
+(function(){if(document.body.classList.contains('cb-mode'))document.getElementById('btn-cb-mode').classList.add('active');})();
 
 /* ---- Dark/light theme toggle ---- */
 (function(){
@@ -1222,6 +1269,14 @@ function onWsMsg(m){
       myId=m.participant.id; myColor=m.participant.color; myName=m.participant.name;
       renderParticipants(m.room_state.participants||[]);
       setParticipantCount(m.room_state.participants?m.room_state.participants.length:1);
+      /* HOST badge in mp-panel */
+      {
+        const existingBadge=$('#mp-panel .host-badge');if(existingBadge)existingBadge.remove();
+        if(m.is_host||amHost){
+          const hb=document.createElement('span');hb.className='host-badge';hb.textContent='HOST';
+          const codeEl=$('#mp-code');if(codeEl&&codeEl.parentElement)codeEl.parentElement.appendChild(hb);
+        }
+      }
       break;
     case 'participant_join':
       addPToList(m.participant); incrPCount(1);
@@ -1279,7 +1334,7 @@ function addPToList(p){
   av.textContent=(p.name||'?')[0].toUpperCase();
   const nm=document.createElement('span');nm.className='p-name';nm.textContent=p.name;
   d.appendChild(av);d.appendChild(nm);
-  if(p.is_host){const h=document.createElement('span');h.className='p-host';h.textContent='HOST';d.appendChild(h);}
+  if(p.is_host){const h=document.createElement('span');h.className='p-host';h.textContent='HOST';d.appendChild(h);nm.textContent='★ '+nm.textContent;}
   $('#participant-list').appendChild(d);
 }
 function setParticipantCount(n){$('#mp-count-badge').textContent=n;}
@@ -1554,16 +1609,46 @@ $('#btn-chain-mode').onclick = function() {
   const panel = $('#chain-builder');
   if (panel) { if (_chainModeActive) panel.classList.add('show'); else panel.classList.remove('show'); }
   this.classList.toggle('active', _chainModeActive);
+  /* Re-run validation; if chain mode off, re-enable start btn */
+  if (!_chainModeActive) {
+    const errEl=document.getElementById('chain-error');if(errEl){errEl.textContent='';errEl.style.display='none';}
+    const prevEl=document.getElementById('chain-preview');if(prevEl)prevEl.textContent='';
+    $('#start').disabled=false;
+  }
 };
 (function(){
   const builder = $('#chain-builder');
   if (!builder) return;
+  /* Inject validation elements into chain-builder */
+  {
+    const errSpan=document.createElement('span');errSpan.id='chain-error';errSpan.style.cssText='color:#f85149;font-size:.7rem;display:none';builder.appendChild(errSpan);
+    const previewSpan=document.createElement('span');previewSpan.id='chain-preview';previewSpan.style.cssText='color:#3fb950;font-size:.75rem;font-family:monospace;display:block;margin-top:2px';builder.appendChild(previewSpan);
+  }
   function updateChain() {
     const checks = builder.querySelectorAll('input[data-tx]');
     chainTransforms = [];
     checks.forEach(cb => { if (cb.checked) chainTransforms.push(cb.dataset.tx); });
     const cur = $('#chain-current');
     if (cur) cur.textContent = chainTransforms.length ? chainTransforms.join(',') : 'none';
+    /* Validation feedback */
+    const errEl=document.getElementById('chain-error');
+    const prevEl=document.getElementById('chain-preview');
+    const startBtn=$('#start');
+    if(errEl){
+      if(chainTransforms.length===0&&_chainModeActive){
+        errEl.textContent='Select at least one transform';errEl.style.display='';
+        if(prevEl)prevEl.textContent='';
+        if(startBtn&&_chainModeActive)startBtn.disabled=true;
+      } else {
+        /* Check for duplicates */
+        const seen={};const dups=[];
+        chainTransforms.forEach(tx=>{seen[tx]=(seen[tx]||0)+1;if(seen[tx]===2)dups.push(tx);});
+        if(dups.length>0){errEl.textContent='⚠ Duplicate: '+dups.join(', ');errEl.style.display='';}
+        else{errEl.textContent='';errEl.style.display='none';}
+        if(prevEl)prevEl.textContent=chainTransforms.length?'Chain: '+chainTransforms.join(' → '):'';
+        if(startBtn)startBtn.disabled=false;
+      }
+    }
     if (window._updateTransformPreview) window._updateTransformPreview();
   }
   builder.querySelectorAll('input[data-tx]').forEach(cb => cb.addEventListener('change', updateChain));

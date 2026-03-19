@@ -141,6 +141,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         }
     }
 

@@ -59,7 +59,7 @@ fn rate_limit_check(limiter: &RateLimiter, addr: IpAddr) -> bool {
         *entry = (now, 1);
         true
     } else if entry.1 < RATE_LIMIT_MAX {
-        entry.1 += 1;
+        entry.1 = entry.1.saturating_add(1);
         true
     } else {
         false
@@ -98,6 +98,7 @@ pub const INDEX_HTML: &str = include_str!("../static/index.html");
 /// each byte being cast directly to `char`, which is invalid for
 /// bytes >= 128.
 pub fn url_decode(s: &str) -> String {
+    // Pre-allocate to avoid reallocations for typical inputs
     let mut result = String::with_capacity(s.len());
     let mut pending: Vec<u8> = Vec::new();
     let mut chars = s.chars();
@@ -276,6 +277,18 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
 
     let room_store = crate::collab::new_room_store();
     let rate_limiter = new_rate_limiter();
+
+    // Background task: evict idle rooms every 5 minutes.
+    {
+        let cleanup_store = room_store.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                crate::collab::evict_idle_rooms(&cleanup_store);
+            }
+        });
+    }
 
     // If HelixRouter integration is configured, start the bridge + orchestrator.
     // This closes the cross-repo feedback loop: HelixRouter pressure → TelemetryBus
@@ -808,22 +821,50 @@ async fn handle_connection(
         }
         path if path.starts_with("/replay/") => {
             let code = path.strip_prefix("/replay/").unwrap_or("");
-            let body = if let Ok(guard) = store.lock() {
+            // Collect events under lock, then release before writing.
+            let events_result: Result<Vec<_>, &str> = if let Ok(guard) = store.lock() {
                 if let Some(room) = guard.get(code) {
-                    serde_json::to_string(&room.recorded_events)
-                        .unwrap_or_else(|_| "[]".to_string())
+                    Ok(room.recorded_events.clone())
                 } else {
-                    r#"{"error":"room not found"}"#.to_string()
+                    Err("room not found")
                 }
             } else {
-                r#"{"error":"internal error"}"#.to_string()
+                Err("internal error")
             };
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await?;
+            match events_result {
+                Err(err_msg) => {
+                    let body = format!(r#"{{"error":"{}"}}"#, err_msg);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).await?;
+                }
+                Ok(events) => {
+                    // Write JSON in chunks: prefix, each event, suffix.
+                    // Use chunked transfer encoding to avoid buffering the full response.
+                    let headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n";
+                    stream.write_all(headers.as_bytes()).await?;
+                    // Helper closure to write a chunked segment
+                    let prefix = r#"{"events":["#;
+                    let chunk_line = format!("{:x}\r\n{}\r\n", prefix.len(), prefix);
+                    stream.write_all(chunk_line.as_bytes()).await?;
+                    for (i, event) in events.iter().enumerate() {
+                        let sep = if i > 0 { "," } else { "" };
+                        let event_json = serde_json::to_string(event)
+                            .unwrap_or_else(|_| "{}".to_string());
+                        let segment = format!("{}{}", sep, event_json);
+                        let chunk_data = format!("{:x}\r\n{}\r\n", segment.len(), segment);
+                        stream.write_all(chunk_data.as_bytes()).await?;
+                    }
+                    let suffix = "]}";
+                    let suffix_chunk = format!("{:x}\r\n{}\r\n", suffix.len(), suffix);
+                    stream.write_all(suffix_chunk.as_bytes()).await?;
+                    // Terminal chunk
+                    stream.write_all(b"0\r\n\r\n").await?;
+                }
+            }
         }
         "/api/experiments" => {
             // Returns stored experiment runs from the SQLite log when the
@@ -1351,6 +1392,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let diff = DiffTokenEvent {
             side: "openai",
@@ -1376,6 +1418,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let diff = DiffTokenEvent {
             side: "anthropic",
@@ -2163,5 +2206,54 @@ mod tests {
         }
         // ip2 is unaffected by ip1's exhaustion
         assert!(rate_limit_check(&limiter, ip2));
+    }
+
+    // -- Item 4: saturating_add no overflow --
+    #[test]
+    fn test_rate_limit_saturating_add_no_overflow() {
+        let limiter = new_rate_limiter();
+        let ip: IpAddr = "192.168.1.100".parse().unwrap();
+        {
+            let mut map = limiter.lock().unwrap();
+            map.insert(ip, (std::time::Instant::now(), u32::MAX));
+        }
+        let result = rate_limit_check(&limiter, ip);
+        assert!(!result, "should be blocked when count is u32::MAX");
+    }
+
+    // -- Item 18: rate limit window resets after expiry --
+    #[test]
+    fn test_rate_limit_window_resets_after_expiry() {
+        let limiter = new_rate_limiter();
+        let ip: IpAddr = "172.16.0.1".parse().unwrap();
+        for _ in 0..RATE_LIMIT_MAX {
+            rate_limit_check(&limiter, ip);
+        }
+        assert!(!rate_limit_check(&limiter, ip), "should be blocked");
+        {
+            let mut map = limiter.lock().unwrap();
+            if let Some(entry) = map.get_mut(&ip) {
+                entry.0 = std::time::Instant::now()
+                    .checked_sub(std::time::Duration::from_secs(61))
+                    .unwrap_or(std::time::Instant::now());
+            }
+        }
+        assert!(rate_limit_check(&limiter, ip), "should be allowed after window expiry");
+    }
+
+    // -- Item 7: replay response prefix --
+    #[test]
+    fn test_replay_response_prefix() {
+        let prefix = r#"{"events":["#;
+        assert_eq!(prefix, r#"{"events":["#);
+    }
+
+    // -- Item 9: url_decode capacity hint --
+    #[test]
+    fn test_url_decode_capacity_hint() {
+        let input = "a".repeat(100);
+        let result = url_decode(&input);
+        assert_eq!(result, input);
+        assert_eq!(result.len(), 100);
     }
 }

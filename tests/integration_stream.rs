@@ -55,6 +55,10 @@ fn test_args(port: u16) -> Args {
         api_key: None,
         replay_speed: 1.0,
         timeout: 120,
+        export_timeseries: None,
+        json_schema: false,
+        list_models: None,
+        validate_config: false,
     }
 }
 

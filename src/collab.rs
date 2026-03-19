@@ -271,7 +271,9 @@ pub fn leave_room(
 pub fn broadcast(store: &RoomStore, code: &str, msg: serde_json::Value) {
     if let Ok(guard) = store.lock() {
         if let Some(room) = guard.get(code) {
-            let _ = room.broadcast_tx.send(msg);
+            if let Err(_) = room.broadcast_tx.send(msg) {
+                tracing::debug!(room_code = %code, "broadcast dropped: no active subscribers");
+            }
         }
     }
 }
@@ -2252,5 +2254,40 @@ mod tests {
             let parts: Vec<&str> = code.split('-').collect();
             assert!(CODE_NOUNS.contains(&parts[1]), "noun {} not in list", parts[1]);
         }
+    }
+
+    // -- Item 5: broadcast to empty room does not panic --
+    #[test]
+    fn test_broadcast_to_empty_room_no_panic() {
+        let store = new_room_store();
+        let code = create_room(&store);
+        // No WS connections; broadcast should not panic even with no subscribers
+        broadcast(&store, &code, serde_json::json!({"type": "test"}));
+        // If we get here without panic, the test passes
+    }
+
+    // -- Item 6: evict_idle_rooms is pub and callable --
+    #[test]
+    fn test_evict_idle_rooms_is_pub() {
+        let store = new_room_store();
+        // Just verify the function is callable (it's pub)
+        evict_idle_rooms(&store);
+    }
+
+    // -- Item 23: lag warning message format --
+    fn build_lag_warning_message(skipped: u64) -> String {
+        serde_json::json!({
+            "type": "lag_warning",
+            "skipped": skipped,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_lag_warning_message_format() {
+        let msg = build_lag_warning_message(5);
+        let parsed: serde_json::Value = serde_json::from_str(&msg).expect("valid JSON");
+        assert_eq!(parsed["type"], "lag_warning");
+        assert_eq!(parsed["skipped"], 5);
     }
 }

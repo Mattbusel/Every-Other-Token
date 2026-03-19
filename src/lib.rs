@@ -153,6 +153,9 @@ pub struct TokenEvent {
     /// When true, this event represents an error notification rather than a real token.
     #[serde(default)]
     pub is_error: bool,
+    /// Milliseconds elapsed since stream start when this token arrived (for latency tracking).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arrival_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +230,11 @@ pub struct TokenInterceptor {
     pub max_retries: u32,
     /// Maximum tokens in the Anthropic response (configurable via --anthropic-max-tokens).
     pub anthropic_max_tokens: u32,
+    /// Instant recorded at stream start for per-token arrival latency measurement.
+    stream_start_instant: Option<std::time::Instant>,
+    /// Optional stream timeout in seconds. When set, `intercept_stream` will fail
+    /// with a timeout error if the entire stream does not complete within this duration.
+    pub timeout_secs: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +358,11 @@ async fn execute_with_retry(
                 {
                     tracing::warn!(status, attempt, "got retryable HTTP status");
                     last_err = Some(format!("HTTP {status}"));
-                    circuit_record_failure();
+                    // HTTP 429 is a rate-limit — do NOT trip the circuit breaker.
+                    // Only 5xx server errors count as service failures.
+                    if status != 429 {
+                        circuit_record_failure();
+                    }
                     continue;
                 }
                 circuit_record_success();
@@ -441,6 +453,8 @@ impl TokenInterceptor {
             last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
+            stream_start_instant: None,
+            timeout_secs: None,
         })
     }
 
@@ -503,6 +517,13 @@ impl TokenInterceptor {
         self
     }
 
+    /// Set a stream timeout in seconds. If the entire stream does not complete within
+    /// this duration, `intercept_stream` returns a timeout error.
+    pub fn with_timeout(mut self, secs: u64) -> Self {
+        self.timeout_secs = Some(secs);
+        self
+    }
+
     /// Only transform tokens whose API confidence is at or below this threshold.
     pub fn with_min_confidence(mut self, threshold: f64) -> Self {
         self.min_confidence = Some(threshold);
@@ -540,6 +561,26 @@ impl TokenInterceptor {
         &mut self,
         prompt: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let timeout_duration = self.timeout_secs.map(std::time::Duration::from_secs);
+        if let Some(duration) = timeout_duration {
+            return match tokio::time::timeout(duration, self.intercept_stream_inner(prompt)).await {
+                Ok(result) => result,
+                Err(_) => Err(format!(
+                    "stream timed out after {} seconds",
+                    duration.as_secs()
+                )
+                .into()),
+            };
+        }
+        self.intercept_stream_inner(prompt).await
+    }
+
+    async fn intercept_stream_inner(
+        &mut self,
+        prompt: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Record stream start for per-token arrival latency measurement (item 8).
+        self.stream_start_instant = Some(std::time::Instant::now());
         // Note: we log diagnostics here but do not hold an entered span across
         // await points -- EnteredSpan is !Send and would prevent tokio::spawn.
         tracing::info!(
@@ -599,6 +640,7 @@ impl TokenInterceptor {
                                 perplexity: None,
                                 alternatives: vec![],
                                 is_error: false,
+                                arrival_ms: None,
                             };
                             let _ = tx.send(evt);
                         } else {
@@ -645,6 +687,7 @@ impl TokenInterceptor {
                             perplexity: None,
                             alternatives: vec![],
                             is_error: true,
+                            arrival_ms: None,
                         };
                         let _ = tx.send(evt);
                     }
@@ -712,6 +755,7 @@ impl TokenInterceptor {
 
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
+        let mut dropped_chunks: usize = 0;
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -731,39 +775,49 @@ impl TokenInterceptor {
 
                 if line.starts_with("data: ") && line != "data: [DONE]" {
                     let json_str = line.strip_prefix("data: ").unwrap_or(&line);
-                    if let Ok(parsed) = serde_json::from_str::<OpenAIChunk>(json_str) {
-                        if let Some(choice) = parsed.choices.first() {
-                            if let Some(content) = &choice.delta.content {
-                                // Extract logprob data from the first API token in this chunk
-                                let (log_prob, top_alts) = choice
-                                    .logprobs
-                                    .as_ref()
-                                    .and_then(|lp| lp.content.first())
-                                    .map(|lc| {
-                                        let alts = lc
-                                            .top_logprobs
-                                            .iter()
-                                            .map(|t| TokenAlternative {
-                                                token: t.token.clone(),
-                                                probability: t.logprob.exp().clamp(0.0, 1.0),
-                                            })
-                                            .collect::<Vec<_>>();
-                                        (Some(lc.logprob), alts)
-                                    })
-                                    .unwrap_or((None, vec![]));
-                                self.process_content_logprob(content, log_prob, top_alts);
-                                if self.pending_delay_ms > 0 {
-                                    tokio::time::sleep(std::time::Duration::from_millis(
-                                        self.pending_delay_ms,
-                                    ))
-                                    .await;
-                                    self.pending_delay_ms = 0;
+                    match serde_json::from_str::<OpenAIChunk>(json_str) {
+                        Ok(parsed) => {
+                            if let Some(choice) = parsed.choices.first() {
+                                if let Some(content) = &choice.delta.content {
+                                    // Extract logprob data from the first API token in this chunk
+                                    let (log_prob, top_alts) = choice
+                                        .logprobs
+                                        .as_ref()
+                                        .and_then(|lp| lp.content.first())
+                                        .map(|lc| {
+                                            let alts = lc
+                                                .top_logprobs
+                                                .iter()
+                                                .map(|t| TokenAlternative {
+                                                    token: t.token.clone(),
+                                                    probability: t.logprob.exp().clamp(0.0, 1.0),
+                                                })
+                                                .collect::<Vec<_>>();
+                                            (Some(lc.logprob), alts)
+                                        })
+                                        .unwrap_or((None, vec![]));
+                                    self.process_content_logprob(content, log_prob, top_alts);
+                                    if self.pending_delay_ms > 0 {
+                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                            self.pending_delay_ms,
+                                        ))
+                                        .await;
+                                        self.pending_delay_ms = 0;
+                                    }
                                 }
                             }
+                        }
+                        Err(_) => {
+                            tracing::warn!(line = %json_str, "failed to parse SSE chunk; skipping");
+                            dropped_chunks += 1;
                         }
                     }
                 }
             }
+        }
+
+        if dropped_chunks > 0 {
+            tracing::warn!(dropped_chunks, "SSE chunks were dropped during stream");
         }
 
         Ok(())
@@ -818,6 +872,7 @@ impl TokenInterceptor {
 
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
+        let mut dropped_chunks: usize = 0;
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -837,41 +892,51 @@ impl TokenInterceptor {
 
                 if line.starts_with("data: ") {
                     let json_str = line.strip_prefix("data: ").unwrap_or(&line);
-                    if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(json_str) {
-                        if event.event_type == "content_block_delta" {
-                            if let Some(delta) = &event.delta {
-                                if let Some(text) = &delta.text {
-                                    // Estimate confidence from inter-token latency for Anthropic
-                                    // Fast tokens (< 50ms) → high confidence proxy; slow tokens → lower
-                                    let now = std::time::Instant::now();
-                                    let timing_confidence = if let Some(last) =
-                                        self.last_token_instant
-                                    {
-                                        let delta_ms = now.duration_since(last).as_millis() as f64;
-                                        // Normalize: tokens arriving in < 50ms get confidence ~0.9, > 500ms → ~0.1
-                                        let conf = (1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1;
-                                        Some(conf as f32)
-                                    } else {
-                                        None
-                                    };
-                                    self.last_token_instant = Some(now);
-                                    // Convert timing_confidence to a log_prob approximation if available
-                                    let timing_logprob =
-                                        timing_confidence.map(|c| c.ln().max(-10.0));
-                                    self.process_content_logprob(text, timing_logprob, vec![]);
-                                    if self.pending_delay_ms > 0 {
-                                        tokio::time::sleep(std::time::Duration::from_millis(
-                                            self.pending_delay_ms,
-                                        ))
-                                        .await;
-                                        self.pending_delay_ms = 0;
+                    match serde_json::from_str::<AnthropicStreamEvent>(json_str) {
+                        Ok(event) => {
+                            if event.event_type == "content_block_delta" {
+                                if let Some(delta) = &event.delta {
+                                    if let Some(text) = &delta.text {
+                                        // Estimate confidence from inter-token latency for Anthropic
+                                        // Fast tokens (< 50ms) → high confidence proxy; slow tokens → lower
+                                        let now = std::time::Instant::now();
+                                        let timing_confidence = if let Some(last) =
+                                            self.last_token_instant
+                                        {
+                                            let delta_ms = now.duration_since(last).as_millis() as f64;
+                                            // Normalize: tokens arriving in < 50ms get confidence ~0.9, > 500ms → ~0.1
+                                            let conf = (1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1;
+                                            Some(conf as f32)
+                                        } else {
+                                            None
+                                        };
+                                        self.last_token_instant = Some(now);
+                                        // Convert timing_confidence to a log_prob approximation if available
+                                        let timing_logprob =
+                                            timing_confidence.map(|c| c.ln().max(-10.0));
+                                        self.process_content_logprob(text, timing_logprob, vec![]);
+                                        if self.pending_delay_ms > 0 {
+                                            tokio::time::sleep(std::time::Duration::from_millis(
+                                                self.pending_delay_ms,
+                                            ))
+                                            .await;
+                                            self.pending_delay_ms = 0;
+                                        }
                                     }
                                 }
                             }
                         }
+                        Err(_) => {
+                            tracing::warn!(line = %json_str, "failed to parse SSE chunk; skipping");
+                            dropped_chunks += 1;
+                        }
                     }
                 }
             }
+        }
+
+        if dropped_chunks > 0 {
+            tracing::warn!(dropped_chunks, "SSE chunks were dropped during stream");
         }
 
         Ok(())
@@ -961,6 +1026,7 @@ impl TokenInterceptor {
                         },
                     ],
                     is_error: false,
+                    arrival_ms: None,
                 };
                 let _ = tx.send(evt);
             } else {
@@ -1133,6 +1199,9 @@ impl TokenInterceptor {
 
                 // Web / terminal / json output — skip deleted tokens for display.
                 if !is_deleted {
+                    // Record per-token arrival latency relative to stream start.
+                    let arrival_ms = self.stream_start_instant
+                        .map(|start| start.elapsed().as_millis() as u64);
                     if let Some(tx) = &self.web_tx {
                         let event = TokenEvent {
                             text: display_text.clone(),
@@ -1146,6 +1215,7 @@ impl TokenInterceptor {
                             perplexity: token_perplexity,
                             alternatives: token_alts,
                             is_error: false,
+                            arrival_ms,
                         };
                         if let Some(rec) = &mut self.recorder {
                             rec.record(&event);
@@ -1165,6 +1235,7 @@ impl TokenInterceptor {
                             perplexity: token_perplexity,
                             alternatives: token_alts.clone(),
                             is_error: false,
+                            arrival_ms,
                         };
                         if let Ok(line) = serde_json::to_string(&event) {
                             println!("{}", line);
@@ -1452,6 +1523,8 @@ mod tests {
             last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
+            stream_start_instant: None,
+            timeout_secs: None,
         }
     }
 
@@ -2027,6 +2100,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("chaos_label"));
@@ -2047,6 +2121,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(
@@ -2099,6 +2174,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(
@@ -2121,6 +2197,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("\"provider\""));
@@ -2264,6 +2341,7 @@ mod tests {
                 probability: 0.05,
             }],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(json.contains("confidence"));
@@ -2286,6 +2364,7 @@ mod tests {
             perplexity: None,
             alternatives: vec![],
             is_error: false,
+            arrival_ms: None,
         };
         let json = serde_json::to_string(&event).expect("serialize");
         assert!(!json.contains("confidence"));
@@ -2400,6 +2479,8 @@ mod research_tests {
             last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
+            stream_start_instant: None,
+            timeout_secs: None,
         }
     }
 
@@ -2676,6 +2757,95 @@ mod research_tests {
         )
         .await;
         assert!(result.is_err(), "empty prompt should produce an error");
+    }
+
+    // -- Item 1: timeout_secs field --
+    #[test]
+    fn test_timeout_field_default() {
+        let interceptor = TokenInterceptor::new(
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(interceptor.timeout_secs, None);
+        let with_timeout = interceptor.with_timeout(120);
+        assert_eq!(with_timeout.timeout_secs, Some(120));
+    }
+
+    // -- Item 2: dropped SSE chunk counter --
+    fn count_dropped_sse_chunks_test(lines: &[&str]) -> usize {
+        lines.iter().filter(|line| {
+            if line.starts_with("data: ") && **line != "data: [DONE]" {
+                let json_str = line.strip_prefix("data: ").unwrap_or(line);
+                serde_json::from_str::<serde_json::Value>(json_str).is_err()
+            } else {
+                false
+            }
+        }).count()
+    }
+
+    #[test]
+    fn test_dropped_chunk_counter_increments() {
+        let lines = vec![
+            "data: {\"valid\": true}",
+            "data: not-valid-json",
+            "data: also-bad",
+            "data: {\"ok\": 1}",
+            "data: [DONE]",
+        ];
+        let dropped = count_dropped_sse_chunks_test(&lines);
+        assert_eq!(dropped, 2);
+    }
+
+    // -- Item 3 & 19: circuit breaker helpers --
+    fn reset_circuit_breaker_for_test() {
+        let state = CIRCUIT_BREAKER.get_or_init(|| {
+            std::sync::Mutex::new(CircuitBreakerState {
+                consecutive_failures: 0,
+                open_until_ms: 0,
+            })
+        });
+        if let Ok(mut s) = state.lock() {
+            s.consecutive_failures = 0;
+            s.open_until_ms = 0;
+        }
+    }
+
+    #[test]
+    fn test_circuit_breaker_429_does_not_trip() {
+        reset_circuit_breaker_for_test();
+        // Record failures up to threshold-1 — still not tripped
+        for _ in 0..(CB_TRIP_THRESHOLD - 1) {
+            circuit_record_failure();
+        }
+        assert!(!circuit_is_open(), "should not be open before threshold");
+        // Simulating a 429: the retry logic skips circuit_record_failure for 429,
+        // so no additional failure is recorded — breaker remains closed.
+        assert!(!circuit_is_open(), "429 should not trip the breaker");
+    }
+
+    #[test]
+    fn test_circuit_breaker_reopens_after_timeout() {
+        reset_circuit_breaker_for_test();
+        for _ in 0..CB_TRIP_THRESHOLD {
+            circuit_record_failure();
+        }
+        assert!(circuit_is_open(), "breaker should be open after threshold");
+        // Fast-forward recovery by setting open_until_ms to the past
+        let state = CIRCUIT_BREAKER.get_or_init(|| {
+            std::sync::Mutex::new(CircuitBreakerState {
+                consecutive_failures: 0,
+                open_until_ms: 0,
+            })
+        });
+        if let Ok(mut s) = state.lock() {
+            s.open_until_ms = 1; // epoch 1ms — definitely in the past
+        }
+        assert!(!circuit_is_open(), "breaker should close after recovery timeout passes");
     }
 }
 

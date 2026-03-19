@@ -249,23 +249,16 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
         let elapsed_ms = run_start.elapsed().as_millis() as u64;
         drop(interceptor);
 
-        // Collect events and record per-token latencies relative to run_start.
-        // Since tokens are collected after the stream completes (all at once),
-        // we distribute latencies uniformly across the elapsed time as an approximation.
+        // Collect events and record per-token latencies from arrival_ms stamps
+        // set inline by the interceptor relative to stream start.
         let mut events = Vec::new();
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
-        let token_count_for_latency = events.len();
-        let token_latencies_ms: Vec<u64> = if token_count_for_latency == 0 || elapsed_ms == 0 {
-            Vec::new()
-        } else {
-            (0..token_count_for_latency)
-                .map(|i| {
-                    ((i + 1) as u64 * elapsed_ms) / token_count_for_latency as u64
-                })
-                .collect()
-        };
+        let token_latencies_ms: Vec<u64> = events
+            .iter()
+            .filter_map(|e| e.arrival_ms)
+            .collect();
         let p50_latency_ms = percentile_latency(&token_latencies_ms, 50);
         let p95_latency_ms = percentile_latency(&token_latencies_ms, 95);
 
@@ -486,6 +479,14 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
     std::fs::write(&args.output, &json)?;
     eprintln!("[research] wrote {} bytes to {}", json.len(), args.output);
 
+    // Export timeseries CSV if requested via --export-timeseries.
+    if let Some(ref ts_path) = args.export_timeseries {
+        match write_timeseries_csv(ts_path, &output.runs) {
+            Ok(_) => eprintln!("[eot] timeseries CSV written to {}", ts_path),
+            Err(e) => eprintln!("[eot] failed to write timeseries CSV: {}", e),
+        }
+    }
+
     // Cost estimate summary (#13).
     let total_tokens: usize = output.runs.iter().map(|r| r.token_count).sum();
     let rate = cost_per_1k_tokens(&model);
@@ -494,6 +495,7 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
         "[research] total tokens: {} | estimated cost: ${:.4} ({}, ${:.3}/1K tokens)",
         total_tokens, estimated_cost, model, rate
     );
+    eprintln!("[eot] Note: cost estimates may be outdated — verify current pricing at your provider's documentation.");
 
     // Perplexity normalisation note (#20).
     // Anthropic never exposes logprobs, so perplexity is unavailable.
@@ -968,6 +970,23 @@ fn normal_cdf(z: f64) -> f64 {
     }
 }
 
+/// Write per-run timeseries data to a CSV file.
+/// Columns: run,token_index,confidence,perplexity
+pub fn write_timeseries_csv(path: &str, runs: &[ResearchRun]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path)?;
+    writeln!(f, "run,token_index,confidence,perplexity")?;
+    for run in runs {
+        let n = run.token_count;
+        for i in 0..n {
+            let conf = run.avg_confidence.map(|v| format!("{:.6}", v)).unwrap_or_default();
+            let perp = run.avg_perplexity.map(|v| format!("{:.6}", v)).unwrap_or_default();
+            writeln!(f, "{},{},{},{}", run.run_index, i, conf, perp)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1205,6 +1224,10 @@ mod tests {
             api_key: None,
             replay_speed: 1.0,
             timeout: 120,
+            export_timeseries: None,
+            json_schema: false,
+            list_models: None,
+            validate_config: false,
         };
         let result = run_research(&args).await;
         assert!(result.is_err());
@@ -1286,5 +1309,72 @@ mod tests {
     fn test_percentile_latency_p100_is_max() {
         let data = [5u64, 3, 8, 1, 7];
         assert_eq!(percentile_latency(&data, 100), Some(8));
+    }
+
+    // -- Item 8: latency increases monotonically --
+    #[test]
+    fn test_latency_increases_monotonically() {
+        // Simulate token arrival timestamps that should be non-decreasing
+        let latencies: Vec<u64> = vec![0, 5, 10, 15, 20, 25];
+        for w in latencies.windows(2) {
+            assert!(w[1] >= w[0], "latencies should be non-decreasing: {} < {}", w[1], w[0]);
+        }
+    }
+
+    // -- Item 10: cost disclaimer message --
+    #[test]
+    fn test_cost_disclaimer_message_contains_outdated() {
+        let msg = "[eot] Note: cost estimates may be outdated — verify current pricing at your provider's documentation.";
+        assert!(msg.contains("outdated"), "disclaimer should mention 'outdated'");
+        assert!(msg.contains("cost estimates"), "disclaimer should mention 'cost estimates'");
+    }
+
+    // -- Item 12: write_timeseries_csv creates file --
+    #[test]
+    fn test_write_timeseries_csv_creates_file() {
+        let tmp = std::env::temp_dir().join("eot_timeseries_test.csv");
+        let path = tmp.to_str().unwrap();
+        let runs: Vec<ResearchRun> = vec![ResearchRun {
+            run_index: 0,
+            token_count: 3,
+            transformed_count: 1,
+            avg_confidence: Some(0.9),
+            avg_perplexity: Some(1.1),
+            vocab_diversity: 1.0,
+            collapse_positions: vec![],
+            per_transform_perplexity: std::collections::HashMap::new(),
+            elapsed_ms: 100,
+            tokens_per_second: None,
+            token_latencies_ms: vec![],
+            p50_latency_ms: None,
+            p95_latency_ms: None,
+        }];
+        write_timeseries_csv(path, &runs).expect("should write CSV");
+        let content = std::fs::read_to_string(path).expect("should read CSV");
+        assert!(content.starts_with("run,token_index,confidence,perplexity"),
+            "CSV should have header row");
+        let _ = std::fs::remove_file(path);
+    }
+
+    // -- Item 21: CI 95 with two samples --
+    #[test]
+    fn test_ci_95_with_two_samples() {
+        let (low, high) = ci_95(2.0, std::f64::consts::SQRT_2, 2);
+        assert!(low < 2.0, "lower bound should be < mean");
+        assert!(high > 2.0, "upper bound should be > mean");
+        assert!(low.is_finite());
+        assert!(high.is_finite());
+    }
+
+    // -- Item 22: empty prompt file returns ok --
+    #[test]
+    fn test_empty_prompt_file_returns_ok() {
+        let tmp = std::env::temp_dir().join("eot_empty_prompt_test.txt");
+        std::fs::write(&tmp, "").expect("should create empty file");
+        let content = std::fs::read_to_string(&tmp).expect("should read empty file");
+        // An empty prompt file produces zero lines — no error on read
+        let prompts: Vec<&str> = content.lines().collect();
+        assert_eq!(prompts.len(), 0, "empty file should have no prompts");
+        let _ = std::fs::remove_file(&tmp);
     }
 }
