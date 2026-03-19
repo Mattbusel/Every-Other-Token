@@ -51,8 +51,8 @@ header h1{font-size:1.2rem;color:#58a6ff}
 .token{display:inline;animation:fadeIn .12s ease-in}
 .token.odd{color:#00d4ff;font-weight:bold}
 .token.even{color:#c9d1d9}
-.heat-4{background:#da3633;color:#fff}.heat-3{background:#b62324;color:#fff}
-.heat-2{background:#9e6a03;color:#000}.heat-1{background:#1f6feb;color:#fff}.heat-0{}
+.heat-4{background:#f85149;color:#fff}.heat-3{background:#f0883e;color:#000}
+.heat-2{background:#e3b341;color:#000}.heat-1{background:#58a6ff;color:#fff}.heat-0{}
 @keyframes fadeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
 /* Graph */
 #graph-wrap{border-top:1px solid #21262d;background:#0a0e14;display:none;overflow-x:auto}
@@ -87,7 +87,7 @@ canvas#depgraph{width:100%;height:200px;display:block}
 #perp-spark-wrap.show{display:block}
 #perp-spark{width:100%;height:40px;display:block}
 /* A/B Experiment view */
-.view-experiment{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;height:100%;gap:0}
+.view-experiment{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:3fr 1fr;height:100%;gap:0;min-height:0}
 .exp-panel{padding:12px 16px;line-height:1.8;font-size:.9rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #21262d}
 .exp-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;color:#58a6ff}
 .exp-label.b{color:#a371f7}
@@ -151,24 +151,33 @@ canvas#depgraph{width:100%;height:200px;display:block}
 .peer-edited{animation:peerEdit .8s ease-out forwards}
 /* Join toast */
 @keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+/* Toast notifications */
+#toast-container{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{padding:10px 16px;border-radius:6px;font-size:.8rem;color:#fff;animation:slideIn .2s ease-out;pointer-events:auto;max-width:320px;word-break:break-word}
+.toast-warning{background:#9e6a03;border:1px solid #e3b341}
+.toast-error{background:#6d1d1d;border:1px solid #f85149}
+.toast-info{background:#1f3a5f;border:1px solid #58a6ff}
 .join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#8b949e;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #21262d;background:#0d1117}
+@media(max-width:640px){#sidebar{width:100%;position:relative;height:auto;border-left:none;border-top:1px solid #21262d}#chat-panel{right:0;width:100%;border-left:none;border-top:1px solid #21262d}body.sidebar-open{padding-right:0!important}}
 </style>
 </head>
 <body>
 <header>
   <h1>Every Other Token</h1>
   <div class="hdr-right">
-    <button class="btn btn-mode active" id="btn-single" title="Single stream">Single</button>
-    <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed">Split</button>
-    <button class="btn btn-mode" id="btn-multi" title="All 4 transforms simultaneously">Quad</button>
-    <button class="btn btn-mode" id="btn-diff" title="Live diff: OpenAI vs Anthropic simultaneously">Diff</button>
-    <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt">Experiment</button>
-    <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence">Research</button>
-    <button class="btn btn-export" id="btn-export" title="Export session as JSON">Export JSON</button>
-    <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" style="background:#4a7c59">Export CSV</button>
-    <button class="btn btn-mode" id="btn-theme" title="Toggle dark/light theme" style="font-size:1rem;padding:4px 10px">🌙</button>
-    <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session">Host Session</button>
-    <input type="text" id="join-code" placeholder="Room code" maxlength="6" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px">
+    <button class="btn btn-mode active" id="btn-single" title="Single stream" aria-label="Single stream view">Single</button>
+    <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed" aria-label="Side-by-side view: original vs transformed">Split</button>
+    <button class="btn btn-mode" id="btn-multi" title="All 4 transforms simultaneously" aria-label="Quad view: all 4 transforms simultaneously">Quad</button>
+    <button class="btn btn-mode" id="btn-diff" title="Live diff: OpenAI vs Anthropic simultaneously" aria-label="Diff view: OpenAI vs Anthropic">Diff</button>
+    <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt" aria-label="A/B experiment mode">Experiment</button>
+    <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence" aria-label="Research dashboard">Research</button>
+    <button class="btn btn-export" id="btn-export" title="Export session as JSON" aria-label="Export session as JSON">Export JSON</button>
+    <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" style="background:#4a7c59" aria-label="Export session as CSV">Export CSV</button>
+    <button class="btn btn-export" id="btn-import" title="Import a previously exported JSON session" style="background:#3a4a6a" aria-label="Import JSON session">Import JSON</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" aria-label="Select JSON file to import">
+    <button class="btn btn-mode" id="btn-theme" title="Toggle dark/light theme" style="font-size:1rem;padding:4px 10px" aria-label="Toggle dark/light theme"><span aria-hidden="true">🌙</span></button>
+    <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session" aria-label="Host a collaborative session">Host Session</button>
+    <input type="text" id="join-code" placeholder="Room code" maxlength="6" pattern="[A-Z0-9]+" inputmode="text" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px" aria-label="Room code">
     <button class="btn" style="background:#1f6feb;font-size:.78rem;padding:5px 12px" id="btn-join">Join</button>
   </div>
 </header>
@@ -177,13 +186,14 @@ canvas#depgraph{width:100%;height:200px;display:block}
   <div class="field"><label>System Prompt B</label><input type="text" id="sysprompt-b" value="You are a technical writer. Be precise and concise." style="min-width:280px"></div>
 </div>
 <div class="controls">
-  <div class="field"><label>Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
-  <div class="field"><label>Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select></div>
-  <div class="field"><label>Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
-  <div class="field"><label>Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
+  <div class="field"><label for="prompt">Prompt</label><input type="text" id="prompt" value="Tell me a story about a robot" placeholder="Enter prompt..."></div>
+  <div class="field"><label for="transform">Transform</label><select id="transform"><option value="reverse">reverse</option><option value="uppercase">uppercase</option><option value="mock">mock</option><option value="noise">noise</option><option value="chaos">chaos</option></select></div>
+  <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
+  <div class="field"><label for="model">Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
   <label class="toggle"><input type="checkbox" id="graphtoggle"> Graph</label>
   <button class="btn btn-go" id="start">Stream</button>
+  <div class="field"><label>Search tokens</label><input type="text" id="token-search" placeholder="Filter…" style="min-width:120px" aria-label="Search token stream"></div>
 </div>
 <div id="views">
   <!-- Single column (default) -->
@@ -246,11 +256,11 @@ canvas#depgraph{width:100%;height:200px;display:block}
     </div>
   </div>
 </div>
-<div id="graph-wrap"><canvas id="depgraph"></canvas></div>
-<div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none"><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
+<div id="graph-wrap"><canvas id="depgraph" role="img" aria-label="Token dependency graph showing transformed vs untransformed token positions"></canvas></div>
+<div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label="Perplexity sparkline for last 60 tokens"><title>Perplexity over last 60 tokens</title><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
 <div id="conf-spark-wrap" style="padding:4px 24px;background:#0a0e14;border-top:1px solid #21262d;display:none">
   <div style="font-size:.65rem;color:#8b949e;margin-bottom:2px">Confidence (last 60 tokens)</div>
-  <canvas id="sparkline" width="600" height="60" style="display:block;background:#1a1a2e;border-radius:4px;width:100%;max-width:600px"></canvas>
+  <canvas id="sparkline" width="600" height="60" style="display:block;background:#1a1a2e;border-radius:4px;width:100%;max-width:600px" role="img" aria-label="Confidence sparkline for last 60 tokens"></canvas>
 </div>
 <div id="stats"></div>
 <div id="research-dash"></div>
@@ -260,20 +270,20 @@ canvas#depgraph{width:100%;height:200px;display:block}
   <div><div class="mp-label">Room Code</div><div class="mp-code" id="mp-code" title="Click to copy join link">——————</div></div>
   <div><div class="mp-label">Participants</div><span id="mp-count-badge">1</span></div>
   <button class="btn" style="background:#238636;font-size:.75rem;padding:4px 11px" id="btn-copy-link">Copy Link</button>
-  <button class="btn" style="background:#6e40c9;font-size:.75rem;padding:4px 11px;display:none" id="btn-replay">▶ Replay</button>
+  <button class="btn" style="background:#6e40c9;font-size:.75rem;padding:4px 11px;display:none" id="btn-replay" aria-label="Replay recording">▶ Replay</button>
   <div id="replay-prog"><div id="replay-bar"></div></div>
-  <button class="btn" id="btn-rec" style="background:#30363d;font-size:.75rem;padding:4px 11px">⏺ Record</button>
+  <button class="btn" id="btn-rec" style="background:#30363d;font-size:.75rem;padding:4px 11px" aria-label="Record session">⏺ Record</button>
   <button class="btn" style="background:#21262d;font-size:.75rem;padding:4px 11px;margin-left:auto" id="btn-leave">Leave</button>
 </div>
 <!-- Vote bar -->
-<div id="vote-bar">
+<div id="vote-bar" role="region" aria-label="Transform voting">
   <span style="color:#8b949e;font-size:.7rem">Transform vote:</span>
   <button class="v-btn" id="btn-vote-up">👍 <span id="vote-up-n">0</span></button>
   <button class="v-btn" id="btn-vote-dn">👎 <span id="vote-dn-n">0</span></button>
   <span id="vote-label" style="font-size:.7rem;color:#484f58"></span>
 </div>
 <!-- Participant sidebar -->
-<div id="sidebar">
+<div id="sidebar" role="complementary" aria-label="Participants">
   <div id="sidebar-hdr">
     <span>Participants</span>
     <button onclick="$('#chat-panel').classList.toggle('show')" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:.8rem" title="Toggle chat">💬</button>
@@ -281,7 +291,7 @@ canvas#depgraph{width:100%;height:200px;display:block}
   <div id="participant-list"></div>
 </div>
 <!-- Chat panel -->
-<div id="chat-panel">
+<div id="chat-panel" role="complementary" aria-label="Chat">
   <div id="chat-hdr">Chat</div>
   <div id="chat-msgs"></div>
   <div id="chat-wrap">
@@ -289,9 +299,19 @@ canvas#depgraph{width:100%;height:200px;display:block}
     <button id="chat-btn">Send</button>
   </div>
 </div>
+<div id="toast-container"></div>
 <script>
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
+function showNotice(msg, type='info') {
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
 
 /* ---- Transform functions (JS mirrors of Rust) ---- */
 const TX={
@@ -302,10 +322,19 @@ const TX={
   chaos:s=>{const picks=['reverse','uppercase','mock','noise'];const k=picks[Math.floor(Math.random()*4)];return TX[k](s)}
 };
 
-/* ---- State ---- */
-let es=null, mode='single', allTokens=[], graphNodes=[], surgeryLog=[];
-let undoStack = []; // {sp, oldText, newText, idx}
-let perpWindow=[], expATokens=[], expBTokens=[];
+/* ---- Application state ---- */
+/* Stream state */
+let es=null, mode='single';
+/* Token data */
+let allTokens=[], graphNodes=[], surgeryLog=[], undoStack=[];
+/* Sparkline windows */
+let perpWindow=[], confWindow=[];
+/* Experiment tokens */
+let expATokens=[], expBTokens=[];
+/* Performance */
+let scrollPending=false;
+/* Research cache */
+let _researchCache={len:-1};
 const views={single:$('#v-single'),sbs:$('#v-sbs'),multi:$('#v-multi'),diff:$('#v-diff'),experiment:$('#v-experiment'),research:$('#v-research')};
 
 /* ---- View mode switching ---- */
@@ -350,8 +379,24 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity)
   /* Perplexity pulse for surprising tokens (perplexity > 5) */
   if(perplexity!=null&&perplexity>5)s.classList.add('high-perp');
   s.textContent=text;
+  s.addEventListener('contextmenu',function(e){
+    e.preventDefault();
+    navigator.clipboard&&navigator.clipboard.writeText(s.textContent).then(()=>{
+      const orig=s.style.outline;s.style.outline='1px solid #3fb950';
+      setTimeout(()=>s.style.outline=orig,600);
+    });
+  });
   return s;
 }
+
+/* ---- Token search/filter ---- */
+$('#token-search').addEventListener('input',function(){
+  const q=this.value.toLowerCase();
+  $$('#v-single .token').forEach(sp=>{
+    sp.style.opacity=(!q||sp.textContent.toLowerCase().includes(q))?'':'0.15';
+    sp.style.outline=(!q||sp.textContent.toLowerCase().includes(q))?'':'1px solid #e3b341';
+  });
+});
 
 /* ---- Perplexity sparkline ---- */
 function updatePerpSparkline(perplexity){
@@ -439,6 +484,12 @@ function renderPerpHist(binCount){
 
 /* ---- Research Dashboard ---- */
 function renderResearch(){
+  /* Skip recompute if token data hasn't changed */
+  if(allTokens.length===_researchCache.len&&allTokens.length>0&&mode==='research'){
+    /* still re-render sig test which can change on A/B runs */
+    updateSigTest(allTokens);return;
+  }
+  _researchCache.len=allTokens.length;
   const grid=$('#research-grid');
   const perpList=$('#research-perp-list');
   const confHist=$('#research-conf-hist');
@@ -538,7 +589,7 @@ function startExperiment(){
       $('#stats').textContent='A: '+expATokens2.length+' tokens | B: '+expBTokens2.length+' tokens';
     }catch(_){}
   };
-  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
+  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';$('#stats').textContent='⚠ Experiment stream disconnected. Click Stream to retry.'};
 }
 function renderExpDivergence(){
   const el=$('#exp-diverge');if(!el)return;
@@ -549,7 +600,7 @@ function renderExpDivergence(){
   for(let i=0;i<minLen;i++){
     const match=expATokens2[i].original===expBTokens2[i].original;
     if(match)matches++;
-    rows.push(`<div style="display:flex;gap:8px;font-size:.75rem;padding:1px 0;color:${match?'#3fb950':'#f85149'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${expATokens2[i].original}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${expBTokens2[i].original}</span></div>`);
+    rows.push(`<div style="display:flex;gap:8px;font-size:.75rem;padding:1px 0;color:${match?'#3fb950':'#f85149'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(expATokens2[i].original)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(expBTokens2[i].original)}</span></div>`);
   }
   const pct=Math.round(matches/minLen*100);
   el.innerHTML=`<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Similarity: ${pct}% (${matches}/${minLen})</div>`+rows.slice(0,50).join('');
@@ -601,6 +652,8 @@ function drawGraph(){
   const nodes=graphNodes;
   if(nodes.length===0)return;
   const gap=60;
+  /* Cache x positions to avoid redundant arithmetic */
+  const xs=nodes.map((_,i)=>(i+1)*gap);
   const neededW=Math.max((nodes.length+1)*gap,rect.width);
   canvas.width=neededW*dpr;
   canvas.height=200*dpr;
@@ -614,7 +667,7 @@ function drawGraph(){
   let lastEvenX=0,lastEvenIdx=-1;
   for(let i=0;i<nodes.length;i++){
     const n=nodes[i];
-    const x=(i+1)*gap;
+    const x=xs[i];
     const y=n.transformed?y2:y1;
     /* If odd, draw line to previous even */
     if(n.transformed&&lastEvenIdx>=0){
@@ -668,10 +721,11 @@ $('#start').onclick=()=>{
   const roomParam=roomCode?'&room='+encodeURIComponent(roomCode):'';
   const url='/stream?prompt='+p+'&transform='+t+'&provider='+prov+'&model='+m+'&heatmap='+hm+roomParam;
   $('#start').disabled=true;$('#start').textContent='Streaming...';
-  let count=0,xformed=0;
+  let count=0,xformed=0,streamDone=false;
   es=new EventSource(url);
   es.onmessage=e=>{
     if(e.data==='[DONE]'){
+      streamDone=true;
       es.close();es=null;
       $('#start').disabled=false;$('#start').textContent='Stream';
       if($('#graphtoggle').checked)drawGraph();
@@ -715,13 +769,14 @@ $('#start').onclick=()=>{
         }
       });
 
-      /* Auto-scroll active view */
-      const active=views[mode];
-      if(active)active.scrollTop=active.scrollHeight;
-      /* Scroll panels in multi */
-      if(mode==='multi'){
-        ['reverse','uppercase','mock','noise'].forEach(t=>{
-          const p=$('#mp-'+t);p.scrollTop=p.scrollHeight;
+      /* Auto-scroll active view — debounced to avoid reflow per token */
+      if(!scrollPending){
+        scrollPending=true;
+        requestAnimationFrame(()=>{
+          scrollPending=false;
+          const active=views[mode];
+          if(active)active.scrollTop=active.scrollHeight;
+          if(mode==='multi')['reverse','uppercase','mock','noise'].forEach(t=>{const p=$('#mp-'+t);if(p)p.scrollTop=p.scrollHeight;});
         });
       }
 
@@ -731,7 +786,10 @@ $('#start').onclick=()=>{
       $('#stats').textContent='Tokens: '+count+' | Transformed: '+xformed+' | Mode: '+mode;
     }catch(_){}
   };
-  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
+  es.onerror=()=>{
+    es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';
+    if(!streamDone)$('#stats').textContent='⚠ Stream disconnected. Click Stream to retry.';
+  };
 };
 
 /* ---- Diff streaming ---- */
@@ -774,7 +832,7 @@ function startDiff(){
       $('#stats').textContent='OpenAI: '+diffOpenaiTokens.length+' tokens | Anthropic: '+diffAnthropicTokens.length+' tokens';
     }catch(_){}
   };
-  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream'};
+  es.onerror=()=>{es.close();es=null;$('#start').disabled=false;$('#start').textContent='Stream';$('#stats').textContent='⚠ Diff stream disconnected. Click Stream to retry.'};
 }
 function applyDiffHighlights(){
   const oSpans=Array.from($('#diff-openai').querySelectorAll('.token'));
@@ -792,7 +850,6 @@ function applyDiffHighlights(){
 }
 
 /* ---- Confidence sparkline ---- */
-let confWindow=[];
 function updateConfSparkline(confidence){
   confWindow.push(confidence!=null?confidence:0.5);
   if(confWindow.length>60)confWindow.shift();
@@ -825,10 +882,17 @@ $('#btn-theme').onclick=function(){
   else{document.body.setAttribute('data-theme','light');this.textContent='☀️';localStorage.setItem('eot-theme','light');}
 };
 
+/* ---- Persist draft prompt ---- */
+(function(){
+  const saved=localStorage.getItem('eot-prompt');
+  if(saved&&$('#prompt')&&$('#prompt').value==='Tell me a story about a robot')$('#prompt').value=saved;
+})();
+$('#prompt').addEventListener('input',function(){localStorage.setItem('eot-prompt',this.value);});
+
 /* ---- Export JSON ---- */
 window.tokenLog=[];
 $('#btn-export').onclick=()=>{
-  if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return}
+  if(allTokens.length===0){showNotice('No tokens to export. Run a stream first.', 'warning');return}
   const data={
     prompt:$('#prompt').value,
     provider:$('#provider').value,
@@ -852,7 +916,7 @@ $('#btn-export').onclick=()=>{
 
 /* ---- Export CSV ---- */
 $('#btn-export-csv').onclick=()=>{
-  if(allTokens.length===0){alert('No tokens to export. Run a stream first.');return;}
+  if(allTokens.length===0){showNotice('No tokens to export. Run a stream first.', 'warning');return;}
   const meta=[
     '# Every-Other-Token Export',
     '# exported_at: '+new Date().toISOString(),
@@ -870,8 +934,38 @@ $('#btn-export-csv').onclick=()=>{
   URL.revokeObjectURL(url);
 };
 
+/* ---- Import JSON session ---- */
+$('#btn-import').onclick=()=>$('#import-file').click();
+$('#import-file').onchange=function(){
+  const f=this.files[0];if(!f)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!Array.isArray(data.tokens))throw new Error('Invalid session file');
+      allTokens=data.tokens;graphNodes=data.tokens;surgeryLog=data.surgery_log||[];undoStack=[];
+      $('#v-single').innerHTML='';
+      const frag=document.createDocumentFragment();
+      allTokens.forEach(tk=>{
+        const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
+        sp.dataset.idx=tk.index;frag.appendChild(sp);
+      });
+      $('#v-single').appendChild(frag);
+      enableSurgery($('#v-single'));
+      renderResearch();
+      $('#stats').textContent='Imported: '+allTokens.length+' tokens from '+f.name;
+    }catch(e){alert('Import failed: '+e.message);}
+  };
+  reader.readAsText(f);
+  this.value='';
+};
+
 /* ---- Resize graph on window resize ---- */
-window.addEventListener('resize',()=>{if($('#graphtoggle').checked)drawGraph()});
+let _resizeTimer=null;
+window.addEventListener('resize',()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer=setTimeout(()=>{if($('#graphtoggle').checked)drawGraph();},150);
+});
 
 /* ---- Token surgery undo (Ctrl+Z / Cmd+Z) ---- */
 document.addEventListener('keydown', function(e){
@@ -896,6 +990,10 @@ const peerColors={};
 
 function sendWs(obj){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));}
 
+/* ---- Security helpers ---- */
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function safeCssColor(c){return/^#[0-9a-fA-F]{3,8}$|^[a-z]+$/i.test(String(c))?String(c):'#58a6ff';}
+
 function initRoom(code,asHost){
   roomCode=code; amHost=asHost;
   $('#mp-code').textContent=code;
@@ -908,8 +1006,14 @@ function initRoom(code,asHost){
   ws=new WebSocket(proto+'://'+location.host+'/ws/'+code);
   ws.onopen=()=>{ if(!amHost)sendWs({type:'set_name',name:myName||'Guest'}); };
   ws.onmessage=e=>{try{onWsMsg(JSON.parse(e.data));}catch(_){}};
-  ws.onclose=()=>leaveRoom(false);
-  ws.onerror=e=>console.error('WS',e);
+  ws.onclose=()=>{
+    leaveRoom(false);
+    if(roomCode)$('#stats').textContent='⚠ Multiplayer connection lost.';
+  };
+  ws.onerror=e=>{
+    console.error('WS',e);
+    showToast('Connection error — check network','#f85149');
+  };
 }
 
 function onWsMsg(m){
@@ -961,7 +1065,7 @@ function onWsMsg(m){
       if(!amHost){enableSurgery($('#v-single'));renderResearch();}
       break;
     case 'error':
-      alert('Room: '+m.message); break;
+      showNotice('Room error: '+m.message, 'error'); break;
   }
 }
 
@@ -971,8 +1075,11 @@ function addPToList(p){
   if($('#pid-'+p.id))return;
   peerColors[p.id]=p.color;
   const d=document.createElement('div');d.className='p-item';d.id='pid-'+p.id;
-  d.innerHTML='<div class="p-avatar" style="background:'+p.color+'">'+p.name[0].toUpperCase()+'</div>'
-    +'<span class="p-name">'+p.name+'</span>'+(p.is_host?'<span class="p-host">HOST</span>':'');
+  const av=document.createElement('div');av.className='p-avatar';av.style.background=safeCssColor(p.color);
+  av.textContent=(p.name||'?')[0].toUpperCase();
+  const nm=document.createElement('span');nm.className='p-name';nm.textContent=p.name;
+  d.appendChild(av);d.appendChild(nm);
+  if(p.is_host){const h=document.createElement('span');h.className='p-host';h.textContent='HOST';d.appendChild(h);}
   $('#participant-list').appendChild(d);
 }
 function setParticipantCount(n){$('#mp-count-badge').textContent=n;}
@@ -999,10 +1106,19 @@ function applyPeerSurgery(edit){
 /* Chat */
 function renderChatMsg(m){
   const d=document.createElement('div');d.className='chat-msg';
-  d.innerHTML='<span class="chat-author" style="color:'+m.author_color+'">'+m.author_name+'</span> '
-    +'<span class="chat-text">'+m.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span>'
-    +(m.token_index!=null?'<div class="chat-ref">re: token #'+m.token_index+'</div>':'');
-  $('#chat-msgs').appendChild(d);$('#chat-msgs').scrollTop=$('#chat-msgs').scrollHeight;
+  /* MAX chat history: 200 messages */
+  const msgs=$('#chat-msgs');
+  if(msgs.children.length>=200)msgs.removeChild(msgs.firstChild);
+  const author=document.createElement('span');author.className='chat-author';
+  author.style.color=safeCssColor(m.author_color);author.textContent=m.author_name;
+  const sep=document.createTextNode(' ');
+  const body=document.createElement('span');body.className='chat-text';body.textContent=m.text;
+  d.appendChild(author);d.appendChild(sep);d.appendChild(body);
+  if(m.token_index!=null){
+    const ref=document.createElement('div');ref.className='chat-ref';ref.textContent='re: token #'+m.token_index;
+    d.appendChild(ref);
+  }
+  msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;
 }
 function sendChat(){
   const t=$('#chat-in').value.trim();if(!t||!roomCode)return;
@@ -1024,12 +1140,19 @@ function doReplayEvent(ev,offsetMs){
 
 /* Host session */
 $('#btn-host').onclick=async()=>{
+  const btn=$('#btn-host');
+  btn.disabled=true;btn.textContent='Creating...';
   try{
     const r=await fetch('/room/create',{method:'POST'});
+    if(!r.ok)throw new Error('Server error '+r.status);
     const d=await r.json();
     amHost=true; myName='Host';
     initRoom(d.code,true);
-  }catch(e){alert('Could not create room: '+e.message);}
+  }catch(e){
+    alert('Could not create room: '+e.message);
+  }finally{
+    btn.disabled=false;btn.textContent='Host Session';
+  }
 };
 
 /* Join session */
@@ -1106,34 +1229,8 @@ $('#start').onclick=function(){
   },30);
 };
 
-/* Intercept token surgery commits: broadcast edit to room */
-const _baseSurgery=enableSurgery;
-enableSurgery=function(container){
-  _baseSurgery(container);
-  /* After each surgery commit, forward via WS */
-  container.querySelectorAll('.token.surgeable').forEach(sp=>{
-    /* We patch on the next event loop tick to avoid double-wrapping */
-  });
-};
-/* Simpler: override surgeryLog.push to also sendWs */
-const _baseSurgeryLog=surgeryLog;
-/* Instead, patch the commit function by wrapping enableSurgery results.
-   The cleanest: check surgeryLog length change after each token click. */
-/* Surgery WS broadcast is handled here: after surgery commits update surgeryLog,
-   a MutationObserver on token text content picks up changes and broadcasts.
-   This is architecture-safe and doesn't require patching internals. */
-new MutationObserver(mutations=>{
-  if(!roomCode||!myId)return;
-  mutations.forEach(m=>{
-    if(m.type==='characterData'&&m.target.parentElement&&m.target.parentElement.classList.contains('token')){
-      const sp=m.target.parentElement;
-      const idx=parseInt(sp.dataset.idx||'-1');
-      if(idx>=0){
-        sendWs({type:'surgery',token_index:idx,new_text:m.target.data,old_text:m.oldValue||''});
-      }
-    }
-  });
-}).observe(document.getElementById('v-single'),{characterData:true,characterDataOldValue:true,subtree:true});
-</script>
+/* Surgery WS broadcast is handled directly in the enableSurgery commit
+   function above (sendWs call on line with {type:'surgery',...}). No
+   MutationObserver needed. */</script>
 </body>
 </html>
