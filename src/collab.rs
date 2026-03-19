@@ -139,6 +139,22 @@ pub fn generate_code() -> String {
         .collect()
 }
 
+/// Truncate `s` to at most `max_bytes` bytes while respecting UTF-8 char boundaries.
+///
+/// Slicing a `&str` at an arbitrary byte offset panics when that offset falls
+/// inside a multi-byte character (emoji, CJK, etc.).  This helper walks
+/// backwards from `max_bytes` to find the last valid char boundary.
+fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Current Unix epoch in milliseconds.
 pub fn now_ms() -> u64 {
     SystemTime::now()
@@ -464,7 +480,7 @@ pub async fn handle_ws(
                         match msg_type.as_str() {
                             "set_name" => {
                                 if let Some(new_name) = parsed.get("name").and_then(|v| v.as_str()) {
-                                    let new_name = &new_name[..new_name.len().min(64)];
+                                    let new_name = truncate_utf8(new_name, 64);
                                     let updated = update_participant_name(&store, &code, &participant_id, new_name);
                                     if let Some(p) = updated {
                                         broadcast(&store, &code, serde_json::json!({
@@ -490,11 +506,11 @@ pub async fn handle_ws(
                                 let token_index = parsed.get("token_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                                 let new_text = {
                                     let raw = parsed.get("new_text").and_then(|v| v.as_str()).unwrap_or("");
-                                    raw[..raw.len().min(4096)].to_string()
+                                    truncate_utf8(raw, 4096).to_string()
                                 };
                                 let old_text = {
                                     let raw = parsed.get("old_text").and_then(|v| v.as_str()).unwrap_or("");
-                                    raw[..raw.len().min(4096)].to_string()
+                                    truncate_utf8(raw, 4096).to_string()
                                 };
 
                                 let (editor_color, editor_name) = get_participant_info(&store, &code, &participant_id);
@@ -512,7 +528,7 @@ pub async fn handle_ws(
                             "chat" => {
                                 let text_content = {
                                     let raw = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                                    raw[..raw.len().min(2048)].to_string()
+                                    truncate_utf8(raw, 2048).to_string()
                                 };
                                 let token_index = parsed.get("token_index").and_then(|v| v.as_u64()).map(|n| n as usize);
                                 let (author_color, author_name) = get_participant_info(&store, &code, &participant_id);
@@ -705,6 +721,40 @@ fn get_recorded_events(store: &RoomStore, code: &str) -> Vec<RecordedEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- truncate_utf8 -------------------------------------------------------
+
+    #[test]
+    fn test_truncate_utf8_ascii_unchanged() {
+        assert_eq!(truncate_utf8("hello", 64), "hello");
+    }
+
+    #[test]
+    fn test_truncate_utf8_exact_limit() {
+        assert_eq!(truncate_utf8("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_utf8_ascii_truncated() {
+        assert_eq!(truncate_utf8("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_utf8_multibyte_no_panic() {
+        // Each emoji is 4 bytes. Truncating at byte 5 would split the second emoji.
+        let s = "😀😀😀"; // 12 bytes
+        let result = truncate_utf8(s, 5);
+        // Must be a valid &str (no panic) and at most 5 bytes
+        assert!(result.len() <= 5);
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn test_truncate_utf8_multibyte_boundary_aligned() {
+        let s = "😀😀"; // 8 bytes: first emoji is bytes 0-3, second is 4-7
+        let result = truncate_utf8(s, 4); // exactly one emoji
+        assert_eq!(result, "😀");
+    }
 
     // -- generate_code -------------------------------------------------------
 
