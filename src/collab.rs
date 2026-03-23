@@ -27,6 +27,9 @@ pub type RoomStore = Arc<Mutex<HashMap<String, Room>>>;
 /// Idle TTL for rooms: rooms not mutated in this many milliseconds are eligible for eviction.
 const ROOM_IDLE_TTL_MS: u64 = 3_600_000;
 
+/// Timeout for rooms with no active WebSocket connections: 30 minutes.
+const ROOM_ABANDONED_TIMEOUT_MS: u64 = 30 * 60 * 1_000;
+
 /// Maximum number of events stored in a room's recording buffer.
 const DEFAULT_RECORDING_CAP: usize = 10_000;
 
@@ -122,6 +125,11 @@ pub struct Room {
     pub recording_cap: usize,
     /// Broadcast sender — clone to get a Receiver for a new subscriber.
     pub broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+    /// Number of currently-active WebSocket connections in this room.
+    pub active_ws_count: usize,
+    /// Wall-clock ms timestamp when the last WebSocket connection disconnected.
+    /// None means a WS connection is still active or one has never connected.
+    pub last_ws_disconnect_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +203,8 @@ pub fn create_room(store: &RoomStore) -> String {
         last_activity_ms: now_ms(),
         recording_cap: DEFAULT_RECORDING_CAP,
         broadcast_tx: tx,
+        active_ws_count: 0,
+        last_ws_disconnect_ms: None,
     };
     if let Ok(mut guard) = store.lock() {
         guard.insert(code.clone(), room);
@@ -411,6 +421,78 @@ pub fn evict_idle_rooms(store: &RoomStore) {
     }
 }
 
+/// Increment the active WebSocket connection count for a room.
+pub fn ws_connect(store: &RoomStore, code: &str) {
+    if let Ok(mut guard) = store.lock() {
+        if let Some(room) = guard.get_mut(code) {
+            room.active_ws_count = room.active_ws_count.saturating_add(1);
+            room.last_ws_disconnect_ms = None;
+        }
+    }
+}
+
+/// Decrement the active WebSocket connection count for a room.
+/// When it reaches zero, records the disconnect timestamp for abandoned-room timeout tracking.
+pub fn ws_disconnect(store: &RoomStore, code: &str) {
+    if let Ok(mut guard) = store.lock() {
+        if let Some(room) = guard.get_mut(code) {
+            room.active_ws_count = room.active_ws_count.saturating_sub(1);
+            if room.active_ws_count == 0 {
+                room.last_ws_disconnect_ms = Some(now_ms());
+            }
+        }
+    }
+}
+
+/// Evict rooms that have had no active WebSocket connections for longer than
+/// `ROOM_ABANDONED_TIMEOUT_MS` (30 minutes). Before removing, saves room data to
+/// a JSON file named `room_<code>_<timestamp>.json` in the current directory.
+pub fn evict_abandoned_rooms(store: &RoomStore) {
+    let mut codes_to_evict: Vec<(String, serde_json::Value)> = Vec::new();
+
+    if let Ok(guard) = store.lock() {
+        let now = now_ms();
+        for (code, room) in guard.iter() {
+            if let Some(disconnect_ms) = room.last_ws_disconnect_ms {
+                if now.saturating_sub(disconnect_ms) >= ROOM_ABANDONED_TIMEOUT_MS {
+                    // Snapshot room state for saving
+                    let snapshot = serde_json::json!({
+                        "code": room.code,
+                        "host_id": room.host_id,
+                        "participants": room.participants,
+                        "token_count": room.token_count,
+                        "surgery_log": room.surgery_log,
+                        "chat_log": room.chat_log,
+                        "votes": room.votes,
+                        "created_at_ms": room.created_at_ms,
+                        "last_activity_ms": room.last_activity_ms,
+                        "last_ws_disconnect_ms": disconnect_ms,
+                    });
+                    codes_to_evict.push((code.clone(), snapshot));
+                }
+            }
+        }
+    }
+
+    for (code, snapshot) in &codes_to_evict {
+        let filename = format!("room_{}_{}.json", code, now_ms());
+        if let Ok(json) = serde_json::to_string_pretty(snapshot) {
+            if let Err(e) = std::fs::write(&filename, &json) {
+                tracing::warn!(code = %code, err = %e, "failed to save abandoned room to disk");
+            } else {
+                tracing::info!(code = %code, file = %filename, "saved abandoned room to disk");
+            }
+        }
+    }
+
+    if let Ok(mut guard) = store.lock() {
+        for (code, _) in &codes_to_evict {
+            guard.remove(code);
+            tracing::info!(code = %code, "evicted abandoned room after 30-minute timeout");
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket handler
 // ---------------------------------------------------------------------------
@@ -444,6 +526,9 @@ pub async fn handle_ws(
 
     let participant_id = participant.id.clone();
     let participant_name = participant.name.clone();
+
+    // Track active WebSocket connection count for abandoned-room timeout.
+    ws_connect(&store, &code);
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
@@ -683,6 +768,7 @@ pub async fn handle_ws(
     }
 
     // Client disconnected — clean up and notify others.
+    ws_disconnect(&store, &code);
     if let Some(tx) = leave_room(&store, &code, &participant_id) {
         let leave_msg = serde_json::json!({
             "type": "participant_leave",

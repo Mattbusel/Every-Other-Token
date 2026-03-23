@@ -30,6 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && args.list_models.is_none()
         && !args.json_schema
         && !args.diff_terminal
+        && args.batch.is_none()
+        && args.compare.is_none()
     {
         eprintln!("[eot] No prompt given — launching web UI at http://localhost:{}", args.port);
         eprintln!("[eot] Tip: set OPENAI_API_KEY or ANTHROPIC_API_KEY in your environment.");
@@ -278,6 +280,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Diff terminal mode
     if args.diff_terminal {
         every_other_token::research::run_diff_terminal(&args).await?;
+        return Ok(());
+    }
+
+    // Batch research mode (--batch <file.jsonl>)
+    if let Some(ref batch_path) = args.batch.clone() {
+        tokio::select! {
+            result = every_other_token::research::run_batch(&args, batch_path) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n[eot] batch interrupted");
+            }
+        }
+        return Ok(());
+    }
+
+    // Multi-model comparison heatmap (--compare model1,model2)
+    if let Some(ref compare_models) = args.compare.clone() {
+        tokio::select! {
+            result = every_other_token::research::run_multi_model_compare(&args, compare_models) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n[eot] compare interrupted");
+            }
+        }
+        return Ok(());
+    }
+
+    // Logprob CSV export (--export-logprobs <file.csv>)
+    if let Some(ref export_path) = args.export_logprobs.clone() {
+        tokio::select! {
+            result = every_other_token::research::run_with_logprob_export(&args, export_path) => {
+                result?;
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n[eot] logprob export interrupted");
+            }
+        }
         return Ok(());
     }
 

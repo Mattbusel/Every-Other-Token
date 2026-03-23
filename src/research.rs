@@ -987,6 +987,456 @@ pub fn write_timeseries_csv(path: &str, runs: &[ResearchRun]) -> std::io::Result
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Batch research mode (--batch <file.jsonl>)
+// ---------------------------------------------------------------------------
+
+/// One entry in a batch JSONL file.
+#[derive(serde::Deserialize)]
+pub struct BatchEntry {
+    pub prompt: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub transforms: Vec<String>,
+}
+
+/// Result record written to the batch output JSONL.
+#[derive(serde::Serialize)]
+pub struct BatchResult {
+    pub prompt: String,
+    pub model: String,
+    pub transform: String,
+    pub token_count: usize,
+    pub avg_confidence: Option<f64>,
+    pub avg_perplexity: Option<f64>,
+    pub vocab_diversity: f64,
+    pub elapsed_ms: u64,
+}
+
+/// Simple terminal progress bar helper (no external deps).
+struct BatchProgress {
+    total: usize,
+    current: usize,
+    start: std::time::Instant,
+}
+
+impl BatchProgress {
+    fn new(total: usize) -> Self {
+        Self { total, current: 0, start: std::time::Instant::now() }
+    }
+
+    fn advance(&mut self, label: &str) {
+        self.current += 1;
+        let pct = self.current * 100 / self.total.max(1);
+        let elapsed = self.start.elapsed().as_secs_f64();
+        let bar_len = 40usize;
+        let filled = (pct * bar_len / 100).min(bar_len);
+        let bar: String = std::iter::repeat('#').take(filled)
+            .chain(std::iter::repeat('-').take(bar_len - filled))
+            .collect();
+        eprintln!(
+            "[batch] [{bar}] {}/{} ({pct}%) {label} ({elapsed:.1}s)",
+            self.current, self.total,
+            bar = bar,
+            pct = pct,
+            elapsed = elapsed,
+        );
+    }
+
+    fn finish(&self) {
+        let elapsed = self.start.elapsed().as_secs_f64();
+        eprintln!("[batch] Done — {} entries in {:.1}s", self.total, elapsed);
+    }
+}
+
+/// Run batch research mode: reads a JSONL file, processes each entry
+/// sequentially, writes results to `batch_results_<timestamp>.jsonl`.
+///
+/// Each JSONL line must be: `{"prompt":"...","model":"gpt-4o","transforms":["reverse"]}`
+pub async fn run_batch(
+    args: &Args,
+    batch_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    use std::time::SystemTime;
+
+    let content = std::fs::read_to_string(batch_path)?;
+    let entries: Vec<BatchEntry> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+
+    if entries.is_empty() {
+        eprintln!("[batch] No valid entries found in {}", batch_path);
+        return Ok(());
+    }
+
+    let timestamp = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let output_path = format!("batch_results_{}.jsonl", timestamp);
+    let mut out_file = std::fs::File::create(&output_path)?;
+
+    let mut progress = BatchProgress::new(entries.len());
+    eprintln!("[batch] Processing {} entries → {}", entries.len(), output_path);
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let label = format!("prompt #{}: {:.50}", idx + 1, entry.prompt);
+
+        let provider = args.provider.clone();
+        let model = if entry.model.is_empty() {
+            crate::cli::resolve_model(&provider, &args.model)
+        } else {
+            entry.model.clone()
+        };
+
+        let transforms: Vec<String> = if entry.transforms.is_empty() {
+            vec![args.transform.clone()]
+        } else {
+            entry.transforms.clone()
+        };
+
+        for transform_str in &transforms {
+            let transform = match crate::transforms::Transform::from_str_loose(transform_str) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("[batch] Skipping invalid transform '{}': {}", transform_str, e);
+                    continue;
+                }
+            };
+
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut interceptor = match crate::TokenInterceptor::new(
+                provider.clone(),
+                transform,
+                model.clone(),
+                false,
+                false,
+                false,
+            ) {
+                Ok(i) => i,
+                Err(e) => {
+                    eprintln!("[batch] Interceptor error: {}", e);
+                    continue;
+                }
+            };
+            interceptor.web_tx = Some(tx);
+            if let Some(rate) = args.rate {
+                interceptor = interceptor.with_rate(rate);
+            }
+
+            let run_start = std::time::Instant::now();
+            let _ = interceptor.intercept_stream(&entry.prompt).await;
+            let elapsed_ms = run_start.elapsed().as_millis() as u64;
+            drop(interceptor);
+
+            let mut events = Vec::new();
+            while let Ok(e) = rx.try_recv() {
+                events.push(e);
+            }
+
+            let token_count = events.len();
+            let confidences: Vec<f64> = events
+                .iter()
+                .filter_map(|e| e.confidence.map(|v| v as f64))
+                .collect();
+            let avg_confidence = if confidences.is_empty() {
+                None
+            } else {
+                Some(confidences.iter().sum::<f64>() / confidences.len() as f64)
+            };
+            let perplexities: Vec<f64> = events
+                .iter()
+                .filter_map(|e| e.perplexity.map(|v| v as f64))
+                .collect();
+            let avg_perplexity = if perplexities.is_empty() {
+                None
+            } else {
+                Some(perplexities.iter().sum::<f64>() / perplexities.len() as f64)
+            };
+            let unique: std::collections::HashSet<&str> =
+                events.iter().map(|e| e.original.as_str()).collect();
+            let vocab_diversity = if token_count == 0 {
+                0.0
+            } else {
+                unique.len() as f64 / token_count as f64
+            };
+
+            let result = BatchResult {
+                prompt: entry.prompt.clone(),
+                model: model.clone(),
+                transform: transform_str.clone(),
+                token_count,
+                avg_confidence,
+                avg_perplexity,
+                vocab_diversity,
+                elapsed_ms,
+            };
+            let line = serde_json::to_string(&result)?;
+            writeln!(out_file, "{}", line)?;
+        }
+
+        progress.advance(&label);
+    }
+
+    progress.finish();
+    eprintln!("[batch] Results written to {}", output_path);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Token logprob CSV export (--export-logprobs <file.csv>)
+// ---------------------------------------------------------------------------
+
+/// Write per-token logprob data to a CSV file from a list of token events.
+/// Columns: token,logprob,rank,model,timestamp
+pub fn write_logprob_csv(
+    path: &str,
+    events: &[crate::TokenEvent],
+    model: &str,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let mut f = std::fs::File::create(path)?;
+    writeln!(f, "token,logprob,rank,model,timestamp")?;
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    for (rank, event) in events.iter().enumerate() {
+        // logprob: derive from confidence (confidence = exp(logprob))
+        let logprob = event
+            .confidence
+            .map(|c| (c as f64).max(1e-10).ln())
+            .unwrap_or(f64::NEG_INFINITY);
+
+        // Escape commas in token text
+        let token_escaped = event.text.replace('"', "\"\"");
+        writeln!(
+            f,
+            "\"{}\",{:.6},{},{},{}",
+            token_escaped, logprob, rank, model, ts
+        )?;
+    }
+    Ok(())
+}
+
+/// Run a single stream and export logprobs to CSV (used by --export-logprobs).
+pub async fn run_with_logprob_export(
+    args: &Args,
+    export_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let provider = args.provider.clone();
+    let model = crate::cli::resolve_model(&provider, &args.model);
+    let transform = crate::transforms::Transform::from_str_loose(&args.transform)
+        .map_err(|e| format!("Invalid transform: {e}"))?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut interceptor = crate::TokenInterceptor::new(
+        provider,
+        transform,
+        model.clone(),
+        args.visual,
+        args.heatmap,
+        args.orchestrator,
+    )?;
+    interceptor.web_tx = Some(tx);
+    interceptor.top_logprobs = args.top_logprobs;
+    if let Some(rate) = args.rate {
+        interceptor = interceptor.with_rate(rate);
+    }
+
+    interceptor.intercept_stream(&args.prompt).await?;
+    drop(interceptor);
+
+    let mut events = Vec::new();
+    while let Ok(e) = rx.try_recv() {
+        events.push(e);
+    }
+
+    write_logprob_csv(export_path, &events, &model)?;
+    eprintln!("[eot] logprob CSV written to {} ({} tokens)", export_path, events.len());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Multi-model comparison heatmap (--compare model1,model2)
+// ---------------------------------------------------------------------------
+
+/// Token-level comparison result between models at one position.
+#[derive(serde::Serialize)]
+pub struct ModelTokenComparison {
+    pub position: usize,
+    pub model: String,
+    pub token: String,
+    pub confidence: Option<f64>,
+    pub divergence: f64,
+}
+
+/// Run the same prompt through multiple models and produce a divergence heatmap.
+/// Models are specified as a comma-separated list in `args.compare`.
+pub async fn run_multi_model_compare(
+    args: &Args,
+    models_csv: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use colored::*;
+
+    let models: Vec<String> = models_csv
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if models.len() < 2 {
+        return Err("--compare requires at least 2 models (comma-separated)".into());
+    }
+
+    let provider = args.provider.clone();
+    let transform = crate::transforms::Transform::from_str_loose(&args.transform)
+        .map_err(|e| format!("Invalid transform: {e}"))?;
+
+    eprintln!(
+        "[compare] Running prompt through {} models: {}",
+        models.len(),
+        models.join(", ")
+    );
+
+    // Collect token events per model (sequential to avoid rate-limit issues)
+    let mut per_model_events: Vec<(String, Vec<crate::TokenEvent>)> = Vec::new();
+
+    for model in &models {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut interceptor = crate::TokenInterceptor::new(
+            provider.clone(),
+            transform.clone(),
+            model.clone(),
+            false,
+            false,
+            false,
+        )?;
+        interceptor.web_tx = Some(tx);
+        interceptor.top_logprobs = args.top_logprobs;
+        if let Some(rate) = args.rate {
+            interceptor = interceptor.with_rate(rate);
+        }
+
+        eprintln!("[compare] Streaming model: {}", model);
+        interceptor.intercept_stream(&args.prompt).await?;
+        drop(interceptor);
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        per_model_events.push((model.clone(), events));
+    }
+
+    // Build comparison table: for each position, show each model's token + confidence
+    let max_len = per_model_events
+        .iter()
+        .map(|(_, e)| e.len())
+        .max()
+        .unwrap_or(0);
+
+    // Compute per-position divergence (std dev of confidences across models)
+    println!("\n[compare] Token divergence heatmap ({} positions):", max_len);
+    println!(
+        "{:>4}  {:>10}  {}",
+        "pos", "divergence",
+        models.iter().map(|m| format!("{:>20}", m)).collect::<Vec<_>>().join("  ")
+    );
+    println!("{}", "-".repeat(80));
+
+    let mut all_comparisons: Vec<ModelTokenComparison> = Vec::new();
+
+    for pos in 0..max_len {
+        let confidences: Vec<f64> = per_model_events
+            .iter()
+            .filter_map(|(_, evs)| {
+                evs.get(pos).and_then(|e| e.confidence.map(|c| c as f64))
+            })
+            .collect();
+
+        // Divergence = std dev of confidences at this position
+        let divergence = if confidences.len() >= 2 {
+            let mean = confidences.iter().sum::<f64>() / confidences.len() as f64;
+            let var = confidences.iter().map(|c| (c - mean).powi(2)).sum::<f64>()
+                / (confidences.len() - 1) as f64;
+            var.sqrt()
+        } else {
+            0.0
+        };
+
+        // Color by divergence level
+        let div_str = format!("{:.4}", divergence);
+        let div_colored = if divergence > 0.3 {
+            div_str.red().to_string()
+        } else if divergence > 0.1 {
+            div_str.yellow().to_string()
+        } else {
+            div_str.green().to_string()
+        };
+
+        let token_cells: Vec<String> = per_model_events
+            .iter()
+            .map(|(model_name, evs)| {
+                let tok = evs.get(pos).map(|e| e.text.as_str()).unwrap_or("-");
+                let conf = evs.get(pos).and_then(|e| e.confidence);
+                let cell = format!("{:>12} ({:.2})", &tok[..tok.len().min(12)], conf.unwrap_or(0.0));
+
+                all_comparisons.push(ModelTokenComparison {
+                    position: pos,
+                    model: model_name.clone(),
+                    token: tok.to_string(),
+                    confidence: conf.map(|c| c as f64),
+                    divergence,
+                });
+
+                if divergence > 0.3 {
+                    cell.red().to_string()
+                } else {
+                    cell
+                }
+            })
+            .collect();
+
+        println!(
+            "{:>4}  {:>10}  {}",
+            pos,
+            div_colored,
+            token_cells.join("  ")
+        );
+    }
+
+    // Summary statistics
+    let high_divergence: Vec<_> = (0..max_len)
+        .filter(|&pos| {
+            let confs: Vec<f64> = per_model_events
+                .iter()
+                .filter_map(|(_, evs)| evs.get(pos).and_then(|e| e.confidence.map(|c| c as f64)))
+                .collect();
+            if confs.len() < 2 { return false; }
+            let mean = confs.iter().sum::<f64>() / confs.len() as f64;
+            let var = confs.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (confs.len() - 1) as f64;
+            var.sqrt() > 0.1
+        })
+        .collect();
+
+    eprintln!(
+        "\n[compare] High-divergence positions (>0.1 std dev): {}/{}",
+        high_divergence.len(),
+        max_len
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

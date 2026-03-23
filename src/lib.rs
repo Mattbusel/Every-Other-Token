@@ -32,6 +32,7 @@
 
 pub mod cli;
 pub mod collab;
+pub mod comparison;
 pub mod config;
 pub mod error;
 pub mod heatmap;
@@ -39,7 +40,9 @@ pub mod providers;
 pub mod render;
 pub mod replay;
 pub mod research;
+pub mod semantic_heatmap;
 pub mod store;
+pub mod token_dictionary;
 pub mod transforms;
 pub mod web;
 
