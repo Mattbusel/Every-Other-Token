@@ -84,6 +84,8 @@ pub mod vocab;
 pub mod compression;
 pub mod router;
 pub mod tokenizer;
+pub mod summarizer;
+pub mod semantic_cache;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
