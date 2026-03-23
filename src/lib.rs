@@ -79,6 +79,8 @@ pub mod importance;
 pub mod chunking;
 pub mod stats;
 pub mod benchmark;
+pub mod context;
+pub mod vocab;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
