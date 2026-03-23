@@ -86,6 +86,8 @@ pub mod router;
 pub mod tokenizer;
 pub mod summarizer;
 pub mod semantic_cache;
+pub mod pipeline;
+pub mod info_entropy;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
