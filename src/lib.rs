@@ -120,6 +120,8 @@ pub mod token_budget_manager;
 pub mod semantic_similarity;
 pub mod reasoning_tracer;
 pub mod persona_manager;
+pub mod document_parser;
+pub mod knowledge_extractor;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
