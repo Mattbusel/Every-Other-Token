@@ -453,6 +453,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Importance scoring mode (--importance <method>)
+    if let Some(ref method_str) = args.importance.clone() {
+        use every_other_token::importance::{ImportanceMethod, ImportanceScorer};
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        if tokens.is_empty() {
+            eprintln!("[importance] No tokens to score (prompt is empty)");
+            return Ok(());
+        }
+        let method = match method_str.as_str() {
+            "frequency" => ImportanceMethod::Frequency,
+            "syntactic" => ImportanceMethod::Syntactic,
+            "composite" => ImportanceMethod::Composite(vec![
+                (ImportanceMethod::Positional { decay: 0.1 }, 0.5),
+                (ImportanceMethod::Syntactic, 0.5),
+            ]),
+            _ => ImportanceMethod::Positional { decay: 0.1 },
+        };
+        let scorer = ImportanceScorer::new(method);
+        let scores = scorer.score(&tokens);
+        println!("[importance] method: {}", method_str);
+        println!("[importance] tokens: {}", tokens.len());
+        for s in &scores {
+            println!("  rank={:3}  score={:.4}  token={:?}", s.rank, s.score, s.token);
+        }
+        return Ok(());
+    }
+
+    // Chunking mode (--chunk <strategy>)
+    if let Some(ref strategy_str) = args.chunk.clone() {
+        use every_other_token::chunking::{ChunkStrategy, Chunker};
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        if tokens.is_empty() {
+            eprintln!("[chunk] No tokens to chunk (prompt is empty)");
+            return Ok(());
+        }
+        let strategy = if strategy_str.starts_with("fixed:") {
+            let n: usize = strategy_str.trim_start_matches("fixed:").parse().unwrap_or(50);
+            ChunkStrategy::Fixed(n)
+        } else if strategy_str.starts_with("semantic:") {
+            let t: f32 = strategy_str.trim_start_matches("semantic:").parse().unwrap_or(0.5);
+            ChunkStrategy::Semantic { similarity_threshold: t }
+        } else if strategy_str == "sentence" {
+            ChunkStrategy::Sentence
+        } else if strategy_str == "paragraph" {
+            ChunkStrategy::Paragraph
+        } else {
+            ChunkStrategy::Fixed(50)
+        };
+        let chunks = Chunker::chunk_with_metadata(&tokens, strategy);
+        println!("[chunk] strategy: {}", strategy_str);
+        println!("[chunk] input tokens: {}", tokens.len());
+        println!("[chunk] chunks: {}", chunks.len());
+        for (chunk, meta) in &chunks {
+            println!(
+                "  chunk[{}]  tokens={}..{}  count={}  {:?}",
+                meta.index, meta.start_token, meta.end_token, meta.token_count,
+                &chunk[..chunk.len().min(8)]
+            );
+        }
+        return Ok(());
+    }
+
     // Load synonym overrides from file if provided
     if let Some(ref path) = args.synonym_file {
         every_other_token::transforms::load_synonym_overrides(path)

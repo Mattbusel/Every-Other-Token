@@ -274,6 +274,18 @@ pub struct Args {
     /// sequences (cosine similarity > 0.85), and prints the filtered result.
     #[arg(long)]
     pub diversity_filter: bool,
+
+    /// Score each token in the prompt by importance and print results.
+    /// Scoring method: positional (default), frequency, syntactic, or composite.
+    /// Example: --importance positional
+    #[arg(long, value_name = "METHOD")]
+    pub importance: Option<String>,
+
+    /// Chunk the prompt tokens with a strategy and print resulting chunks.
+    /// Strategies: fixed:<n>, sentence, paragraph, semantic:<threshold>.
+    /// Example: --chunk fixed:50  or  --chunk sentence
+    #[arg(long, value_name = "STRATEGY")]
+    pub chunk: Option<String>,
 }
 
 /// Select the appropriate default model for the given provider when the user
