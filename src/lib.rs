@@ -88,6 +88,8 @@ pub mod summarizer;
 pub mod semantic_cache;
 pub mod pipeline;
 pub mod info_entropy;
+pub mod format_detector;
+pub mod reranker;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
