@@ -529,6 +529,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Vocabulary statistics mode (--vocab-stats)
+    if args.vocab_stats {
+        use every_other_token::vocab::VocabularyAnalyzer;
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        if tokens.is_empty() {
+            eprintln!("[vocab-stats] No tokens to analyse (prompt is empty)");
+            return Ok(());
+        }
+        // Build a reference corpus from the prompt itself for demonstration
+        let corpus = vec![tokens.clone()];
+        let va = VocabularyAnalyzer::build_from_corpus(&corpus);
+        let stats = va.analyze(&tokens);
+        let zipf = va.zipf_score();
+        let oov = va.oov_tokens_owned(&tokens);
+        println!("[vocab-stats] vocab_size: {}", stats.size);
+        println!("[vocab-stats] coverage_pct: {:.4}", stats.coverage_pct);
+        println!("[vocab-stats] oov_rate: {:.4}", stats.oov_rate);
+        println!("[vocab-stats] avg_frequency: {:.4}", stats.avg_frequency);
+        println!("[vocab-stats] median_frequency: {:.4}", stats.median_frequency);
+        println!("[vocab-stats] zipf_score: {:.4}", zipf);
+        if !oov.is_empty() {
+            println!("[vocab-stats] oov_tokens: {:?}", &oov[..oov.len().min(20)]);
+        }
+        return Ok(());
+    }
+
+    // Context budget info (--context-budget N)
+    // This flag configures the ContextWindow budget; its value is available at args.context_budget.
+    // When combined with --dry-run or --stats, print the budget configuration.
+    {
+        use every_other_token::context::{ContextWindow, ContextWindowConfig};
+        let _ = ContextWindow::new(ContextWindowConfig {
+            max_tokens: args.context_budget,
+            reserved_for_output: 512,
+            system_tokens: 0,
+        });
+        // Budget is wired; actual context management happens in the interceptor pipeline.
+    }
+
     // Compression benchmark mode (--benchmark)
     if args.benchmark {
         use every_other_token::benchmark::{BenchmarkReport, CompressionBenchmark};

@@ -841,6 +841,97 @@ println!("compressed to {} tokens with score={:.3}", compressed.len(), quality.o
 
 ---
 
+## Context Window Manager
+
+The `context` module provides `ContextWindow` — a priority-based token budget manager for LLM context construction.
+
+```rust
+use every_other_token::context::{
+    BlockType, ContextBlock, ContextWindow, ContextWindowConfig,
+};
+
+let cfg = ContextWindowConfig {
+    max_tokens: 4096,
+    reserved_for_output: 512,
+    system_tokens: 128,
+};
+let mut window = ContextWindow::new(cfg);
+
+window.add_block(ContextBlock {
+    id: 1,
+    content: vec!["You are a helpful assistant.".to_string()],
+    priority: 255,
+    block_type: BlockType::System,
+}).unwrap();
+
+window.add_block(ContextBlock {
+    id: 2,
+    content: vec!["What is Rust?".to_string()],
+    priority: 200,
+    block_type: BlockType::Query,
+}).unwrap();
+
+// Canonical order: System -> Document -> History -> Query
+let assembled = window.assemble();
+println!("utilization: {:.2}", window.utilization());
+let stats = window.stats();
+println!("evictions: {}", stats.evictions);
+```
+
+**Key features:**
+- Fixed token budget: `max_tokens - reserved_for_output - system_tokens`
+- Automatic eviction of lowest-priority `History` blocks when full
+- Canonical assembly: System → Document → History → Query
+- `ContextStats` tracks block counts by type, utilization, and eviction count
+- `--context-budget <N>` CLI flag sets the token budget (default: 4096)
+
+---
+
+## Vocabulary Analyzer
+
+The `vocab` module provides `VocabularyAnalyzer` — measures vocabulary coverage, OOV rates, and Zipf's law fit for token sequences.
+
+```rust
+use every_other_token::vocab::{VocabularyAnalyzer, Zipf};
+use std::collections::HashMap;
+
+// Build from a reference corpus
+let corpus = vec![
+    vec!["the".to_string(), "cat".to_string(), "sat".to_string()],
+    vec!["the".to_string(), "dog".to_string(), "ran".to_string()],
+];
+let va = VocabularyAnalyzer::build_from_corpus(&corpus);
+
+// Analyze a new sequence
+let tokens = vec!["the".to_string(), "unknown_word".to_string()];
+let stats = va.analyze(&tokens);
+println!("coverage: {:.2}%", stats.coverage_pct * 100.0);
+println!("oov_rate: {:.2}%", stats.oov_rate * 100.0);
+println!("zipf_score: {:.4}", va.zipf_score());
+
+// Find OOV tokens
+let oov = va.oov_tokens_owned(&tokens);
+println!("OOV: {:?}", oov);
+
+// Fit Zipf's law directly
+let mut freq: HashMap<String, u64> = HashMap::new();
+freq.insert("the".to_string(), 1000);
+freq.insert("cat".to_string(), 500);
+freq.insert("sat".to_string(), 250);
+let params = Zipf::fit(&freq);
+println!("Zipf exponent: {:.3} (r²={:.3})", params.exponent, params.r_squared);
+```
+
+**Key features:**
+- `build_from_corpus`: aggregates token frequencies across multiple documents
+- `analyze`: coverage %, OOV rate, average/median reference frequency, distinct vocab size
+- `oov_tokens`: returns all tokens not in the reference vocabulary
+- `Zipf::fit`: log-log linear regression to extract Zipf exponent and R²
+- `zipf_score`: 1 - |exponent - 1.0|, normalized to [0, 1]
+- `--vocab-stats` CLI flag: prints vocabulary statistics for the current prompt
+
+---
+
 ## License
 
 MIT -- see [LICENSE](LICENSE) for details.

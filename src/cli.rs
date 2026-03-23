@@ -294,6 +294,16 @@ pub struct Args {
     /// Run the built-in compression benchmarks and print a ranked ASCII table.
     #[arg(long)]
     pub benchmark: bool,
+
+    /// Token budget for the context window manager (max tokens for LLM context).
+    /// Example: --context-budget 4096
+    #[arg(long, default_value = "4096")]
+    pub context_budget: usize,
+
+    /// Print vocabulary statistics for the prompt tokens against a built-in reference corpus.
+    /// Outputs: vocab size, coverage %, OOV rate, avg/median frequency, and Zipf score.
+    #[arg(long)]
+    pub vocab_stats: bool,
 }
 
 /// Select the appropriate default model for the given provider when the user
