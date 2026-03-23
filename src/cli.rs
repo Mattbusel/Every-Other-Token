@@ -252,6 +252,17 @@ pub struct Args {
     /// Example: --compare gpt-4o,gpt-4o-mini
     #[arg(long)]
     pub compare: Option<String>,
+
+    /// Path to a JSONL file of token arrays for batch compression processing.
+    /// Each line must be a JSON array of strings: ["tok1", "tok2", ...]
+    /// Results are printed as JSONL to stdout with job_id, ratio, and elapsed_ms.
+    #[arg(long, value_name = "FILE")]
+    pub batch_tokens: Option<String>,
+
+    /// Print quality metrics for the token compression applied to the prompt.
+    /// Shows semantic_preservation, syntax_validity, ratio, and overall_score.
+    #[arg(long)]
+    pub quality: bool,
 }
 
 /// Select the appropriate default model for the given provider when the user

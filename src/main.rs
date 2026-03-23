@@ -322,6 +322,93 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Batch token compression mode (--batch-tokens <file.jsonl>)
+    if let Some(ref batch_tokens_path) = args.batch_tokens.clone() {
+        use every_other_token::batch::{BatchConfig, BatchProcessor};
+        use tokio_stream::StreamExt;
+        use std::time::Duration;
+
+        let content = std::fs::read_to_string(batch_tokens_path)
+            .map_err(|e| format!("Cannot read batch-tokens file '{}': {}", batch_tokens_path, e))?;
+
+        let config = BatchConfig {
+            max_concurrent: 8,
+            queue_capacity: 256,
+            timeout: Duration::from_secs(30),
+        };
+        let mut processor = BatchProcessor::new(config);
+        let mut total_submitted = 0u64;
+
+        for (line_no, line) in content.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            match serde_json::from_str::<Vec<String>>(line) {
+                Ok(tokens) => {
+                    processor.submit(tokens, 5);
+                    total_submitted += 1;
+                }
+                Err(e) => {
+                    eprintln!("[batch-tokens] line {}: parse error: {}", line_no + 1, e);
+                }
+            }
+        }
+
+        let start = std::time::Instant::now();
+        let mut stream = processor.run();
+        let mut results = Vec::new();
+        while let Some(result) = stream.next().await {
+            println!("{}",
+                serde_json::json!({
+                    "job_id": result.job_id,
+                    "original_len": result.original_len,
+                    "compressed_len": result.compressed_len,
+                    "ratio": result.ratio,
+                    "elapsed_ms": result.elapsed_ms,
+                    "compressed": result.compressed,
+                })
+            );
+            results.push(result);
+        }
+        let wall_secs = start.elapsed().as_secs_f64();
+        let stats = BatchProcessor::compute_stats(&results, total_submitted, wall_secs);
+        eprintln!("[batch-tokens] submitted={} completed={} failed={} avg_ratio={:.3} throughput={:.1} tok/s",
+            stats.jobs_submitted, stats.jobs_completed, stats.jobs_failed,
+            stats.avg_ratio, stats.throughput_tokens_per_sec);
+        return Ok(());
+    }
+
+    // Quality metrics mode (--quality): show compression quality for the prompt tokens
+    if args.quality {
+        use every_other_token::adaptive::{AdaptiveCompressor, CompressionTarget, QualityMetric};
+
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        let target = CompressionTarget::default();
+        let compressor = AdaptiveCompressor::new();
+        let (compressed, quality) = compressor.compress(&tokens, &target);
+
+        println!("[quality] original tokens: {}", tokens.len());
+        println!("[quality] compressed tokens: {}", compressed.len());
+        println!("[quality] ratio: {:.4}", quality.ratio);
+        println!("[quality] semantic_preservation: {:.4}", quality.semantic_preservation);
+        println!("[quality] syntax_validity: {:.4}", quality.syntax_validity);
+        println!("[quality] overall_score: {:.4}", quality.overall_score);
+        println!("[quality] compressed: {:?}", compressed);
+
+        // Also measure raw quality without adaptive compression
+        let half: Vec<String> = tokens.iter().enumerate()
+            .filter(|(i, _)| i % 2 == 0)
+            .map(|(_, t)| t.clone())
+            .collect();
+        let raw_q = QualityMetric::measure(&tokens, &half);
+        println!("[quality] --- every-other-token compression ---");
+        println!("[quality] ratio: {:.4}", raw_q.ratio);
+        println!("[quality] semantic_preservation: {:.4}", raw_q.semantic_preservation);
+        println!("[quality] syntax_validity: {:.4}", raw_q.syntax_validity);
+        println!("[quality] overall_score: {:.4}", raw_q.overall_score);
+
+        return Ok(());
+    }
+
     // Load synonym overrides from file if provided
     if let Some(ref path) = args.synonym_file {
         every_other_token::transforms::load_synonym_overrides(path)

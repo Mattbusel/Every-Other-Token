@@ -39,7 +39,9 @@
 //! cargo run -- "Explain recursion" --research --runs 20 --output results.json
 //! ```
 
+pub mod adaptive;
 pub mod attribution;
+pub mod batch;
 pub mod cli;
 pub mod collab;
 pub mod comparison;
