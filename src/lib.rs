@@ -102,6 +102,8 @@ pub mod conversation_memory;
 pub mod prompt_mutation;
 pub mod model_switcher;
 pub mod request_router;
+pub mod adaptive_sampling;
+pub mod result_aggregator;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
