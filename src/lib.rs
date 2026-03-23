@@ -108,6 +108,8 @@ pub mod chain_validator;
 pub mod few_shot_selector;
 pub mod hallucination_detector;
 pub mod response_enhancer;
+pub mod debate_engine;
+pub mod fact_checker;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
