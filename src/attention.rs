@@ -396,3 +396,295 @@ mod tests {
         assert!(!s.is_empty());
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Attention-inspired token importance scoring
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Compute the dot product of two equal-length slices.
+pub fn dot_product(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+/// Numerically-stable softmax: subtract max before exponentiating.
+pub fn softmax(scores: &[f64]) -> Vec<f64> {
+    if scores.is_empty() {
+        return vec![];
+    }
+    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<f64> = scores.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    if sum == 0.0 {
+        vec![1.0 / scores.len() as f64; scores.len()]
+    } else {
+        exps.iter().map(|&e| e / sum).collect()
+    }
+}
+
+/// A single attention head parameterised by head dimensionality.
+#[derive(Debug, Clone)]
+pub struct AttentionHead {
+    /// Dimensionality of query / key vectors.
+    pub dim: usize,
+}
+
+impl AttentionHead {
+    /// Scaled dot-product attention score: dot(query, key) / sqrt(dim).
+    pub fn score(&self, query: &[f64], key: &[f64]) -> f64 {
+        let d = self.dim.max(1) as f64;
+        dot_product(query, key) / d.sqrt()
+    }
+}
+
+/// A token with its position and embedding vector.
+#[derive(Debug, Clone)]
+pub struct TokenEmbedding {
+    pub token: String,
+    pub position: usize,
+    pub embedding: Vec<f64>,
+}
+
+impl TokenEmbedding {
+    /// Sinusoidal positional encoding (Vaswani et al., 2017).
+    ///
+    /// PE[2i]   = sin(pos / 10000^(2i/dim))
+    /// PE[2i+1] = cos(pos / 10000^(2i/dim))
+    pub fn positional_encoding(position: usize, dim: usize) -> Vec<f64> {
+        (0..dim)
+            .map(|i| {
+                let freq = (position as f64)
+                    / (10_000_f64).powf(2.0 * (i / 2) as f64 / dim.max(1) as f64);
+                if i % 2 == 0 {
+                    freq.sin()
+                } else {
+                    freq.cos()
+                }
+            })
+            .collect()
+    }
+}
+
+/// Multi-head self-attention scorer for token importance.
+#[derive(Debug, Clone)]
+pub struct SelfAttentionScorer {
+    pub head_dim: usize,
+    pub num_heads: usize,
+}
+
+impl SelfAttentionScorer {
+    const EMBED_DIM: usize = 16;
+
+    /// Assign importance scores to a sequence of tokens using self-attention.
+    ///
+    /// 1. Build bag-of-chars embeddings (dim = 16).
+    /// 2. Add sinusoidal positional encoding.
+    /// 3. Compute self-attention; accumulate weighted value magnitudes.
+    /// 4. Normalise to \[0, 1\].
+    pub fn score_tokens(&self, tokens: &[String]) -> Vec<f64> {
+        if tokens.is_empty() {
+            return vec![];
+        }
+        let dim = Self::EMBED_DIM;
+
+        // Step 1 & 2: embeddings + positional encoding.
+        let embeddings: Vec<Vec<f64>> = tokens
+            .iter()
+            .enumerate()
+            .map(|(pos, tok)| {
+                let mut emb = vec![0.0f64; dim];
+                let pos_weight = 1.0 / (1.0 + pos as f64);
+                for ch in tok.chars() {
+                    let code = ch as u32 as f64;
+                    for i in 0..dim {
+                        emb[i] += code * pos_weight;
+                    }
+                }
+                // Normalise raw embedding.
+                let norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-8);
+                for v in emb.iter_mut() {
+                    *v /= norm;
+                }
+                // Add positional encoding.
+                let pe = TokenEmbedding::positional_encoding(pos, dim);
+                emb.iter().zip(pe.iter()).map(|(a, b)| a + b).collect()
+            })
+            .collect();
+
+        let head = AttentionHead {
+            dim: self.head_dim.max(1),
+        };
+        let n = tokens.len();
+
+        // Step 3: for each token compute sum of attention-weighted value magnitudes.
+        let mut scores: Vec<f64> = (0..n)
+            .map(|i| {
+                // Raw attention logits from token i to all others.
+                let logits: Vec<f64> = (0..n)
+                    .map(|j| head.score(&embeddings[i], &embeddings[j]))
+                    .collect();
+                let attn = softmax(&logits);
+                // Weighted sum of value magnitudes (||emb[j]||).
+                attn.iter()
+                    .zip(embeddings.iter())
+                    .map(|(&a, emb)| {
+                        let mag: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
+                        a * mag
+                    })
+                    .sum()
+            })
+            .collect();
+
+        // Step 4: normalise to [0, 1].
+        let min = scores.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let range = (max - min).max(1e-12);
+        for s in scores.iter_mut() {
+            *s = (*s - min) / range;
+        }
+        scores
+    }
+}
+
+/// Attention mask variant controlling which positions can attend to which.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttentionMask {
+    /// Each position can only attend to itself and previous positions.
+    Causal,
+    /// Every position attends to every other position.
+    Full,
+    /// Each position attends only within a window of the given half-width.
+    WindowedLocal(usize),
+}
+
+/// Apply an [`AttentionMask`] to a raw score matrix, then row-wise softmax.
+///
+/// Masked positions are set to `-1e9` before softmax so they contribute ~0.
+pub fn masked_attention(
+    scores: &[Vec<f64>],
+    mask: &AttentionMask,
+) -> Vec<Vec<f64>> {
+    scores
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let masked: Vec<f64> = row
+                .iter()
+                .enumerate()
+                .map(|(j, &s)| {
+                    let allowed = match mask {
+                        AttentionMask::Full => true,
+                        AttentionMask::Causal => j <= i,
+                        AttentionMask::WindowedLocal(w) => {
+                            (j as isize - i as isize).unsigned_abs() <= *w
+                        }
+                    };
+                    if allowed { s } else { -1e9 }
+                })
+                .collect();
+            softmax(&masked)
+        })
+        .collect()
+}
+
+/// Return the top-`k` tokens by descending score.
+///
+/// If `k` exceeds the number of tokens, all tokens are returned.
+pub fn top_k_tokens(
+    tokens: &[String],
+    scores: &[f64],
+    k: usize,
+) -> Vec<(String, f64)> {
+    let mut pairs: Vec<(String, f64)> = tokens
+        .iter()
+        .zip(scores.iter())
+        .map(|(t, &s)| (t.clone(), s))
+        .collect();
+    pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.truncate(k);
+    pairs
+}
+
+// ── Tests for the scoring layer ───────────────────────────────────────────────
+
+#[cfg(test)]
+mod scoring_tests {
+    use super::*;
+
+    #[test]
+    fn softmax_sums_to_one() {
+        let scores = vec![1.0, 2.0, 3.0, 0.5];
+        let sm = softmax(&scores);
+        let sum: f64 = sm.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-10, "softmax sum = {sum}");
+    }
+
+    #[test]
+    fn softmax_empty_returns_empty() {
+        assert!(softmax(&[]).is_empty());
+    }
+
+    #[test]
+    fn positional_encoding_differs_at_different_positions() {
+        let pe0 = TokenEmbedding::positional_encoding(0, 16);
+        let pe5 = TokenEmbedding::positional_encoding(5, 16);
+        // Not identical.
+        assert_ne!(pe0, pe5);
+        // Length correct.
+        assert_eq!(pe0.len(), 16);
+    }
+
+    #[test]
+    fn top_k_returns_k_items() {
+        let tokens: Vec<String> = (0..10).map(|i| format!("t{i}")).collect();
+        let scores: Vec<f64> = (0..10).map(|i| i as f64).collect();
+        let top = top_k_tokens(&tokens, &scores, 3);
+        assert_eq!(top.len(), 3);
+        // Best score first.
+        assert!(top[0].1 >= top[1].1);
+    }
+
+    #[test]
+    fn top_k_clamps_to_available() {
+        let tokens = vec!["a".to_string(), "b".to_string()];
+        let scores = vec![0.8, 0.2];
+        let top = top_k_tokens(&tokens, &scores, 100);
+        assert_eq!(top.len(), 2);
+    }
+
+    #[test]
+    fn causal_mask_zeroes_future_positions() {
+        // 3x3 uniform score matrix.
+        let scores: Vec<Vec<f64>> = vec![
+            vec![1.0, 1.0, 1.0],
+            vec![1.0, 1.0, 1.0],
+            vec![1.0, 1.0, 1.0],
+        ];
+        let out = masked_attention(&scores, &AttentionMask::Causal);
+        // Row 0 can only attend to position 0 → weight on pos 1 and 2 ≈ 0.
+        assert!(out[0][1] < 1e-6, "row0 pos1 should be ~0, got {}", out[0][1]);
+        assert!(out[0][2] < 1e-6, "row0 pos2 should be ~0, got {}", out[0][2]);
+        // Row 2 can attend to all → all weights > 0.
+        assert!(out[2][0] > 0.0);
+        assert!(out[2][1] > 0.0);
+        assert!(out[2][2] > 0.0);
+    }
+
+    #[test]
+    fn self_attention_scorer_produces_unit_range() {
+        let scorer = SelfAttentionScorer {
+            head_dim: 16,
+            num_heads: 4,
+        };
+        let tokens: Vec<String> = vec![
+            "hello".into(),
+            "world".into(),
+            "foo".into(),
+            "bar".into(),
+        ];
+        let scores = scorer.score_tokens(&tokens);
+        assert_eq!(scores.len(), tokens.len());
+        for &s in &scores {
+            assert!(s >= 0.0 && s <= 1.0 + 1e-9, "score out of range: {s}");
+        }
+    }
+}

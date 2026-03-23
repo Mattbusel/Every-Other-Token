@@ -83,6 +83,7 @@ pub mod context;
 pub mod vocab;
 pub mod compression;
 pub mod router;
+pub mod tokenizer;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
