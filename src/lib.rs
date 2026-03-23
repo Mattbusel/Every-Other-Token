@@ -116,6 +116,8 @@ pub mod multi_turn_tracker;
 pub mod code_executor;
 pub mod output_validator;
 pub mod intent_classifier;
+pub mod token_budget_manager;
+pub mod semantic_similarity;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
