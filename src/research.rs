@@ -60,7 +60,7 @@ pub struct ResearchRun {
 }
 
 /// Top-level JSON output written by [`run_research`].
-#[derive(Debug, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ResearchOutput {
     /// Monotonically increasing version number; consumers should check this before parsing.
     pub schema_version: u8,
