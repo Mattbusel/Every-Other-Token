@@ -296,12 +296,144 @@ OPTIONS:
 
 ---
 
+## Divergence Detection Engine
+
+`divergence.rs` runs the same prompt through N model configurations simultaneously and computes a per-position **Jensen-Shannon divergence** score showing exactly where and how much models disagree.
+
+### Concepts
+
+| Term | Description |
+|------|-------------|
+| `ModelConfig` | One model configuration: provider, model name, temperature, top_p |
+| `TokenStream` | Sequence of tokens + per-position probability distributions from one model |
+| `DivergencePoint` | A position where JS score exceeds the threshold; records each model's token |
+| `DivergenceResult` | Complete run: all streams, all divergence points, aggregate statistics |
+| `DivergenceDetector` | Orchestrates analysis; threshold configurable |
+
+### Jensen-Shannon divergence
+
+At each token position `t`, the detector collects a probability distribution `P_i(t)` from each model (from the logprobs API). It then computes:
+
+```
+JSD(P₁, …, Pₙ) = (1/n) Σᵢ KL(Pᵢ || M)    where M = (1/n) Σᵢ Pᵢ
+```
+
+normalised by `log(n)` to give a score in `[0, 1]`.
+
+| Score | Meaning |
+|-------|---------|
+| 0.0 | All models produce the same token with the same probability |
+| ~0.25 | Mild preference difference |
+| ~0.5 | Substantial disagreement |
+| 1.0 | Models produce completely different tokens |
+
+### Usage
+
+```rust
+use every_other_token::divergence::{DivergenceDetector, ModelConfig};
+use std::collections::HashMap;
+
+let configs = vec![
+    ModelConfig::new("openai", "gpt-4o", 0.0, 1.0),
+    ModelConfig::new("openai", "gpt-4o", 1.0, 1.0),
+    ModelConfig::new("anthropic", "claude-sonnet-4-6", 0.7, 1.0),
+];
+
+let detector = DivergenceDetector::new(configs).with_threshold(0.1);
+
+// After collecting token streams from provider APIs:
+let result = detector.analyse("Why is the sky blue?", streams);
+
+println!("{}", result.render_report());
+println!("Mean JS: {:.4}", result.mean_divergence());
+println!("High-divergence positions: {:?}", result.high_divergence_positions(0.5));
+```
+
+### Coloured diff report
+
+`DivergenceResult::render_report()` produces a multi-line ANSI report:
+
+- **Green background**: models agree (JS < 0.25).
+- **Yellow background**: moderate divergence (JS ∈ (0.25, 0.5]).
+- **Red background**: high divergence (JS > 0.5).
+
+Each model's full token stream is printed with its disagreement positions highlighted.
+
+---
+
+## Token Intervention Mode
+
+`intervention.rs` enables **causal interventions**: pausing generation at any token, injecting a correction, continuing generation from the injected token, and measuring the causal effect downstream.
+
+### Concepts
+
+| Term | Description |
+|------|-------------|
+| `Intervention` | A single `(position, original_token, injected_token)` triple |
+| `InterventionHistory` | Full record: original stream, all interventions, final counterfactual stream |
+| `TokenEditor` | ANSI terminal widget for cursor-based token editing |
+| `causal_effect()` | Normalised token-level edit distance between original and final streams |
+| `causal_influence_map()` | Per-position influence score: how much each position affects downstream tokens |
+
+### Causal effect measurement
+
+```rust
+use every_other_token::intervention::{InterventionHistory, Intervention};
+
+// Start with the original model output.
+let original = vec!["The".into(), " cat".into(), " sat".into(), " on".into(), " the".into(), " mat".into()];
+let mut history = InterventionHistory::new(original);
+
+// Inject " dog" at position 1.
+let intervention = Intervention::new(1, " cat", " dog");
+// (continue generation from this point, get the counterfactual)
+let counterfactual = vec!["The".into(), " dog".into(), " ran".into(), " through".into(), " the".into(), " park".into()];
+history.apply(intervention, counterfactual);
+
+println!("Causal effect: {:.3}", history.causal_effect()); // fraction of tokens that changed
+```
+
+### TUI token editor
+
+`TokenEditor` provides cursor navigation and token-level editing in any VT100 terminal:
+
+```rust
+use every_other_token::intervention::TokenEditor;
+
+let tokens = vec!["The".into(), " sky".into(), " is".into(), " blue".into()];
+let mut editor = TokenEditor::new(tokens);
+
+editor.cursor_right();      // move to " sky"
+editor.enter_edit_mode();   // start editing
+editor.edit_buffer = " ocean".into();
+let edit = editor.commit_edit(); // Some((1, " sky", " ocean"))
+
+println!("{}", editor.render()); // ANSI-highlighted stream
+```
+
+### Causal influence map
+
+```rust
+use every_other_token::intervention::causal_influence_map;
+
+let original     = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+let counterfact  = vec!["X".into(), "Y".into(), "c".into(), "d".into()];
+
+let map = causal_influence_map(&original, &counterfact);
+// map[0] = fraction of positions >0 that changed = 0.5  (b changed, c/d didn't)
+// map[1] = fraction of positions >1 that changed = 0.0  (c and d unchanged)
+```
+
+---
+
 ## Key modules
 
 | Module | Responsibility |
 |--------|----------------|
 | `lib.rs` | `TokenInterceptor`, `TokenEvent`, stream parsing, retry logic |
 | `attribution.rs` | Per-token JSONL, CSV, and HTML heatmap export; drift detection |
+| `divergence.rs` | Jensen-Shannon divergence between model configurations; coloured diff report |
+| `intervention.rs` | Token injection, `InterventionHistory`, `TokenEditor`, causal influence map |
 | `transforms.rs` | All transform strategies (`Reverse`, `Noise`, `Chaos`, `Chain`, ...) |
 | `providers.rs` | `ProviderPlugin` trait, OpenAI and Anthropic SSE wire types |
 | `web.rs` | Embedded HTTP/1.1 server, SSE fan-out, WebSocket upgrade |

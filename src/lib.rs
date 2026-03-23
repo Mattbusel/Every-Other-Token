@@ -65,6 +65,11 @@ pub mod experiments;
 pub mod token_dictionary;
 pub mod transforms;
 pub mod web;
+pub mod patching;
+pub mod logit_lens;
+pub mod circuits;
+pub mod steering;
+pub mod cross_model;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
