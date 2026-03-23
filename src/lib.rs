@@ -90,6 +90,8 @@ pub mod pipeline;
 pub mod info_entropy;
 pub mod format_detector;
 pub mod reranker;
+pub mod dialogue_manager;
+pub mod template_gen;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
