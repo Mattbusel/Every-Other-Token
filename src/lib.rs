@@ -112,6 +112,8 @@ pub mod debate_engine;
 pub mod fact_checker;
 pub mod prompt_compression;
 pub mod context_retriever;
+pub mod multi_turn_tracker;
+pub mod code_executor;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
