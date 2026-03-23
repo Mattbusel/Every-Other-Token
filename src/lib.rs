@@ -114,6 +114,8 @@ pub mod prompt_compression;
 pub mod context_retriever;
 pub mod multi_turn_tracker;
 pub mod code_executor;
+pub mod output_validator;
+pub mod intent_classifier;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
