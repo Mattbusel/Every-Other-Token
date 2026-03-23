@@ -13,6 +13,8 @@
 //! | Module | Description |
 //! |--------|-------------|
 //! | [`attention`] | Causal attention tracer — attribution matrix showing which context tokens caused each generated token |
+//! | [`entropy`] | Prompt entropy analyzer — Shannon entropy, perplexity estimation, repetition detection, multi-turn timeline |
+//! | [`fingerprint`] | Model fingerprinting — statistical signatures for blind A/B testing and model identification |
 //! | [`hallucination`] | Hallucination detector — identifies perplexity spikes and confident-but-fragile token positions |
 //!
 //! ## Feature flags
@@ -55,6 +57,8 @@ pub mod research;
 pub mod semantic_heatmap;
 pub mod store;
 pub mod attention;
+pub mod entropy;
+pub mod fingerprint;
 pub mod hallucination;
 pub mod sensitivity;
 pub mod experiments;
