@@ -32,6 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && !args.diff_terminal
         && args.batch.is_none()
         && args.compare.is_none()
+        && args.similarity.is_none()
+        && !args.diversity_filter
     {
         eprintln!("[eot] No prompt given — launching web UI at http://localhost:{}", args.port);
         eprintln!("[eot] Tip: set OPENAI_API_KEY or ANTHROPIC_API_KEY in your environment.");
@@ -374,6 +376,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("[batch-tokens] submitted={} completed={} failed={} avg_ratio={:.3} throughput={:.1} tok/s",
             stats.jobs_submitted, stats.jobs_completed, stats.jobs_failed,
             stats.avg_ratio, stats.throughput_tokens_per_sec);
+        return Ok(());
+    }
+
+    // Semantic similarity mode (--similarity <text1> <text2>)
+    if let Some(ref texts) = args.similarity.clone() {
+        if texts.len() == 2 {
+            use every_other_token::similarity::SemanticScorer;
+            let a = &texts[0];
+            let b = &texts[1];
+            // Fit on the two texts themselves so there's always a vocabulary
+            let scorer = SemanticScorer::fit(&[a.as_str(), b.as_str()]);
+            let sim = scorer.similarity(a, b);
+            println!("[similarity] text1: {:?}", a);
+            println!("[similarity] text2: {:?}", b);
+            println!("[similarity] cosine_similarity: {:.6}", sim);
+        } else {
+            eprintln!("[eot] --similarity requires exactly 2 arguments");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    // Diversity filter mode (--diversity-filter): dedup prompt token sequences
+    if args.diversity_filter {
+        use every_other_token::similarity::DiversityFilter;
+        // Treat each line of the prompt as a sequence of tokens
+        let lines: Vec<Vec<String>> = args.prompt
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.split_whitespace().map(|t| t.to_string()).collect())
+            .collect();
+        if lines.is_empty() {
+            eprintln!("[diversity-filter] No input lines to filter (prompt is empty)");
+            return Ok(());
+        }
+        let filter = DiversityFilter::new(&lines);
+        let filtered = filter.filter(lines.clone(), 0.85);
+        println!("[diversity-filter] input sequences: {}", lines.len());
+        println!("[diversity-filter] output sequences: {}", filtered.len());
+        for seq in &filtered {
+            println!("{}", seq.join(" "));
+        }
         return Ok(());
     }
 

@@ -263,6 +263,17 @@ pub struct Args {
     /// Shows semantic_preservation, syntax_validity, ratio, and overall_score.
     #[arg(long)]
     pub quality: bool,
+
+    /// Compute and print cosine similarity between two texts.
+    /// Provide exactly two space-separated strings. Example: --similarity "hello world" "hello rust"
+    #[arg(long, num_args = 2, value_name = "TEXT")]
+    pub similarity: Option<Vec<String>>,
+
+    /// Deduplicate the prompt tokens using the diversity filter.
+    /// Splits the prompt on whitespace into token sequences, removes near-duplicate
+    /// sequences (cosine similarity > 0.85), and prints the filtered result.
+    #[arg(long)]
+    pub diversity_filter: bool,
 }
 
 /// Select the appropriate default model for the given provider when the user

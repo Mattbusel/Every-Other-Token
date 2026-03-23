@@ -618,6 +618,8 @@ let map = causal_influence_map(&original, &counterfact);
 | `research.rs` | Headless research loop, aggregate statistics, A/B mode |
 | `comparison.rs` | Cross-model JS divergence, Pearson correlation, structural diff |
 | `semantic_heatmap.rs` | TF-IDF cosine similarity windows -> SVG / CSV heatmap |
+| `similarity.rs` | TF-IDF vectorizer, cosine similarity scorer, and diversity filter |
+| `stream_compress.rs` | Streaming token compression with Drop/Block/Compress backpressure |
 | `token_dictionary.rs` | Per-token sentiment dictionary with EMA learning |
 | `heatmap.rs` | Per-position confidence matrix -> CSV |
 | `replay.rs` | JSON recording and deterministic replay |
@@ -642,6 +644,76 @@ let map = causal_influence_map(&original, &counterfact);
 | `helix-bridge` | Off | HTTP bridge polling HelixRouter `/api/stats` |
 | `redis-backing` | Off | Write-through Redis persistence for agent memory and snapshots |
 | `wasm` | Off | WASM target bindings via `wasm-bindgen` |
+
+---
+
+## Semantic Similarity
+
+`src/similarity.rs` provides TF-IDF based semantic similarity scoring.
+
+### CLI usage
+
+```bash
+# Compare two texts
+every-other-token --similarity "the quick brown fox" "a fast red fox"
+
+# Deduplicate lines in a prompt file
+every-other-token "$(cat my_prompts.txt)" --diversity-filter
+```
+
+### Programmatic usage
+
+```rust
+use every_other_token::similarity::{SemanticScorer, DiversityFilter};
+
+// Fit scorer on a corpus and compute similarity
+let corpus = ["cats are mammals", "dogs are mammals", "neural networks"];
+let scorer = SemanticScorer::fit(&corpus);
+let sim = scorer.similarity("cats", "dogs");
+
+// Find top-k most similar candidates
+let results = scorer.most_similar("mammals", &corpus, 2);
+
+// Remove near-duplicate token sequences
+let seqs = vec![
+    vec!["the".into(), "quick".into(), "fox".into()],
+    vec!["the".into(), "fast".into(), "fox".into()],
+];
+let filter = DiversityFilter::new(&seqs);
+let deduped = filter.filter(seqs, 0.85);
+```
+
+## Streaming with Backpressure
+
+`src/stream_compress.rs` provides a streaming token compressor with three
+backpressure strategies.
+
+| Strategy | Behaviour above high-watermark |
+|----------|-------------------------------|
+| `Drop` | Drops new tokens when the buffer is full |
+| `Block` | Signals `Throttled` until the buffer drains below `low_watermark` |
+| `Compress` | Aggressively compresses incoming tokens (keeps every other) |
+
+### Example
+
+```rust
+use every_other_token::stream_compress::{
+    BackpressureConfig, BackpressureStrategy, StreamCompressor,
+};
+
+let config = BackpressureConfig {
+    buffer_size: 1024,
+    high_watermark: 768,
+    low_watermark: 256,
+    strategy: BackpressureStrategy::Compress,
+};
+let mut sc = StreamCompressor::new(config, 0.5);
+
+let result = sc.push(vec!["tok1".into(), "tok2".into()]);
+let compressed = sc.drain();
+let stats = sc.stats();
+println!("ratio: {:.2}", stats.ratio);
+```
 
 ---
 

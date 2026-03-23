@@ -73,6 +73,8 @@ pub mod logit_lens;
 pub mod circuits;
 pub mod steering;
 pub mod cross_model;
+pub mod similarity;
+pub mod stream_compress;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
