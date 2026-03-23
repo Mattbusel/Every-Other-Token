@@ -8,6 +8,13 @@
 //! OpenAI logprob API, and routes the enriched events to a terminal renderer, a
 //! zero-dependency web UI, and an optional WebSocket collaboration room.
 //!
+//! ## New interpretability modules
+//!
+//! | Module | Description |
+//! |--------|-------------|
+//! | [`attention`] | Causal attention tracer — attribution matrix showing which context tokens caused each generated token |
+//! | [`hallucination`] | Hallucination detector — identifies perplexity spikes and confident-but-fragile token positions |
+//!
 //! ## Feature flags
 //!
 //! | Flag | Description |
@@ -30,6 +37,7 @@
 //! cargo run -- "Explain recursion" --research --runs 20 --output results.json
 //! ```
 
+pub mod attribution;
 pub mod cli;
 pub mod collab;
 pub mod comparison;
@@ -44,6 +52,8 @@ pub mod replay;
 pub mod research;
 pub mod semantic_heatmap;
 pub mod store;
+pub mod attention;
+pub mod hallucination;
 pub mod token_dictionary;
 pub mod transforms;
 pub mod web;
