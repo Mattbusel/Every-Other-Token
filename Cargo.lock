@@ -364,6 +364,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "subtle",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

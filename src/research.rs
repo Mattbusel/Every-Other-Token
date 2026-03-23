@@ -1678,6 +1678,10 @@ mod tests {
             json_schema: false,
             list_models: None,
             validate_config: false,
+            sse_buffer_size: 1000,
+            batch: None,
+            export_logprobs: None,
+            compare: None,
         };
         let result = run_research(&args).await;
         assert!(result.is_err());

@@ -1673,6 +1673,8 @@ mod tests {
                 last_activity_ms: now_ms(),
                 recording_cap: 2,
                 broadcast_tx: tx,
+                active_ws_count: 0,
+                last_ws_disconnect_ms: None,
             };
             let _ = room.recording_cap;
             guard.insert(code.clone(), room);

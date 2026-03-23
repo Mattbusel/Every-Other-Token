@@ -69,6 +69,7 @@ tokio-test = "0.4"
 # rstest: parameterized / table-driven test helpers
 rstest = "0.18"
 proptest = "1"
+tempfile = "3"
 
 [lib]
 name = "every_other_token"
