@@ -126,6 +126,8 @@ pub mod knowledge_extractor;
 pub mod evaluation_framework;
 pub mod citation_manager;
 pub mod context_compressor;
+pub mod chain_of_thought;
+pub mod memory_retrieval;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
