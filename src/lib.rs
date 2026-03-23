@@ -123,6 +123,8 @@ pub mod reasoning_tracer;
 pub mod persona_manager;
 pub mod document_parser;
 pub mod knowledge_extractor;
+pub mod evaluation_framework;
+pub mod citation_manager;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
