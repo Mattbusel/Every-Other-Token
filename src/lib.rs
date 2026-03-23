@@ -104,6 +104,8 @@ pub mod model_switcher;
 pub mod request_router;
 pub mod adaptive_sampling;
 pub mod result_aggregator;
+pub mod chain_validator;
+pub mod few_shot_selector;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
