@@ -110,6 +110,8 @@ pub mod hallucination_detector;
 pub mod response_enhancer;
 pub mod debate_engine;
 pub mod fact_checker;
+pub mod prompt_compression;
+pub mod context_retriever;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
