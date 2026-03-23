@@ -81,6 +81,8 @@ pub mod stats;
 pub mod benchmark;
 pub mod context;
 pub mod vocab;
+pub mod compression;
+pub mod router;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
