@@ -98,6 +98,8 @@ pub mod context_optimizer;
 pub mod output_parser;
 pub mod prompt_library;
 pub mod token_budget;
+pub mod conversation_memory;
+pub mod prompt_mutation;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
