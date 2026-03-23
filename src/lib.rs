@@ -92,6 +92,8 @@ pub mod format_detector;
 pub mod reranker;
 pub mod dialogue_manager;
 pub mod template_gen;
+pub mod cost_aware_router;
+pub mod quality_scorer;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
