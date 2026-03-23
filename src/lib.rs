@@ -106,6 +106,8 @@ pub mod adaptive_sampling;
 pub mod result_aggregator;
 pub mod chain_validator;
 pub mod few_shot_selector;
+pub mod hallucination_detector;
+pub mod response_enhancer;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
