@@ -99,6 +99,7 @@ pub mod output_parser;
 pub mod prompt_library;
 pub mod token_budget;
 pub mod conversation_memory;
+pub mod query_rewriter;
 pub mod prompt_mutation;
 pub mod model_switcher;
 pub mod request_router;
