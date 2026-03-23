@@ -34,6 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && args.compare.is_none()
         && args.similarity.is_none()
         && !args.diversity_filter
+        && !args.stats
+        && !args.benchmark
     {
         eprintln!("[eot] No prompt given — launching web UI at http://localhost:{}", args.port);
         eprintln!("[eot] Tip: set OPENAI_API_KEY or ANTHROPIC_API_KEY in your environment.");
@@ -512,6 +514,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &chunk[..chunk.len().min(8)]
             );
         }
+        return Ok(());
+    }
+
+    // Token statistics mode (--stats)
+    if args.stats {
+        use every_other_token::stats::TokenStats;
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        if tokens.is_empty() {
+            eprintln!("[stats] No tokens to analyse (prompt is empty)");
+            return Ok(());
+        }
+        TokenStats::compute(&tokens).print_summary();
+        return Ok(());
+    }
+
+    // Compression benchmark mode (--benchmark)
+    if args.benchmark {
+        use every_other_token::benchmark::{BenchmarkReport, CompressionBenchmark};
+        let tokens: Vec<String> = args.prompt.split_whitespace().map(|t| t.to_string()).collect();
+        if tokens.is_empty() {
+            eprintln!("[benchmark] No tokens to benchmark (prompt is empty)");
+            return Ok(());
+        }
+        let bench = CompressionBenchmark::with_builtins();
+        let results = bench.run(&tokens);
+        println!("{}", BenchmarkReport::render_table(&results));
         return Ok(());
     }
 

@@ -286,6 +286,14 @@ pub struct Args {
     /// Example: --chunk fixed:50  or  --chunk sentence
     #[arg(long, value_name = "STRATEGY")]
     pub chunk: Option<String>,
+
+    /// Print sequence statistics (length, entropy, top tokens, hapax count, …) for the prompt tokens.
+    #[arg(long)]
+    pub stats: bool,
+
+    /// Run the built-in compression benchmarks and print a ranked ASCII table.
+    #[arg(long)]
+    pub benchmark: bool,
 }
 
 /// Select the appropriate default model for the given provider when the user

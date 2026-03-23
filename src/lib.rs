@@ -77,6 +77,8 @@ pub mod similarity;
 pub mod stream_compress;
 pub mod importance;
 pub mod chunking;
+pub mod stats;
+pub mod benchmark;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
