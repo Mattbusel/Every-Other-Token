@@ -81,6 +81,8 @@ Self-modify (feature = "self-modify")
 | `comparison.rs` | Cross-model JS divergence, Pearson correlation, structural diff |
 | `semantic_heatmap.rs` | TF-IDF cosine similarity windows → SVG / CSV heatmap |
 | `token_dictionary.rs` | Per-token sentiment dictionary with EMA learning and JSON persistence |
+| `attention.rs` | Causal attention tracer — attribution matrix showing which context tokens caused each generated token |
+| `hallucination.rs` | Hallucination detector — perplexity spike detection and confident-but-fragile position identification |
 | `replay.rs` | JSON recording and deterministic replay |
 | `render.rs` | Terminal ANSI colouring, confidence indicators, visual-mode formatting |
 | `config.rs` | `~/.eot.toml` / `./.eot.toml` config file with merge semantics |
@@ -535,6 +537,70 @@ cp.delete().await?;
 
 Checkpoints are written atomically (write to `.tmp` then rename) to prevent
 corruption from partial writes.
+
+---
+
+## Causal Attention Tracing
+
+The `attention` module approximates which tokens in the context *caused* each
+generated token by computing a logit-attribution score: the difference in
+log-probability between a full-context forward pass and a masked-context pass.
+
+```rust,no_run
+use every_other_token::attention::{AttributionConfig, CausalAttentionTracer};
+
+let tracer = CausalAttentionTracer::new(AttributionConfig::default());
+
+// Feed generated tokens with their logprobs
+let context_tokens = vec!["The", "capital", "of", "France", "is"];
+let generated = vec![("Paris", -0.1_f32), (".", -0.5)];
+
+// Build attribution matrix (context_len × generated_len)
+let matrix = tracer.attribute(&context_tokens, &generated);
+println!("{}", matrix.ascii_heatmap(3)); // top-3 attributions per generated token
+```
+
+The resulting `AttributionMatrix` shows, for each generated token, which context
+tokens had the greatest causal influence — useful for detecting when the model
+ignores key facts or relies on spurious context.
+
+---
+
+## Hallucination Detection
+
+The `hallucination` module identifies positions where the model is likely
+generating unreliable content using two complementary signals:
+
+1. **Perplexity spikes** — sudden drops in confidence relative to the local
+   rolling baseline (Z-score threshold configurable).
+2. **Confident-but-fragile** — high-confidence tokens that produce a
+   different top token when the prompt is paraphrased.
+
+```rust,no_run
+use every_other_token::hallucination::{DetectorConfig, HallucinationDetector, TokenSample};
+
+let detector = HallucinationDetector::new(DetectorConfig {
+    perplexity_zscore_threshold: 2.5,
+    window: 20,
+    ..Default::default()
+});
+
+let tokens = vec![
+    TokenSample { token: "The".into(),     logprob: -0.05, position: 0 },
+    TokenSample { token: "Eiffel".into(),  logprob: -0.10, position: 1 },
+    TokenSample { token: "Tower".into(),   logprob: -0.08, position: 2 },
+    TokenSample { token: "weighs".into(),  logprob: -2.80, position: 3 }, // spike!
+    TokenSample { token: "7300".into(),    logprob: -3.50, position: 4 }, // spike!
+];
+
+let events = detector.analyze(&tokens);
+for evt in &events {
+    println!(
+        "[{}] position {} '{}' — perplexity spike (z={:.2})",
+        evt.kind, evt.position, evt.token, evt.zscore
+    );
+}
+```
 
 ---
 
