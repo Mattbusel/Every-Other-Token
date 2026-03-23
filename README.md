@@ -673,6 +673,102 @@ CI enforces formatting, Clippy, the full test suite, and a release build before 
 
 ---
 
+## Batch Processing
+
+The `batch` module (`src/batch.rs`) provides a priority-queue-based concurrent pipeline for compressing many token sequences at once.
+
+### Data types
+
+| Type | Description |
+|------|-------------|
+| `BatchJob` | A single job: `id`, `tokens`, `priority`, `submitted_at` |
+| `BatchResult` | Output: `job_id`, `compressed`, `original_len`, `compressed_len`, `ratio`, `elapsed_ms` |
+| `BatchConfig` | `max_concurrent`, `queue_capacity`, `timeout` |
+| `BatchStats` | Aggregate: `jobs_submitted`, `jobs_completed`, `jobs_failed`, `avg_ratio`, `throughput_tokens_per_sec` |
+
+### Usage
+
+```bash
+# Process a JSONL file where each line is a JSON array of tokens
+every-other-token --batch-tokens tokens.jsonl
+```
+
+Each line of `tokens.jsonl` should be a JSON array:
+```json
+["The", "quick", "brown", "fox"]
+["Hello", "world", "from", "every", "other", "token"]
+```
+
+Results are streamed to stdout as JSONL. Aggregate stats are printed to stderr.
+
+### API example
+
+```rust
+use every_other_token::batch::{BatchConfig, BatchProcessor};
+use tokio_stream::StreamExt;
+use std::time::Duration;
+
+let config = BatchConfig { max_concurrent: 8, queue_capacity: 256, timeout: Duration::from_secs(30) };
+let mut processor = BatchProcessor::new(config);
+processor.submit(vec!["hello".into(), "world".into()], 10); // priority 10
+let mut stream = processor.run();
+while let Some(result) = stream.next().await {
+    println!("job {} ratio={:.2}", result.job_id, result.ratio);
+}
+```
+
+Higher-priority jobs are processed first via a `BinaryHeap`. Concurrent execution is bounded by `max_concurrent`.
+
+---
+
+## Quality-Adaptive Compression
+
+The `adaptive` module (`src/adaptive.rs`) measures and optimises the quality of token-level compression.
+
+### Quality model
+
+```
+overall_score = 0.4 * semantic_preservation
+              + 0.4 * syntax_validity
+              + 0.2 * (1 - ratio)
+```
+
+| Metric | Description |
+|--------|-------------|
+| `semantic_preservation` | Fraction of content words (non-stopwords) preserved |
+| `syntax_validity` | Heuristic — penalises consecutive punctuation tokens |
+| `ratio` | `compressed_len / original_len` — lower means more compressed |
+| `overall_score` | Weighted combination (higher is better) |
+
+### Usage
+
+```bash
+# Print quality metrics for the compression applied to a prompt
+every-other-token "The quick brown fox jumps" --quality
+```
+
+### API example
+
+```rust
+use every_other_token::adaptive::{AdaptiveCompressor, CompressionTarget, QualityMetric};
+
+let tokens: Vec<String> = "machine learning transforms science".split_whitespace()
+    .map(String::from).collect();
+
+// Measure quality of any compression
+let compressed = vec!["machine".into(), "transforms".into()];
+let q = QualityMetric::measure(&tokens, &compressed);
+println!("score={:.3}", q.overall_score);
+
+// Adaptive: binary-search for the best compression meeting a quality bar
+let compressor = AdaptiveCompressor::new();
+let target = CompressionTarget { min_quality: 0.5, target_ratio: 0.5 };
+let (compressed, quality) = compressor.compress(&tokens, &target);
+println!("compressed to {} tokens with score={:.3}", compressed.len(), quality.overall_score);
+```
+
+---
+
 ## License
 
 MIT -- see [LICENSE](LICENSE) for details.
