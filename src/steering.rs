@@ -110,6 +110,12 @@ impl SteeringVector {
 
     /// Apply this vector to a logprob map, returning the steered distribution.
     pub fn apply_to_logprobs(&self, logprobs: &HashMap<String, f64>) -> HashMap<String, f64> {
+        // Fast path: if all components are zero (e.g. alpha=0), return the original unchanged.
+        let all_zero = self.components.values().all(|&v| v == 0.0);
+        if all_zero {
+            return logprobs.clone();
+        }
+
         let mut result = logprobs.clone();
         for (token, shift) in &self.components {
             let entry = result.entry(token.clone()).or_insert(-10.0);
