@@ -565,8 +565,8 @@ mod tests {
     fn causal_influence_map_no_change() {
         let s = toks(&["a", "b", "c"]);
         let map = causal_influence_map(&s, &s);
-        for (_, &v) in map.iter().enumerate() {
-            assert_eq!(v, 0.0);
+        for (_, v) in map.iter().enumerate() {
+            assert_eq!(*v, 0.0);
         }
     }
 
