@@ -100,6 +100,8 @@ pub mod prompt_library;
 pub mod token_budget;
 pub mod conversation_memory;
 pub mod prompt_mutation;
+pub mod model_switcher;
+pub mod request_router;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
