@@ -229,6 +229,29 @@ pub struct Args {
     /// Validate configuration (print resolved values and exit).
     #[arg(long)]
     pub validate_config: bool,
+
+    /// Maximum number of tokens to buffer in the SSE stream before dropping oldest (default: 1000).
+    /// When the buffer is full, the oldest token is dropped and a BUFFER_OVERFLOW sentinel event
+    /// is emitted to the client.
+    #[arg(long, default_value = "1000")]
+    pub sse_buffer_size: usize,
+
+    /// Path to a JSONL file for batch research mode. Each line must be JSON:
+    /// {"prompt": "...", "model": "gpt-4o", "transforms": ["drop_every_other"]}
+    /// Results are saved to batch_results_<timestamp>.jsonl.
+    #[arg(long)]
+    pub batch: Option<String>,
+
+    /// Export per-token logprob data to a CSV file during a session.
+    /// Columns: token,logprob,rank,model,timestamp
+    #[arg(long)]
+    pub export_logprobs: Option<String>,
+
+    /// Comma-separated list of models to compare with the same prompt.
+    /// Runs the prompt through each model and shows a divergence heatmap.
+    /// Example: --compare gpt-4o,gpt-4o-mini
+    #[arg(long)]
+    pub compare: Option<String>,
 }
 
 /// Select the appropriate default model for the given provider when the user

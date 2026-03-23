@@ -225,7 +225,7 @@ fn parse_stream_params(query: &std::collections::HashMap<String, String>) -> Str
 /// - `GET /ab-stream?prompt=...&system_a=...&system_b=...`  
 ///   SSE stream for A/B experiment mode.
 ///
-/// - `POST /room/create` — Creates a multiplayer room, returns `{"code":"XXXXXX"}`.
+/// - `POST /room/create` — Creates a multiplayer room, returns `{"code":"SWIFT-LION-42","room_id":"<uuid>","ws_url":"/ws/SWIFT-LION-42"}`.
 ///
 /// - `GET /join/CODE` — Returns room join HTML page.
 ///
@@ -274,11 +274,12 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     let default_provider = default_args.provider.clone();
     let orchestrator = default_args.orchestrator;
     let api_key: Option<String> = default_args.api_key.clone();
+    let sse_buffer_size = default_args.sse_buffer_size;
 
     let room_store = crate::collab::new_room_store();
     let rate_limiter = new_rate_limiter();
 
-    // Background task: evict idle rooms every 5 minutes.
+    // Background task: evict idle rooms every 5 minutes; evict abandoned rooms every minute.
     {
         let cleanup_store = room_store.clone();
         tokio::spawn(async move {
@@ -286,6 +287,16 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
             loop {
                 interval.tick().await;
                 crate::collab::evict_idle_rooms(&cleanup_store);
+            }
+        });
+    }
+    {
+        let abandoned_store = room_store.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                crate::collab::evict_abandoned_rooms(&abandoned_store);
             }
         });
     }
@@ -332,8 +343,9 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
         let conn_api_key = api_key.clone();
         let limiter = rate_limiter.clone();
         let peer_ip = addr.ip();
+        let buf_sz = sse_buffer_size;
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key, limiter, peer_ip).await {
+            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key, limiter, peer_ip, buf_sz).await {
                 eprintln!("  connection error: {}", e);
             }
         });
@@ -348,6 +360,7 @@ async fn handle_connection(
     api_key: Option<String>,
     limiter: RateLimiter,
     peer_ip: IpAddr,
+    sse_buffer_size: usize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::AsyncReadExt;
 
@@ -551,10 +564,16 @@ async fn handle_connection(
                 let _ = interceptor.intercept_stream(&prompt_clone).await;
             });
 
-            // Forward token events as SSE; also fan-out to collab room if active.
+            // Forward token events as SSE with bounded backpressure buffer.
+            // When the buffer exceeds sse_buffer_size, the oldest token is dropped
+            // and a BUFFER_OVERFLOW sentinel event is emitted.
             // Abort the LLM background task immediately on client disconnect to
             // avoid making unnecessary API calls for a dropped connection.
             let mut client_disconnected = false;
+            let mut token_buffer: std::collections::VecDeque<TokenEvent> =
+                std::collections::VecDeque::new();
+            let mut overflow_emitted = false;
+
             while let Some(event) = rx.recv().await {
                 if let Some(ref code) = stream_room_code {
                     if let Ok(token_val) = serde_json::to_value(&event) {
@@ -562,12 +581,36 @@ async fn handle_connection(
                         crate::collab::maybe_record(&store, code, token_val);
                     }
                 }
-                if let Ok(json) = serde_json::to_string(&event) {
-                    let sse = format!("data: {}\n\n", json);
-                    if stream.write_all(sse.as_bytes()).await.is_err() {
-                        client_disconnected = true;
-                        break;
+
+                // Buffer management: drop oldest when full, emit overflow sentinel once
+                if token_buffer.len() >= sse_buffer_size {
+                    token_buffer.pop_front(); // drop oldest
+                    if !overflow_emitted {
+                        let sentinel =
+                            "event: BUFFER_OVERFLOW\ndata: {\"type\":\"BUFFER_OVERFLOW\",\"dropped\":1}\n\n";
+                        if stream.write_all(sentinel.as_bytes()).await.is_err() {
+                            client_disconnected = true;
+                            break;
+                        }
+                        overflow_emitted = true;
                     }
+                } else {
+                    overflow_emitted = false; // reset once buffer drains
+                }
+                token_buffer.push_back(event);
+
+                // Drain the buffer and write events
+                while let Some(buffered) = token_buffer.pop_front() {
+                    if let Ok(json) = serde_json::to_string(&buffered) {
+                        let sse = format!("data: {}\n\n", json);
+                        if stream.write_all(sse.as_bytes()).await.is_err() {
+                            client_disconnected = true;
+                            break;
+                        }
+                    }
+                }
+                if client_disconnected {
+                    break;
                 }
             }
 
@@ -803,7 +846,8 @@ async fn handle_connection(
                 return Ok(());
             }
             let code = crate::collab::create_room(&store);
-            let body = format!(r#"{{"code":"{}","ws_url":"/ws/{}"}}"#, code, code);
+            let room_id = uuid::Uuid::new_v4().to_string();
+            let body = format!(r#"{{"code":"{}","room_id":"{}","ws_url":"/ws/{}"}}"#, code, room_id, code);
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
                 body.len(),
