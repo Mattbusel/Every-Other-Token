@@ -23,7 +23,7 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 
 /// Metrics collected from a single research run.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 pub struct ResearchRun {
     /// Zero-based index of this run within the session.
     pub run_index: u32,
@@ -60,7 +60,7 @@ pub struct ResearchRun {
 }
 
 /// Top-level JSON output written by [`run_research`].
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 pub struct ResearchOutput {
     /// Monotonically increasing version number; consumers should check this before parsing.
     pub schema_version: u8,
@@ -77,7 +77,7 @@ pub struct ResearchOutput {
 }
 
 /// Cross-run aggregate statistics, appended to every [`ResearchOutput`].
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, serde::Deserialize)]
 pub struct ResearchAggregate {
     /// Total number of runs requested (may differ from `runs.len()` on early exit).
     /// Total number of runs requested (may differ from `runs.len()` on early exit).
