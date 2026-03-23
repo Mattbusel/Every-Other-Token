@@ -75,6 +75,8 @@ pub mod steering;
 pub mod cross_model;
 pub mod similarity;
 pub mod stream_compress;
+pub mod importance;
+pub mod chunking;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;
