@@ -48,6 +48,7 @@ pub mod divergence;
 pub mod error;
 pub mod heatmap;
 pub mod intervention;
+pub mod mutation_lab;
 pub mod providers;
 pub mod bayesian;
 pub mod checkpoint;
