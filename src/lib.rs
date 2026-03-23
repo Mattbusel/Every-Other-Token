@@ -54,6 +54,8 @@ pub mod semantic_heatmap;
 pub mod store;
 pub mod attention;
 pub mod hallucination;
+pub mod sensitivity;
+pub mod experiments;
 pub mod token_dictionary;
 pub mod transforms;
 pub mod web;
