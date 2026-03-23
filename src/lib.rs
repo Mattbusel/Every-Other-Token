@@ -125,6 +125,7 @@ pub mod document_parser;
 pub mod knowledge_extractor;
 pub mod evaluation_framework;
 pub mod citation_manager;
+pub mod context_compressor;
 
 #[cfg(feature = "self-tune")]
 pub mod self_tune;

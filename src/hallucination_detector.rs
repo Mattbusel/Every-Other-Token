@@ -1,357 +1,467 @@
-//! Hallucination detection via self-consistency and grounding.
+//! Fact consistency checking for LLM outputs.
+//!
+//! Provides [`HallucinationDetector`] which can optionally be seeded with a
+//! source document.  It extracts entity mentions and claims from LLM output,
+//! checks them for grounding in the source (if provided), and measures
+//! internal consistency to produce a [`HallucinationReport`].
 
-use std::collections::HashSet;
+// ── EntityMention ─────────────────────────────────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Core data structures
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct GroundingSource {
-    pub id: String,
-    pub content: String,
-    pub credibility: f64, // 0..1
-}
-
-#[derive(Debug, Clone)]
-pub struct ConsistencyCheck {
-    pub statements: Vec<String>,
-    pub agreement_threshold: f64,
-}
-
-#[derive(Debug, Clone)]
-pub enum HallucinationIndicator {
-    Uncertainty(f64),
-    Contradiction { stmt_a: String, stmt_b: String },
-    UngroundedClaim(String),
-    ExcessiveHedging,
-    ConfidenceCalibrationIssue,
-}
-
-#[derive(Debug, Clone)]
-pub struct HallucinationReport {
+/// A named entity or numeric pattern found in text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityMention {
+    /// The surface form of the entity as it appeared in the text.
     pub text: String,
-    pub indicators: Vec<HallucinationIndicator>,
-    pub risk_score: f64,
-    pub grounded_fraction: f64,
+    /// Byte offset of the start of the mention (inclusive).
+    pub start: usize,
+    /// Byte offset of the end of the mention (exclusive).
+    pub end: usize,
+    /// Coarse entity type (`"PROPER_NOUN"`, `"DATE"`, `"PERCENT"`,
+    /// `"QUANTITY"`, or `"NUMBER"`).
+    pub entity_type: String,
 }
 
-// ---------------------------------------------------------------------------
-// Detector
-// ---------------------------------------------------------------------------
+// ── Claim extraction ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct HallucinationDetector {
-    pub sources: Vec<GroundingSource>,
-    pub uncertainty_phrases: Vec<String>,
-    pub contradiction_pairs: Vec<(String, String)>,
+/// Split `text` into sentences and return those that contain numbers or
+/// probable proper nouns (words starting with an uppercase letter that are
+/// not the first word of the sentence).
+pub fn extract_claims(text: &str) -> Vec<String> {
+    let sentences: Vec<&str> = text
+        .split(|c| c == '.' || c == '!' || c == '?')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    sentences
+        .into_iter()
+        .filter(|s| {
+            // Keep sentences that have a digit or a capitalised mid-sentence word
+            let has_digit = s.chars().any(|c| c.is_ascii_digit());
+            let has_proper = s.split_whitespace().skip(1).any(|w| {
+                w.chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false)
+            });
+            has_digit || has_proper
+        })
+        .map(str::to_owned)
+        .collect()
 }
 
-impl HallucinationDetector {
-    pub fn new() -> Self {
-        Self {
-            sources: Vec::new(),
-            uncertainty_phrases: vec![
-                "I think".to_string(),
-                "I believe".to_string(),
-                "possibly".to_string(),
-                "might".to_string(),
-                "could be".to_string(),
-                "I'm not sure".to_string(),
-                "approximately".to_string(),
-                "roughly".to_string(),
-            ],
-            contradiction_pairs: vec![
-                ("always".to_string(), "never".to_string()),
-                ("all".to_string(), "none".to_string()),
-                ("every".to_string(), "no".to_string()),
-                ("definitely".to_string(), "possibly".to_string()),
-            ],
-        }
-    }
+// ── Entity extraction ─────────────────────────────────────────────────────────
 
-    /// Count phrase hits / total words, clamped [0, 1].
-    pub fn detect_uncertainty(text: &str, phrases: &[String]) -> f64 {
-        if text.is_empty() {
-            return 0.0;
+/// Extract entity mentions from `text` using simple heuristics:
+///
+/// * Capitalised multi-word sequences (not at sentence start) → `PROPER_NOUN`
+/// * `DD Month YYYY` or `YYYY-MM-DD` patterns → `DATE`
+/// * Numbers followed by `%` → `PERCENT`
+/// * Numbers followed by a unit word (km, kg, mi, lb, …) → `QUANTITY`
+/// * Standalone integers / decimals → `NUMBER`
+pub fn extract_entities(text: &str) -> Vec<EntityMention> {
+    let mut entities = Vec::new();
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        // Skip whitespace
+        if bytes[i].is_ascii_whitespace() {
+            i += 1;
+            continue;
         }
-        let lower = text.to_lowercase();
-        let total_words = text.split_whitespace().count();
-        if total_words == 0 {
-            return 0.0;
-        }
-        let mut hits = 0usize;
-        for phrase in phrases {
-            let phrase_lower = phrase.to_lowercase();
-            let mut start = 0;
-            while let Some(pos) = lower[start..].find(phrase_lower.as_str()) {
-                hits += 1;
-                start += pos + phrase_lower.len().max(1);
+
+        // Numeric patterns
+        if bytes[i].is_ascii_digit() || (bytes[i] == b'-' && i + 1 < len && bytes[i + 1].is_ascii_digit()) {
+            let start = i;
+            while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b'.' || bytes[i] == b'-') {
+                i += 1;
             }
-        }
-        (hits as f64 / total_words as f64).min(1.0)
-    }
-
-    /// Detect contradictory word pairs within the text.
-    pub fn detect_contradictions(
-        text: &str,
-        pairs: &[(&str, &str)],
-    ) -> Vec<HallucinationIndicator> {
-        let lower = text.to_lowercase();
-        let words: HashSet<&str> = lower.split_whitespace().collect();
-        let mut indicators = Vec::new();
-        for (a, b) in pairs {
-            let a_lower = a.to_lowercase();
-            let b_lower = b.to_lowercase();
-            if words.contains(a_lower.as_str()) && words.contains(b_lower.as_str()) {
-                indicators.push(HallucinationIndicator::Contradiction {
-                    stmt_a: a.to_string(),
-                    stmt_b: b.to_string(),
-                });
-            }
-        }
-        indicators
-    }
-
-    /// Ground a statement against sources.
-    /// Returns max(credibility * word_overlap) across all sources.
-    pub fn ground_statement(statement: &str, sources: &[GroundingSource]) -> f64 {
-        if sources.is_empty() || statement.is_empty() {
-            return 0.0;
-        }
-        let stmt_words: HashSet<String> = statement
-            .to_lowercase()
-            .split_whitespace()
-            .map(|w| w.to_string())
-            .collect();
-
-        let mut best = 0.0f64;
-        for src in sources {
-            let src_words: HashSet<String> = src
-                .content
-                .to_lowercase()
+            // Peek at what follows
+            let after = &text[i..];
+            let after_trimmed = after.trim_start();
+            let entity_type = if after_trimmed.starts_with('%') {
+                i += 1 + (after.len() - after_trimmed.len()); // consume '%'
+                "PERCENT"
+            } else if after_trimmed
                 .split_whitespace()
-                .map(|w| w.to_string())
-                .collect();
-
-            let intersection = stmt_words.intersection(&src_words).count();
-            let union = stmt_words.union(&src_words).count();
-            let overlap = if union == 0 {
-                0.0
+                .next()
+                .map(|w| matches!(w, "km" | "kg" | "mi" | "lb" | "ms" | "s" | "m" | "ft" | "l"))
+                .unwrap_or(false)
+            {
+                "QUANTITY"
             } else {
-                intersection as f64 / union as f64
+                "NUMBER"
             };
-            let score = src.credibility * overlap;
-            if score > best {
-                best = score;
-            }
+            entities.push(EntityMention {
+                text: text[start..i].to_owned(),
+                start,
+                end: i,
+                entity_type: entity_type.to_owned(),
+            });
+            continue;
         }
-        best
+
+        // Capitalised word (potential proper noun or date)
+        if bytes[i].is_ascii_uppercase() {
+            let start = i;
+            // Consume the first word
+            while i < len && !bytes[i].is_ascii_whitespace() && bytes[i] != b'.' {
+                i += 1;
+            }
+            let first_word = &text[start..i];
+
+            // Check for month name (date pattern)
+            let months = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December",
+            ];
+            if months.contains(&first_word) {
+                // Consume rest of date-like sequence
+                let date_end_start = i;
+                while i < len && (bytes[i].is_ascii_digit() || bytes[i].is_ascii_whitespace() || bytes[i] == b',') {
+                    i += 1;
+                }
+                if i > date_end_start {
+                    entities.push(EntityMention {
+                        text: text[start..i].trim().to_owned(),
+                        start,
+                        end: i,
+                        entity_type: "DATE".to_owned(),
+                    });
+                    continue;
+                }
+                i = date_end_start; // reset if nothing followed
+            }
+
+            // Try to accumulate a multi-word proper noun
+            let mut end = i;
+            loop {
+                // Skip whitespace
+                let ws_start = end;
+                while end < len && bytes[end] == b' ' {
+                    end += 1;
+                }
+                // Next word starts with uppercase?
+                if end < len && bytes[end].is_ascii_uppercase() {
+                    while end < len && !bytes[end].is_ascii_whitespace() && bytes[end] != b'.' {
+                        end += 1;
+                    }
+                } else {
+                    end = ws_start; // revert whitespace skip
+                    break;
+                }
+            }
+            i = end;
+            entities.push(EntityMention {
+                text: text[start..i].trim().to_owned(),
+                start,
+                end: i,
+                entity_type: "PROPER_NOUN".to_owned(),
+            });
+            continue;
+        }
+
+        i += 1;
     }
 
-    /// Run all detectors and produce a full report.
-    pub fn analyze(&self, text: &str) -> HallucinationReport {
-        let mut indicators: Vec<HallucinationIndicator> = Vec::new();
+    entities
+}
 
-        // Uncertainty
-        let uncertainty_score = Self::detect_uncertainty(text, &self.uncertainty_phrases);
-        if uncertainty_score > 0.0 {
-            indicators.push(HallucinationIndicator::Uncertainty(uncertainty_score));
+// ── GroundingChecker ──────────────────────────────────────────────────────────
+
+/// Checks whether claims can be grounded in a source document.
+pub struct GroundingChecker {
+    /// The source text used as the ground truth.
+    pub source_text: String,
+    /// Entities extracted from `source_text`.
+    pub source_entities: Vec<EntityMention>,
+}
+
+impl GroundingChecker {
+    /// Create a new grounding checker seeded with `source`.
+    pub fn new(source: &str) -> Self {
+        let source_entities = extract_entities(source);
+        Self {
+            source_text: source.to_owned(),
+            source_entities,
         }
+    }
 
-        // Excessive hedging (uncertainty very high)
-        if uncertainty_score > 0.3 {
-            indicators.push(HallucinationIndicator::ExcessiveHedging);
+    /// Return a confidence score in `[0.0, 1.0]` that `claim` is grounded in
+    /// the source document.
+    ///
+    /// Heuristic: fraction of words in `claim` that also appear in
+    /// `source_text` (case-insensitive), boosted when numeric entities in the
+    /// claim are also present verbatim in the source.
+    pub fn check_claim(&self, claim: &str) -> f64 {
+        let claim_words: Vec<&str> = claim.split_whitespace().collect();
+        if claim_words.is_empty() {
+            return 1.0;
         }
-
-        // Contradictions
-        let pairs_ref: Vec<(&str, &str)> = self
-            .contradiction_pairs
+        let source_lower = self.source_text.to_lowercase();
+        let matched = claim_words
             .iter()
-            .map(|(a, b)| (a.as_str(), b.as_str()))
-            .collect();
-        let contradictions = Self::detect_contradictions(text, &pairs_ref);
-        indicators.extend(contradictions);
+            .filter(|w| source_lower.contains(&w.to_lowercase()))
+            .count();
+        let word_score = matched as f64 / claim_words.len() as f64;
 
-        // Grounding per sentence
+        // Entity grounding boost
+        let claim_entities = extract_entities(claim);
+        let entity_score = if claim_entities.is_empty() {
+            1.0
+        } else {
+            let grounded = claim_entities
+                .iter()
+                .filter(|e| self.source_text.contains(&e.text))
+                .count();
+            grounded as f64 / claim_entities.len() as f64
+        };
+
+        (word_score + entity_score) / 2.0
+    }
+}
+
+// ── ConsistencyChecker ────────────────────────────────────────────────────────
+
+/// Checks a single text for internal consistency.
+pub struct ConsistencyChecker;
+
+impl ConsistencyChecker {
+    /// Create a new consistency checker.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Return a consistency score in `[0.0, 1.0]` for `text`.
+    ///
+    /// Penalises:
+    /// * The same entity appearing with conflicting numeric values.
+    /// * Negation words (`not`, `never`, `no`) in close proximity to
+    ///   repeated positive assertions.
+    pub fn check_internal_consistency(&self, text: &str) -> f64 {
+        let entities = extract_entities(text);
+        let mut contradictions = 0usize;
+        let mut checks = 0usize;
+
+        // Look for numeric entities with the same preceding context word but
+        // different values.
         let sentences: Vec<&str> = text
             .split(|c| c == '.' || c == '!' || c == '?')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
             .collect();
 
-        let total_sentences = sentences.len().max(1);
-        let mut grounded_count = 0usize;
-        for sentence in &sentences {
-            let g = Self::ground_statement(sentence, &self.sources);
-            if g < 0.05 && !self.sources.is_empty() {
-                indicators.push(HallucinationIndicator::UngroundedClaim(
-                    sentence.to_string(),
-                ));
-            } else {
-                grounded_count += 1;
+        let mut entity_values: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
+
+        for entity in entities.iter().filter(|e| {
+            matches!(e.entity_type.as_str(), "NUMBER" | "PERCENT" | "QUANTITY")
+        }) {
+            if let Ok(v) = entity.text.trim_end_matches('%').parse::<f64>() {
+                // Use the word immediately before the entity as a "key"
+                let before = &text[..entity.start];
+                let key = before
+                    .split_whitespace()
+                    .last()
+                    .unwrap_or("_")
+                    .to_lowercase();
+                entity_values.entry(key).or_default().push(v);
             }
         }
 
-        let grounded_fraction = if self.sources.is_empty() {
-            1.0 // no sources provided — cannot assess grounding
-        } else {
-            grounded_count as f64 / total_sentences as f64
-        };
-
-        // Confidence calibration issue: low grounding but no uncertainty phrases
-        if grounded_fraction < 0.5 && uncertainty_score < 0.05 && !self.sources.is_empty() {
-            indicators.push(HallucinationIndicator::ConfidenceCalibrationIssue);
+        for (_key, vals) in &entity_values {
+            if vals.len() > 1 {
+                checks += 1;
+                let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+                let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                // Flag if the ratio differs by more than 20 %
+                if min > 0.0 && (max - min) / min > 0.20 {
+                    contradictions += 1;
+                }
+            }
         }
 
-        // Risk score: weighted combination
-        let contradiction_weight = indicators
-            .iter()
-            .filter(|i| matches!(i, HallucinationIndicator::Contradiction { .. }))
-            .count() as f64
-            * 0.3;
-        let ungrounded_weight = if self.sources.is_empty() {
-            0.0
-        } else {
-            (1.0 - grounded_fraction) * 0.4
-        };
-        let uncertainty_weight = uncertainty_score * 0.2;
-        let calibration_weight = if indicators
-            .iter()
-            .any(|i| matches!(i, HallucinationIndicator::ConfidenceCalibrationIssue))
-        {
-            0.2
-        } else {
-            0.0
-        };
-
-        let risk_score =
-            (contradiction_weight + ungrounded_weight + uncertainty_weight + calibration_weight)
-                .min(1.0);
-
-        HallucinationReport {
-            text: text.to_string(),
-            indicators,
-            risk_score,
-            grounded_fraction,
+        // Check for negation proximity contradiction
+        let negation_words = ["not", "never", "no", "cannot", "doesn't", "isn't", "wasn't"];
+        for (i, sent) in sentences.iter().enumerate() {
+            let has_neg = negation_words.iter().any(|n| sent.to_lowercase().contains(n));
+            if has_neg && i + 1 < sentences.len() {
+                let next = sentences[i + 1].to_lowercase();
+                let words_i: std::collections::HashSet<&str> =
+                    sent.split_whitespace().collect();
+                let shared = next
+                    .split_whitespace()
+                    .filter(|w| words_i.contains(*w))
+                    .count();
+                if shared > 2 {
+                    checks += 1;
+                    contradictions += 1;
+                }
+            }
         }
-    }
 
-    /// Classify risk score into a human-readable level.
-    pub fn risk_level(score: f64) -> &'static str {
-        if score < 0.3 {
-            "low"
-        } else if score < 0.6 {
-            "medium"
+        if checks == 0 {
+            1.0
         } else {
-            "high"
+            1.0 - (contradictions as f64 / checks as f64)
         }
     }
 }
 
-impl Default for HallucinationDetector {
+impl Default for ConsistencyChecker {
     fn default() -> Self {
         Self::new()
     }
 }
 
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
+// ── HallucinationReport ───────────────────────────────────────────────────────
+
+/// Summary of a hallucination analysis pass.
+#[derive(Debug, Clone)]
+pub struct HallucinationReport {
+    /// Weighted average of grounding and consistency scores.
+    pub overall_score: f64,
+    /// Fraction of claims grounded in the source (`1.0` if no source).
+    pub grounding_score: f64,
+    /// Internal consistency score of the output.
+    pub consistency_score: f64,
+    /// Sentences/claims that appear poorly grounded.
+    pub suspicious_claims: Vec<String>,
+    /// `(claim_entity, nearest_source_entity)` pairs where values differ.
+    pub entity_mismatches: Vec<(String, String)>,
+}
+
+impl HallucinationReport {
+    /// Returns `true` if the overall score is below 0.5 (likely hallucinated).
+    pub fn is_likely_hallucinated(&self) -> bool {
+        self.overall_score < 0.5
+    }
+}
+
+// ── HallucinationDetector ─────────────────────────────────────────────────────
+
+/// Top-level hallucination detector.
+pub struct HallucinationDetector {
+    /// Optional grounding checker seeded from a source document.
+    pub grounding_checker: Option<GroundingChecker>,
+    /// Internal consistency checker.
+    pub consistency_checker: ConsistencyChecker,
+}
+
+impl HallucinationDetector {
+    /// Create a new detector, optionally seeded with a source document.
+    pub fn new(source: Option<&str>) -> Self {
+        Self {
+            grounding_checker: source.map(GroundingChecker::new),
+            consistency_checker: ConsistencyChecker::new(),
+        }
+    }
+
+    /// Analyse `output` and return a [`HallucinationReport`].
+    pub fn analyze(&self, output: &str) -> HallucinationReport {
+        let consistency_score = self.consistency_checker.check_internal_consistency(output);
+
+        let (grounding_score, suspicious_claims, entity_mismatches) =
+            if let Some(gc) = &self.grounding_checker {
+                let claims = extract_claims(output);
+                let mut suspicious = Vec::new();
+                let mut mismatches: Vec<(String, String)> = Vec::new();
+
+                let mut total_score = 0.0f64;
+                let n = claims.len();
+
+                for claim in &claims {
+                    let score = gc.check_claim(claim);
+                    total_score += score;
+                    if score < 0.5 {
+                        suspicious.push(claim.clone());
+                    }
+                }
+
+                // Entity mismatch: numeric entities in output not found in source
+                let out_entities = extract_entities(output);
+                for oe in &out_entities {
+                    if matches!(oe.entity_type.as_str(), "NUMBER" | "PERCENT" | "QUANTITY") {
+                        if !gc.source_text.contains(&oe.text) {
+                            // Find the closest numeric entity in source by value
+                            let nearest = gc
+                                .source_entities
+                                .iter()
+                                .filter(|se| {
+                                    matches!(
+                                        se.entity_type.as_str(),
+                                        "NUMBER" | "PERCENT" | "QUANTITY"
+                                    )
+                                })
+                                .min_by_key(|se| {
+                                    let a: f64 =
+                                        oe.text.parse().unwrap_or(0.0);
+                                    let b: f64 = se.text.parse().unwrap_or(0.0);
+                                    ((a - b).abs() as u64)
+                                });
+                            let nearest_text = nearest
+                                .map(|se| se.text.clone())
+                                .unwrap_or_else(|| "(none)".to_owned());
+                            mismatches.push((oe.text.clone(), nearest_text));
+                        }
+                    }
+                }
+
+                let gs = if n > 0 { total_score / n as f64 } else { 1.0 };
+                (gs, suspicious, mismatches)
+            } else {
+                (1.0, Vec::new(), Vec::new())
+            };
+
+        let overall_score = (grounding_score + consistency_score) / 2.0;
+
+        HallucinationReport {
+            overall_score,
+            grounding_score,
+            consistency_score,
+            suspicious_claims,
+            entity_mismatches,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_uncertainty_phrase_detection() {
-        let detector = HallucinationDetector::new();
-        let text = "I think this might be correct, possibly even roughly accurate.";
-        let score = HallucinationDetector::detect_uncertainty(text, &detector.uncertainty_phrases);
-        assert!(score > 0.0, "Expected nonzero uncertainty score");
-        assert!(score <= 1.0, "Score must be clamped to 1.0");
+    fn extract_claims_finds_numeric_sentences() {
+        let text = "The sky is blue. The population is 8 billion people. Hello world.";
+        let claims = extract_claims(text);
+        assert!(claims.iter().any(|c| c.contains("8 billion")));
     }
 
     #[test]
-    fn test_uncertainty_empty_text() {
-        let detector = HallucinationDetector::new();
-        let score = HallucinationDetector::detect_uncertainty("", &detector.uncertainty_phrases);
-        assert_eq!(score, 0.0);
+    fn extract_entities_finds_number() {
+        let entities = extract_entities("The temperature is 42 degrees.");
+        assert!(entities.iter().any(|e| e.text == "42" && e.entity_type == "NUMBER"));
     }
 
     #[test]
-    fn test_contradiction_detection() {
-        let pairs: Vec<(&str, &str)> = vec![("always", "never"), ("all", "none")];
-        let text = "It always works but sometimes never does.";
-        let indicators = HallucinationDetector::detect_contradictions(text, &pairs);
-        assert!(
-            indicators.len() >= 1,
-            "Expected at least one contradiction indicator"
-        );
-        let has_always_never = indicators.iter().any(|i| {
-            matches!(i, HallucinationIndicator::Contradiction { stmt_a, stmt_b }
-                if stmt_a == "always" && stmt_b == "never")
-        });
-        assert!(has_always_never, "Expected always/never contradiction");
+    fn grounding_checker_high_score_on_match() {
+        let source = "The GDP of France is 2.7 trillion USD in 2023.";
+        let gc = GroundingChecker::new(source);
+        let score = gc.check_claim("The GDP of France is 2.7 trillion USD.");
+        assert!(score > 0.5, "score={score}");
     }
 
     #[test]
-    fn test_no_contradiction_when_absent() {
-        let pairs: Vec<(&str, &str)> = vec![("always", "never")];
-        let text = "It always works well.";
-        let indicators = HallucinationDetector::detect_contradictions(text, &pairs);
-        assert!(indicators.is_empty(), "No contradictions expected");
+    fn hallucination_detector_no_source() {
+        let det = HallucinationDetector::new(None);
+        let report = det.analyze("The capital of France is Paris.");
+        assert!(!report.is_likely_hallucinated());
     }
 
     #[test]
-    fn test_grounding_with_matching_source() {
-        let sources = vec![GroundingSource {
-            id: "src1".to_string(),
-            content: "The sky is blue and clouds are white".to_string(),
-            credibility: 1.0,
-        }];
-        let score = HallucinationDetector::ground_statement("The sky is blue", &sources);
-        assert!(score > 0.0, "Expected positive grounding for matching source");
-    }
-
-    #[test]
-    fn test_grounding_with_non_matching_source() {
-        let sources = vec![GroundingSource {
-            id: "src1".to_string(),
-            content: "quantum mechanics describes subatomic particles".to_string(),
-            credibility: 1.0,
-        }];
-        let score = HallucinationDetector::ground_statement("The sky is blue", &sources);
-        assert!(score < 0.3, "Expected low grounding for non-matching source");
-    }
-
-    #[test]
-    fn test_risk_score_bounds() {
-        let mut detector = HallucinationDetector::new();
-        detector.sources.push(GroundingSource {
-            id: "s".to_string(),
-            content: "some content about facts".to_string(),
-            credibility: 0.8,
-        });
-        let report = detector.analyze(
-            "This definitely always works and never fails in all cases every time.",
-        );
-        assert!(report.risk_score >= 0.0, "Risk score must be >= 0");
-        assert!(report.risk_score <= 1.0, "Risk score must be <= 1");
-    }
-
-    #[test]
-    fn test_empty_text_analysis() {
-        let detector = HallucinationDetector::new();
-        let report = detector.analyze("");
-        assert_eq!(report.risk_score, 0.0);
-        assert!(report.indicators.is_empty());
-    }
-
-    #[test]
-    fn test_risk_level() {
-        assert_eq!(HallucinationDetector::risk_level(0.1), "low");
-        assert_eq!(HallucinationDetector::risk_level(0.45), "medium");
-        assert_eq!(HallucinationDetector::risk_level(0.75), "high");
+    fn hallucination_detector_with_source() {
+        let source = "Paris is the capital of France. The population is 2 million.";
+        let det = HallucinationDetector::new(Some(source));
+        let report = det.analyze("Paris is the capital of France.");
+        assert!(!report.is_likely_hallucinated());
     }
 }
