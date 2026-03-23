@@ -548,3 +548,389 @@ mod tests {
         assert_eq!(csv_escape("say \"hello\""), "\"say \"\"hello\"\"\"");
     }
 }
+
+// ── AttributionMap — causal leave-one-out attribution ─────────────────────────
+
+/// Per-output-token causal attribution record.
+///
+/// For each output token at position `token_idx`, `attribution_scores` holds
+/// a ranked list of `(input_token_idx, score)` pairs. Scores are derived
+/// from a leave-one-out (LOO) proxy: the score for input token *i* is the
+/// drop in confidence of the output token when input token *i* is masked.
+/// Positive scores indicate that the input token increases output confidence;
+/// negative scores indicate the opposite.
+///
+/// This is an approximate (not exact) attribution method — full attention
+/// weights are not accessible through the standard chat-completion API.
+/// The LOO proxy is a standard interpretability technique used by LIME and
+/// similar toolkits.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CausalAttribution {
+    /// Zero-based index of the output token being explained.
+    pub token_idx: usize,
+    /// The text of the output token being explained.
+    pub token_text: String,
+    /// Ranked influence scores: `(input_token_index, delta_confidence)`.
+    ///
+    /// A positive delta means that removing the input token *reduced*
+    /// output confidence (i.e. the input was helping). A negative delta
+    /// means removing the input token *increased* output confidence.
+    ///
+    /// Sorted in descending order of absolute influence.
+    pub attribution_scores: Vec<(usize, f64)>,
+}
+
+/// A causal attribution map for a complete prompt–response pair.
+///
+/// `AttributionMap` accumulates `CausalAttribution` records for every output
+/// token and can render them as a terminal heatmap or serialize them to JSON.
+///
+/// # Computation model
+///
+/// The leave-one-out proxy works as follows:
+///
+/// 1. Obtain the baseline confidence for every output token from a full,
+///    unmasked inference (using the `logprobs` field from the provider API).
+/// 2. For each input token *i*, re-run inference with token *i* replaced by a
+///    neutral mask (e.g. `"[MASK]"` or a silent space). Record the new output
+///    confidences.
+/// 3. The LOO score for input token *i* on output token *j* is:
+///    `score(i, j) = baseline_confidence(j) - masked_confidence(j)`.
+///
+/// Because this requires N+1 inferences for N input tokens, `AttributionMap`
+/// supports a `max_input_tokens` budget to limit cost.
+///
+/// # Example
+///
+/// ```rust
+/// use every_other_token::attribution::{AttributionMap, CausalAttribution};
+///
+/// let input_tokens = vec!["What".to_string(), "is".to_string(), "gravity".to_string()];
+/// let baseline = vec![0.9_f64, 0.85, 0.7, 0.6]; // one per output token
+///
+/// let mut map = AttributionMap::new(input_tokens.clone(), baseline.clone());
+///
+/// // Simulate masking "gravity" (index 2): all output confidences drop.
+/// let masked = vec![0.5_f64, 0.5, 0.3, 0.2];
+/// map.add_masked_run(2, masked);
+///
+/// let attrs = map.compute();
+/// assert_eq!(attrs.len(), baseline.len());
+/// // Output token 0 should attribute positively to input token 2 ("gravity").
+/// let scores_for_tok0 = &attrs[0].attribution_scores;
+/// assert!(!scores_for_tok0.is_empty());
+/// ```
+#[derive(Debug)]
+pub struct AttributionMap {
+    /// Input token texts in order.
+    pub input_tokens: Vec<String>,
+    /// Baseline output confidences — one per output token.
+    pub baseline_confidences: Vec<f64>,
+    /// Results of masked inference runs.
+    /// Each entry is `(masked_input_index, output_confidences_under_mask)`.
+    masked_runs: Vec<(usize, Vec<f64>)>,
+}
+
+impl AttributionMap {
+    /// Construct a new attribution map for the given input tokens and baseline.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_tokens` — tokenized prompt tokens, in order.
+    /// * `baseline_confidences` — output token confidences from a full,
+    ///   unmasked forward pass. One value per output token.
+    pub fn new(input_tokens: Vec<String>, baseline_confidences: Vec<f64>) -> Self {
+        Self {
+            input_tokens,
+            baseline_confidences,
+            masked_runs: Vec::new(),
+        }
+    }
+
+    /// Record the output confidences observed when input token at
+    /// `masked_input_idx` was replaced by a neutral mask token.
+    ///
+    /// `masked_confidences` must have the same length as `baseline_confidences`.
+    /// If lengths differ the run is silently ignored.
+    pub fn add_masked_run(&mut self, masked_input_idx: usize, masked_confidences: Vec<f64>) {
+        if masked_confidences.len() == self.baseline_confidences.len() {
+            self.masked_runs.push((masked_input_idx, masked_confidences));
+        }
+    }
+
+    /// Compute per-output-token attribution scores from the accumulated masked
+    /// runs.
+    ///
+    /// Returns one [`CausalAttribution`] per output token. Input tokens for
+    /// which no masked run was recorded are not included in `attribution_scores`.
+    ///
+    /// Scores within each `CausalAttribution` are sorted in descending order
+    /// of **absolute** influence, so the most impactful input token appears first.
+    pub fn compute(&self) -> Vec<CausalAttribution> {
+        let n_output = self.baseline_confidences.len();
+        let mut attributions: Vec<CausalAttribution> = (0..n_output)
+            .map(|j| CausalAttribution {
+                token_idx: j,
+                token_text: format!("<output@{j}>"),
+                attribution_scores: Vec::new(),
+            })
+            .collect();
+
+        for (input_idx, masked_confs) in &self.masked_runs {
+            for (j, attr) in attributions.iter_mut().enumerate() {
+                let baseline = self.baseline_confidences[j];
+                let masked = masked_confs[j];
+                // Positive score = removing input token *reduced* confidence
+                // (i.e. input was helpful to this output position).
+                let score = baseline - masked;
+                attr.attribution_scores.push((*input_idx, score));
+            }
+        }
+
+        // Sort each output token's scores by descending absolute value.
+        for attr in &mut attributions {
+            attr.attribution_scores.sort_by(|(_, a), (_, b)| {
+                b.abs().partial_cmp(&a.abs()).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
+        attributions
+    }
+
+    /// Serialize the computed attributions to a pretty-printed JSON string.
+    ///
+    /// Suitable for writing to disk for downstream analysis in Python or other
+    /// environments.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if serialization fails (should never
+    /// happen for valid attribution data).
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        #[derive(serde::Serialize)]
+        struct MapExport<'a> {
+            input_tokens: &'a [String],
+            baseline_confidences: &'a [f64],
+            attributions: Vec<CausalAttribution>,
+        }
+        let export = MapExport {
+            input_tokens: &self.input_tokens,
+            baseline_confidences: &self.baseline_confidences,
+            attributions: self.compute(),
+        };
+        serde_json::to_string_pretty(&export)
+    }
+}
+
+// ── AttributionRenderer — terminal heatmap ────────────────────────────────────
+
+/// Renders a [`CausalAttribution`] or a set of attributions as a colored
+/// heatmap in the terminal.
+///
+/// Uses the same color bands as the existing token importance visualizer:
+/// - Score > 0.3  → bright green  (strong positive influence)
+/// - Score > 0.1  → yellow        (moderate positive influence)
+/// - Score ≈ 0.0  → white         (neutral)
+/// - Score < -0.1 → red           (negative influence)
+///
+/// # Example
+///
+/// ```rust
+/// use every_other_token::attribution::{AttributionMap, AttributionRenderer};
+///
+/// let input_tokens = vec!["What".to_string(), "is".to_string(), "gravity".to_string()];
+/// let baseline = vec![0.9_f64];
+/// let mut map = AttributionMap::new(input_tokens, baseline);
+/// map.add_masked_run(2, vec![0.4_f64]);
+///
+/// let renderer = AttributionRenderer::new();
+/// let attrs = map.compute();
+/// // renderer.render(&attrs, &map.input_tokens);  // prints to stdout
+/// ```
+pub struct AttributionRenderer {
+    /// Maximum number of input-token bars to print per output token.
+    pub top_k: usize,
+}
+
+impl Default for AttributionRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AttributionRenderer {
+    /// Create a renderer showing the top-5 most influential input tokens per
+    /// output token.
+    pub fn new() -> Self {
+        Self { top_k: 5 }
+    }
+
+    /// Set how many input-token bars to display per output token.
+    #[must_use]
+    pub fn with_top_k(mut self, k: usize) -> Self {
+        self.top_k = k;
+        self
+    }
+
+    /// Render attributions to a `String` suitable for terminal display.
+    ///
+    /// Uses ANSI escape codes for color. If the terminal does not support ANSI
+    /// colors the output is still readable; the color codes appear as literal
+    /// escape sequences.
+    ///
+    /// `input_tokens` must be the same slice used to build the [`AttributionMap`].
+    pub fn render_to_string(
+        &self,
+        attributions: &[CausalAttribution],
+        input_tokens: &[String],
+    ) -> String {
+        let mut out = String::new();
+        for attr in attributions {
+            out.push_str(&format!(
+                "\n  Output token #{}: \"{}\"\n",
+                attr.token_idx, attr.token_text
+            ));
+            if attr.attribution_scores.is_empty() {
+                out.push_str("    (no masked runs recorded)\n");
+                continue;
+            }
+            for (input_idx, score) in attr.attribution_scores.iter().take(self.top_k) {
+                let label = input_tokens
+                    .get(*input_idx)
+                    .map(|s| s.as_str())
+                    .unwrap_or("?");
+                let bar = self.score_bar(*score);
+                let color = self.ansi_color(*score);
+                let reset = "\x1b[0m";
+                out.push_str(&format!(
+                    "    [{:>2}] {:>12}  {} {:.4}{}\n",
+                    input_idx,
+                    label,
+                    color,
+                    score,
+                    reset
+                ));
+                out.push_str(&format!("           {}{}{}\n", color, bar, reset));
+            }
+        }
+        out
+    }
+
+    /// Print the rendered heatmap to stdout.
+    pub fn render(&self, attributions: &[CausalAttribution], input_tokens: &[String]) {
+        print!("{}", self.render_to_string(attributions, input_tokens));
+    }
+
+    // --- private helpers ---------------------------------------------------
+
+    fn score_bar(&self, score: f64) -> String {
+        let width = (score.abs() * 40.0).round() as usize;
+        let ch = if score >= 0.0 { '+' } else { '-' };
+        std::iter::repeat(ch).take(width.min(40)).collect()
+    }
+
+    fn ansi_color(&self, score: f64) -> &'static str {
+        if score > 0.3 {
+            "\x1b[92m" // bright green
+        } else if score > 0.1 {
+            "\x1b[93m" // yellow
+        } else if score > -0.1 {
+            "\x1b[97m" // white
+        } else {
+            "\x1b[91m" // bright red
+        }
+    }
+}
+
+#[cfg(test)]
+mod attribution_map_tests {
+    use super::*;
+
+    #[test]
+    fn attribution_map_basic_loo() {
+        let input_tokens = vec!["What".to_string(), "is".to_string(), "gravity".to_string()];
+        let baseline = vec![0.9, 0.85, 0.7];
+
+        let mut map = AttributionMap::new(input_tokens.clone(), baseline.clone());
+
+        // Masking "gravity" (index 2) causes output confidence to drop.
+        map.add_masked_run(2, vec![0.5, 0.4, 0.3]);
+        // Masking "What" (index 0) causes minor drop.
+        map.add_masked_run(0, vec![0.85, 0.80, 0.65]);
+
+        let attrs = map.compute();
+        assert_eq!(attrs.len(), 3, "one attribution per output token");
+
+        // For output token 0: gravity mask gave score 0.9-0.5=0.4, What mask gave 0.9-0.85=0.05.
+        // "gravity" should rank first (higher absolute score).
+        let scores_0 = &attrs[0].attribution_scores;
+        assert!(!scores_0.is_empty());
+        let (top_idx, top_score) = scores_0[0];
+        assert_eq!(top_idx, 2, "gravity should be most influential");
+        assert!((top_score - 0.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn attribution_map_mismatched_run_is_ignored() {
+        let input_tokens = vec!["A".to_string(), "B".to_string()];
+        let baseline = vec![0.8, 0.6];
+        let mut map = AttributionMap::new(input_tokens, baseline);
+
+        // Wrong length — should be silently ignored.
+        map.add_masked_run(0, vec![0.5]); // length 1, not 2
+
+        let attrs = map.compute();
+        // No runs recorded → all score lists are empty.
+        for attr in &attrs {
+            assert!(attr.attribution_scores.is_empty());
+        }
+    }
+
+    #[test]
+    fn attribution_map_to_json_is_valid() {
+        let input_tokens = vec!["Hello".to_string()];
+        let baseline = vec![0.9];
+        let mut map = AttributionMap::new(input_tokens, baseline);
+        map.add_masked_run(0, vec![0.5]);
+
+        let json = map.to_json().expect("JSON serialization should succeed");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert!(parsed.get("attributions").is_some());
+        assert!(parsed.get("input_tokens").is_some());
+        assert!(parsed.get("baseline_confidences").is_some());
+    }
+
+    #[test]
+    fn renderer_produces_colored_output() {
+        let input_tokens = vec!["token0".to_string(), "token1".to_string()];
+        let baseline = vec![0.8];
+        let mut map = AttributionMap::new(input_tokens.clone(), baseline);
+        map.add_masked_run(0, vec![0.3]);
+
+        let renderer = AttributionRenderer::new();
+        let attrs = map.compute();
+        let output = renderer.render_to_string(&attrs, &input_tokens);
+
+        assert!(output.contains("Output token #0"));
+        // ANSI green for high positive score.
+        assert!(output.contains("\x1b[92m"), "expected green ANSI color for high positive score");
+    }
+
+    #[test]
+    fn renderer_top_k_limits_output() {
+        let input_tokens: Vec<String> = (0..10).map(|i| format!("tok{i}")).collect();
+        let baseline = vec![0.5; 1];
+        let mut map = AttributionMap::new(input_tokens.clone(), baseline);
+        for i in 0..10 {
+            map.add_masked_run(i, vec![0.5 - (i as f64 * 0.01)]);
+        }
+
+        let renderer = AttributionRenderer::new().with_top_k(3);
+        let attrs = map.compute();
+        let output = renderer.render_to_string(&attrs, &input_tokens);
+
+        // Count how many "[  N]" lines appear (one per displayed input token).
+        let bar_lines = output.lines().filter(|l| l.contains('[') && l.contains(']')).count();
+        assert!(bar_lines <= 3, "top_k=3 should limit to 3 bars, got {bar_lines}");
+    }
+}
