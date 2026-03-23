@@ -37,6 +37,8 @@ pub mod config;
 pub mod error;
 pub mod heatmap;
 pub mod providers;
+pub mod bayesian;
+pub mod checkpoint;
 pub mod render;
 pub mod replay;
 pub mod research;
