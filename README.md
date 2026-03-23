@@ -21,10 +21,50 @@
 | Cross-provider structural diff | No | Yes — Jensen-Shannon divergence, Pearson correlation |
 | A/B system-prompt significance testing | No | Yes — Welch's t-test across confidence distributions |
 | Token attribution export | No | Yes — JSONL, CSV, self-contained HTML heatmap |
+| Causal attribution map | No | Yes — leave-one-out input-token influence scores |
+| Prompt mutation lab | No | Yes — systematic variant ranking by perplexity/length/etc. |
 | Semantic drift detection | No | Yes — confidence decay from start to end of sequence |
 | Replay determinism | No | Yes — record and replay any run from JSON |
 | Collaborative rooms | No | Yes — WebSocket multi-participant token surgery |
 | TF-IDF semantic heatmaps | No | Yes — no embedding service required |
+
+---
+
+## Use cases
+
+### Interpretability research
+
+- Map which input tokens causally drive each output token using
+  `AttributionMap` (leave-one-out proxy).
+- Visualize confidence and perplexity trajectories across 20+ runs with
+  `--research --runs 20`.
+- Export confidence heatmaps to CSV for cross-model comparisons in pandas or R.
+- Detect semantic drift: identify responses where model certainty collapses
+  mid-generation.
+- Run systematic ablations: mask one input concept at a time and measure the
+  effect on every output position.
+
+### Red-teaming
+
+- Use `MutationLab` with `MutationTarget::SystemPrompt` to rank which system
+  prompt variants produce the longest outputs (potential jailbreak signal).
+- Vary candidate adversarial phrases with `MutationTarget::Word` and measure
+  `OutputLength` to detect instruction-override candidates.
+- Combine `--min-confidence 0.5` with the `delete` transform to find positions
+  where the model is easiest to steer by omission.
+- Record sessions with `--record` and replay them after a model update to
+  detect behavioral regressions.
+
+### Prompt engineering
+
+- Rank synonym variants with `MutationLab` and `MutationMetric::Perplexity`
+  to find the wording that the model handles most confidently.
+- A/B test system prompts across 30 runs with `--significance` to find
+  statistically significant confidence shifts.
+- Use the `--visual` heatmap to spot high-perplexity tokens in your template
+  that signal ambiguity to the model.
+- Export a self-contained HTML heatmap with `AttributionExporter::to_html_heatmap`
+  to share results without requiring a Python environment.
 
 ---
 
@@ -191,6 +231,142 @@ with open("attribution.jsonl") as f:
                 "attribution": tok["attribution_score"],
             })
 df = pd.DataFrame(rows)
+```
+
+---
+
+## Token Attribution Map (causal leave-one-out)
+
+`AttributionMap` computes per-output-token causal attribution scores using an
+approximate leave-one-out (LOO) proxy.  For each input token *i*, the model is
+re-run with token *i* masked; the drop in confidence of each output token is
+recorded as the influence score.
+
+### Computation model
+
+```
+score(input_i, output_j) = baseline_confidence(output_j)
+                         - masked_confidence_when_input_i_hidden(output_j)
+```
+
+Positive score = input *i* was **helping** output *j* (removing it reduced confidence).
+Negative score = input *i* was **hurting** output *j*.
+
+This requires N+1 inferences for N input tokens. Use `max_input_tokens` in your
+runner to control cost.
+
+### Example
+
+```rust
+use every_other_token::attribution::{AttributionMap, AttributionRenderer};
+
+// Baseline confidences from a full forward pass (one per output token).
+let input_tokens = vec!["What".to_string(), "is".to_string(), "gravity".to_string()];
+let baseline = vec![0.9_f64, 0.85, 0.7, 0.6];
+
+let mut map = AttributionMap::new(input_tokens.clone(), baseline);
+
+// Add one masked run per input token (from re-running the model).
+map.add_masked_run(0, vec![0.85, 0.80, 0.65, 0.55]); // mask "What"
+map.add_masked_run(2, vec![0.50, 0.40, 0.30, 0.20]); // mask "gravity"
+
+let attributions = map.compute();
+
+// Render a colored heatmap to the terminal.
+let renderer = AttributionRenderer::new().with_top_k(3);
+renderer.render(&attributions, &input_tokens);
+
+// Export to JSON for downstream analysis.
+let json = map.to_json().expect("serialization succeeds");
+std::fs::write("attribution_map.json", json).ok();
+```
+
+### Terminal renderer
+
+`AttributionRenderer` uses ANSI color bands matching the existing heatmap:
+
+| Score range | Color | Meaning |
+|-------------|-------|---------|
+| > 0.3 | Bright green | Strong positive influence |
+| 0.1 – 0.3 | Yellow | Moderate positive influence |
+| −0.1 – 0.1 | White | Neutral |
+| < −0.1 | Red | Negative influence |
+
+`with_top_k(N)` limits the display to the N most influential input tokens per
+output position.
+
+---
+
+## Prompt Mutation Lab
+
+`MutationLab` systematically varies specified tokens, phrases, or parameters in
+a base prompt, runs all variants through the model, and produces a ranked
+markdown table of results.
+
+### Mutation targets
+
+| Target | Description |
+|--------|-------------|
+| `Word(index)` | Replace the word at the given whitespace-delimited index |
+| `Phrase(start, end)` | Replace the byte range `[start, end)` of the prompt |
+| `SystemPrompt` | Replace the entire system prompt |
+| `Temperature` | Vary the sampling temperature (variant parsed as `f32`) |
+
+### Mutation metrics
+
+| Metric | Description |
+|--------|-------------|
+| `Perplexity` | Mean per-token perplexity across the full output |
+| `OutputLength` | Total number of output tokens generated |
+| `TopTokenChange` | Whether any top predicted token changed vs. the baseline |
+| `SentimentShift` | Fraction of high-confidence tokens minus baseline fraction |
+
+### Example
+
+```rust
+use every_other_token::mutation_lab::{
+    MutationLab, MutationSpec, MutationTarget, MutationMetric,
+};
+
+let mut lab = MutationLab::new("Explain {SLOT} to a 5-year-old.");
+
+let spec = MutationSpec {
+    target: MutationTarget::Word(1),
+    variants: vec![
+        "gravity".to_string(),
+        "recursion".to_string(),
+        "photosynthesis".to_string(),
+        "entropy".to_string(),
+    ],
+    metric: MutationMetric::Perplexity,
+};
+
+// Simulated run (no API call needed for offline testing):
+let result = lab.run_experiment_simulated(&spec);
+println!("{}", result.to_markdown_table());
+
+// Or provide your own measured values from live runs:
+// let result = lab.run_experiment_with_values(&spec, &measured_perplexities);
+
+println!("Best variant: {:?}", result.best().map(|r| &r.variant));
+println!("Worst variant: {:?}", result.worst().map(|r| &r.variant));
+```
+
+### Output table format
+
+```markdown
+## Mutation Experiment Results
+
+**Base prompt:** `Explain {SLOT} to a 5-year-old.`
+**Target:** Word(1)
+**Metric:** Mean Perplexity
+
+| Rank | Variant | Prompt (snippet) | Mean Perplexity |
+|------|---------|-----------------|-----------------|
+| 1 | `gravity` | `Explain gravity to a 5-year-old.` | 2.1042 |
+| 2 | `entropy` | `Explain entropy to a 5-year-old.` | 3.8917 |
+| 3 | `recursion` | `Explain recursion to a 5-year-old.` | 5.5034 |
+| 4 | `photosynthesis` | `Explain photosynthesis to a 5-y...` | 7.2981 |
 ```
 
 ---
@@ -431,7 +607,8 @@ let map = causal_influence_map(&original, &counterfact);
 | Module | Responsibility |
 |--------|----------------|
 | `lib.rs` | `TokenInterceptor`, `TokenEvent`, stream parsing, retry logic |
-| `attribution.rs` | Per-token JSONL, CSV, and HTML heatmap export; drift detection |
+| `attribution.rs` | Per-token JSONL, CSV, HTML heatmap, `AttributionMap` (causal LOO), `AttributionRenderer` |
+| `mutation_lab.rs` | `MutationLab`, `MutationSpec`, systematic prompt mutation and metric ranking |
 | `divergence.rs` | Jensen-Shannon divergence between model configurations; coloured diff report |
 | `intervention.rs` | Token injection, `InterventionHistory`, `TokenEditor`, causal influence map |
 | `transforms.rs` | All transform strategies (`Reverse`, `Noise`, `Chaos`, `Chain`, ...) |
