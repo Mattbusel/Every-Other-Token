@@ -13,11 +13,24 @@ You normally see a model's answer only as finished text. `every-other-token` sit
 
 ## Install
 
+**Prebuilt binaries** (no Rust toolchain needed): download the archive for your platform from the [latest release](https://github.com/Mattbusel/Every-Other-Token/releases/latest). Builds are provided for Linux x86_64, macOS (Apple Silicon and Intel) and Windows x86_64.
+
 ```bash
-cargo install every-other-token        # crates.io release (4.1.2)
-# or the latest code (4.2.0)
+# Linux example; adjust the file name for your platform and version
+curl -LO https://github.com/Mattbusel/Every-Other-Token/releases/download/v4.2.0/every-other-token-v4.2.0-x86_64-unknown-linux-gnu.tar.gz
+tar xzf every-other-token-v4.2.0-x86_64-unknown-linux-gnu.tar.gz
+./every-other-token-v4.2.0-x86_64-unknown-linux-gnu/every-other-token "hello" --provider mock
+```
+
+**With Cargo:**
+
+```bash
+cargo install every-other-token
+# or the latest unreleased code
 cargo install --git https://github.com/Mattbusel/Every-Other-Token
 ```
+
+The Linux binary links the system OpenSSL (libssl3, present on Ubuntu 22.04+ and most current distros).
 
 ## Unique capabilities vs. standard LLM clients
 
