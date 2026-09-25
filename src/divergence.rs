@@ -20,15 +20,21 @@
 //!
 //! # Usage
 //!
-//! ```rust,no_run
-//! use every_other_token::divergence::{DivergenceDetector, ModelConfig};
+//! ```rust
+//! use every_other_token::divergence::{DivergenceDetector, ModelConfig, TokenStream};
 //!
 //! let configs = vec![
 //!     ModelConfig::new("openai", "gpt-4o", 0.0, 1.0),
 //!     ModelConfig::new("openai", "gpt-4o", 1.0, 1.0),
 //! ];
+//! // Collect one token stream per configuration (normally from provider APIs).
+//! let mut a = TokenStream::new(configs[0].clone());
+//! let mut b = TokenStream::new(configs[1].clone());
+//! for t in ["The", " sky", " is", " blue"] { a.push(t, None); }
+//! for t in ["The", " sky", " looks", " blue"] { b.push(t, None); }
+//!
 //! let detector = DivergenceDetector::new(configs);
-//! let result = detector.run_sync("Why is the sky blue?");
+//! let result = detector.analyse("Why is the sky blue?", vec![a, b]);
 //! let report = result.render_report();
 //! println!("{}", report);
 //! ```

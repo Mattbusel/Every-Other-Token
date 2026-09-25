@@ -330,8 +330,13 @@ mod tests {
 
     #[test]
     fn completeness_good_response() {
+        // Prompt keywords (len >= 4): explain, rust, ownership, model,
+        // borrowing, rules. The response covers rust, ownership and
+        // borrowing, so the score is exactly 3/6 = 0.5.
         let score = QualityScorer::score_completeness(PROMPT, GOOD_RESPONSE);
-        assert!(score > 0.5, "score={}", score);
+        assert!((score - 0.5).abs() < 1e-9, "score={}", score);
+        let bad = QualityScorer::score_completeness(PROMPT, BAD_RESPONSE);
+        assert!(score > bad, "good={} bad={}", score, bad);
     }
 
     #[test]

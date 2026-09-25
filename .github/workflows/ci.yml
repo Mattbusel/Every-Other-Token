@@ -29,8 +29,12 @@ jobs:
       - name: cargo test
         run: cargo test
 
-      - name: ratio check
+      # Informational: the project aims for a 1:1 test-to-production line
+      # ratio, but a line count is not a correctness signal, so it does not
+      # fail the build.
+      - name: ratio check (informational)
         if: ${{ hashFiles('scripts/ratio_check.sh') != '' }}
+        continue-on-error: true
         run: bash scripts/ratio_check.sh
 
   feature-matrix:

@@ -58,15 +58,25 @@ impl StanceClassifier {
         let support_keywords = ["agree", "support", "yes", "benefit"];
         let oppose_keywords = ["disagree", "oppose", "no", "harm"];
 
-        for kw in &support_keywords {
-            if lower.contains(kw) {
-                return "support".to_string();
-            }
+        // Match whole words (or word prefixes for longer stems such as
+        // "harmful" or "supports"). Plain substring matching classified
+        // "disagree" as support because it contains "agree", and "know" as
+        // oppose because it contains "no".
+        let words: Vec<&str> = lower
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect();
+        let matches = |kw: &str| {
+            words
+                .iter()
+                .any(|w| *w == kw || (kw.len() > 2 && w.starts_with(kw)))
+        };
+
+        if oppose_keywords.iter().any(|kw| matches(kw)) {
+            return "oppose".to_string();
         }
-        for kw in &oppose_keywords {
-            if lower.contains(kw) {
-                return "oppose".to_string();
-            }
+        if support_keywords.iter().any(|kw| matches(kw)) {
+            return "support".to_string();
         }
         "neutral".to_string()
     }
@@ -305,6 +315,13 @@ mod tests {
     fn classify_oppose() {
         assert_eq!(StanceClassifier::classify("I disagree strongly", "topic"), "oppose");
         assert_eq!(StanceClassifier::classify("This will harm the community", "topic"), "oppose");
+    }
+
+    #[test]
+    fn classify_ignores_keywords_inside_other_words() {
+        // "know" contains "no"; it must not flip a supportive sentence.
+        assert_eq!(StanceClassifier::classify("I know we agree", "topic"), "support");
+        assert_eq!(StanceClassifier::classify("That is harmful", "topic"), "oppose");
     }
 
     #[test]
