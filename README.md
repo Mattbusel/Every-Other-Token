@@ -1,32 +1,40 @@
 # every-other-token
 
-[![CI](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg)](https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/Mattbusel/Every-Other-Token/branch/main/graph/badge.svg)](https://codecov.io/gh/Mattbusel/Every-Other-Token)
 [![crates.io](https://img.shields.io/crates/v/every-other-token.svg)](https://crates.io/crates/every-other-token)
 [![docs.rs](https://docs.rs/every-other-token/badge.svg)](https://docs.rs/every-other-token)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.81+-orange.svg)](https://www.rust-lang.org/)
 
-**every-other-token** is a real-time LLM token stream interceptor for interpretability research. It sits between your application and the model, intercepts each token as it arrives over SSE, applies configurable mutation transforms, captures per-token confidence and perplexity from the logprob API, and routes enriched events simultaneously to a color-coded terminal renderer, a zero-dependency web UI, WebSocket collaboration rooms, a JSON replay recorder, and the new token attribution exporter — all without buffering the full response.
+A Rust CLI and web UI that intercepts an LLM's token stream as it arrives, shows per-token confidence and perplexity from the logprobs, and can rewrite every other token (or any fraction) on the fly, for interpretability research, red-teaming and prompt engineering.
 
----
+You normally see a model's answer only as finished text. `every-other-token` sits on the OpenAI or Anthropic SSE stream and lets you watch and poke it token by token: color tokens by confidence, mutate them with transforms (reverse, noise, delete, synonym, chained), compare two providers or two system prompts statistically, record and replay runs, and export per-token data to CSV, JSONL or an HTML heatmap. A `--dry-run` mode with a mock provider needs no API key.
+
+![Terminal output with confidence heatmap (early version)](Screenshot%202025-07-12%20161852.png)
+
+## Install
+
+```bash
+cargo install every-other-token        # crates.io release (4.1.2)
+# or the latest code (4.2.0)
+cargo install --git https://github.com/Mattbusel/Every-Other-Token
+```
 
 ## Unique capabilities vs. standard LLM clients
 
 | Capability | Standard clients | every-other-token |
 |------------|-----------------|-------------------|
-| Per-token confidence scores | No | Yes — `exp(logprob)` at each position |
-| Per-token perplexity | No | Yes — `exp(-logprob)` at each position |
-| Live stream mutation | No | Yes — 9 transform types with rate and seed control |
-| Cross-provider structural diff | No | Yes — Jensen-Shannon divergence, Pearson correlation |
-| A/B system-prompt significance testing | No | Yes — Welch's t-test across confidence distributions |
-| Token attribution export | No | Yes — JSONL, CSV, self-contained HTML heatmap |
-| Causal attribution map | No | Yes — leave-one-out input-token influence scores |
-| Prompt mutation lab | No | Yes — systematic variant ranking by perplexity/length/etc. |
-| Semantic drift detection | No | Yes — confidence decay from start to end of sequence |
-| Replay determinism | No | Yes — record and replay any run from JSON |
-| Collaborative rooms | No | Yes — WebSocket multi-participant token surgery |
-| TF-IDF semantic heatmaps | No | Yes — no embedding service required |
+| Per-token confidence scores | No | Yes: `exp(logprob)` at each position |
+| Per-token perplexity | No | Yes: `exp(-logprob)` at each position |
+| Live stream mutation | No | Yes: 9 transform types with rate and seed control |
+| Cross-provider structural diff | No | Yes: Jensen-Shannon divergence, Pearson correlation |
+| A/B system-prompt significance testing | No | Yes: Welch's t-test across confidence distributions |
+| Token attribution export | No | Yes: JSONL, CSV, self-contained HTML heatmap |
+| Causal attribution map | No | Yes: leave-one-out input-token influence scores |
+| Prompt mutation lab | No | Yes: systematic variant ranking by perplexity/length/etc. |
+| Semantic drift detection | No | Yes: confidence decay from start to end of sequence |
+| Replay determinism | No | Yes: record and replay any run from JSON |
+| Collaborative rooms | No | Yes: WebSocket multi-participant token surgery |
+| TF-IDF semantic heatmaps | No | Yes: no embedding service required |
 
 ---
 
@@ -90,11 +98,11 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # Terminal output with per-token confidence color bands
 ./target/release/every-other-token "What is consciousness?" --visual
 
-# Web UI — opens http://localhost:8888 automatically
+# Web UI, opens http://localhost:8888 automatically
 ./target/release/every-other-token "What is consciousness?" --web
 
-# No API key needed — dry run with chaos transform
-./target/release/every-other-token "hello world" --dry-run --transform chaos
+# No API key needed, dry run with chaos transform
+./target/release/every-other-token "hello world" chaos --dry-run
 
 # Side-by-side OpenAI vs Anthropic diff
 ./target/release/every-other-token "Describe entropy" --diff-terminal
@@ -808,8 +816,8 @@ overall_score = 0.4 * semantic_preservation
 | Metric | Description |
 |--------|-------------|
 | `semantic_preservation` | Fraction of content words (non-stopwords) preserved |
-| `syntax_validity` | Heuristic — penalises consecutive punctuation tokens |
-| `ratio` | `compressed_len / original_len` — lower means more compressed |
+| `syntax_validity` | Heuristic, penalises consecutive punctuation tokens |
+| `ratio` | `compressed_len / original_len`, lower means more compressed |
 | `overall_score` | Weighted combination (higher is better) |
 
 ### Usage
@@ -843,7 +851,7 @@ println!("compressed to {} tokens with score={:.3}", compressed.len(), quality.o
 
 ## Context Window Manager
 
-The `context` module provides `ContextWindow` — a priority-based token budget manager for LLM context construction.
+The `context` module provides `ContextWindow`, a priority-based token budget manager for LLM context construction.
 
 ```rust
 use every_other_token::context::{
@@ -889,7 +897,7 @@ println!("evictions: {}", stats.evictions);
 
 ## Vocabulary Analyzer
 
-The `vocab` module provides `VocabularyAnalyzer` — measures vocabulary coverage, OOV rates, and Zipf's law fit for token sequences.
+The `vocab` module provides `VocabularyAnalyzer`, measures vocabulary coverage, OOV rates, and Zipf's law fit for token sequences.
 
 ```rust
 use every_other_token::vocab::{VocabularyAnalyzer, Zipf};
@@ -929,6 +937,12 @@ println!("Zipf exponent: {:.3} (r²={:.3})", params.exponent, params.r_squared);
 - `Zipf::fit`: log-log linear regression to extract Zipf exponent and R²
 - `zipf_score`: 1 - |exponent - 1.0|, normalized to [0, 1]
 - `--vocab-stats` CLI flag: prints vocabulary statistics for the current prompt
+
+---
+
+## Status
+
+Research tool, actively developed. The CI workflow is currently failing on `main`; `cargo build` works. The screenshot above is from an early interactive version; the current CLI takes the prompt, transform and model as arguments (see the CLI reference).
 
 ---
 
