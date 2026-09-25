@@ -1,15 +1,48 @@
-# every-other-token
+<p align="center">
+  <a href="https://mattbusel.github.io/Every-Other-Token/"><img src="assets/hero.svg" width="100%" alt="every-other-token: the mock provider's stream, token by token, with every other token reversed and a confidence bar under each one"></a>
+</p>
 
-[![crates.io](https://img.shields.io/crates/v/every-other-token.svg)](https://crates.io/crates/every-other-token)
-[![docs.rs](https://docs.rs/every-other-token/badge.svg)](https://docs.rs/every-other-token)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.81+-orange.svg)](https://www.rust-lang.org/)
+<p align="center">
+  <a href="https://crates.io/crates/every-other-token"><img src="https://img.shields.io/crates/v/every-other-token.svg?color=ff6a2b&labelColor=0c0d0b" alt="crates.io"></a>
+  <a href="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml"><img src="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://docs.rs/every-other-token"><img src="https://img.shields.io/docsrs/every-other-token?labelColor=0c0d0b" alt="docs.rs"></a>
+</p>
+
+<p align="center">
+  <a href="https://mattbusel.github.io/Every-Other-Token/"><b>Project site</b></a> &nbsp;&middot;&nbsp;
+  <a href="#try-it-in-one-minute-no-api-key">Quick start</a> &nbsp;&middot;&nbsp;
+  <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest">Binaries</a> &nbsp;&middot;&nbsp;
+  <a href="https://docs.rs/every-other-token">API docs</a>
+</p>
 
 A Rust CLI and web UI that intercepts an LLM's token stream as it arrives, shows per-token confidence and perplexity from the logprobs, and can rewrite every other token (or any fraction) on the fly, for interpretability research, red-teaming and prompt engineering.
 
 You normally see a model's answer only as finished text. `every-other-token` sits on the OpenAI or Anthropic SSE stream and lets you watch and poke it token by token: color tokens by confidence, mutate them with transforms (reverse, noise, delete, synonym, chained), compare two providers or two system prompts statistically, record and replay runs, and export per-token data to CSV, JSONL or an HTML heatmap. A `--dry-run` mode with a mock provider needs no API key.
 
-![Terminal output with confidence heatmap (early version)](Screenshot%202025-07-12%20161852.png)
+## Try it in one minute (no API key)
+
+```bash
+cargo install every-other-token
+every-other-token "What is consciousness?" --provider mock --visual
+```
+
+<img src="assets/terminal-visual.svg" width="100%" alt="Terminal output: every other token reversed and highlighted, 22 tokens streamed, 11 transformed">
+
+The `mock` provider replays a fixed reply with fixed logprobs through the real interception pipeline, so everything above is real output; only the model is canned. Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` and drop `--provider mock` to intercept a real model.
+
+## What you get
+
+**Every token carries its numbers.** Each intercepted token is an event with the original text, what was shown, its index, whether it was rewritten, confidence `exp(logprob)`, perplexity `exp(-logprob)` and the top alternatives. Read them from the library, stream them as JSON lines with `--json-stream`, or export CSV, JSONL or a self-contained HTML heatmap.
+
+<img src="assets/terminal-table.svg" width="100%" alt="Per-token table from cargo run --example mock_stream: original token, shown token, confidence and perplexity for each of 19 tokens">
+
+<sub>`cargo run --example mock_stream` in a clone of this repo.</sub>
+
+**A web UI for watching the stream.** `--web` serves a single page (no build step, no external scripts): single, split and quad views, OpenAI vs Anthropic diff, A/B system prompts, a research dashboard, export, and collaborative rooms where several people edit tokens mid-stream. Pick **Mock (no API key)** in the provider menu to try it offline.
+
+<img src="assets/web-ui.png" width="100%" alt="Web UI split view: original stream on the left, transformed stream on the right, each token underlined by its confidence">
+
+**Compare, test, record.** Diff two providers (`--diff-terminal`), A/B two system prompts with a Welch's t-test (`--significance`), run headless research batches (`--research --runs 20`), and record any session to replay it after a model update.
 
 ## Install
 
@@ -49,9 +82,10 @@ The Linux binary links the system OpenSSL (libssl3, present on Ubuntu 22.04+ and
 | Collaborative rooms | No | Yes: WebSocket multi-participant token surgery |
 | TF-IDF semantic heatmaps | No | Yes: no embedding service required |
 
----
-
 ## Use cases
+
+<details>
+<summary>Interpretability research, red-teaming, prompt engineering</summary>
 
 ### Interpretability research
 
@@ -87,9 +121,9 @@ The Linux binary links the system OpenSSL (libssl3, present on Ubuntu 22.04+ and
 - Export a self-contained HTML heatmap with `AttributionExporter::to_html_heatmap`
   to share results without requiring a Python environment.
 
----
+</details>
 
-## 5-minute quickstart
+## Build and run from source
 
 ### Prerequisites
 
@@ -152,8 +186,6 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ./target/release/every-other-token --completions fish > ~/.config/fish/completions/every-other-token.fish
 ```
 
----
-
 ## Transform types
 
 Each token in the stream can be independently mutated before it reaches the output.
@@ -179,13 +211,94 @@ Each token in the stream can be independently mutated before it reaches the outp
 
 `--min-confidence 0.8` only transforms tokens whose API confidence is below the threshold. High-confidence tokens pass through unchanged.
 
----
+## A/B system prompt testing
 
-## Token attribution export
+Test how two different system prompts affect per-token confidence distributions, with automatic statistical significance testing.
+
+```bash
+./target/release/every-other-token "Explain machine learning" \
+    --research --runs 30 \
+    --system-a "You are a concise technical expert." \
+    --system-b "You are a friendly tutor explaining to a beginner." \
+    --significance \
+    --output ab_results.json
+```
+
+The output JSON includes:
+- Per-run confidence histograms for system A and system B
+- Welch's t-test statistic and p-value
+- Mean confidence delta between the two system prompts
+- Positions where the distributions diverged most
+
+### A/B via the web UI
+
+Launch with `--web` and select the **Experiment** view to see both system prompts streaming side-by-side with a live divergence map.
+
+## Web UI guide
+
+Launch with `--web` to open the single-page application at `http://localhost:8888`.
+
+| View | Description |
+|------|-------------|
+| **Single** | Live token stream with per-token confidence bars and perplexity pulse |
+| **Split** | Original vs transformed output side by side |
+| **Quad** | Four transforms applied simultaneously in a 2x2 grid |
+| **Diff** | OpenAI and Anthropic streaming the same prompt; diverging positions highlighted |
+| **Experiment** | A/B mode: two system prompts, live divergence map |
+| **Research** | Aggregate stats dashboard: perplexity histogram, confidence distribution, vocabulary diversity |
+
+Change the port with `--port 9000` (also settable in `~/.eot.toml`); `--no-open` skips opening a browser tab. With no API key, run `every-other-token --web --provider mock` or pick **Mock (no API key)** in the provider menu.
+
+## Configuration file
+
+Create `~/.eot.toml` (global) or `.eot.toml` in the working directory (local wins over global):
+
+```toml
+provider     = "anthropic"
+model        = "claude-sonnet-4-6"
+transform    = "reverse"
+rate         = 0.5
+port         = 8888
+top_logprobs = 5
+system_a     = "You are a concise assistant."
+```
+
+All CLI flags override config file values.
+
+## Building from source
+
+```bash
+git clone https://github.com/Mattbusel/Every-Other-Token
+cd Every-Other-Token
+cargo build --release
+cargo test --lib
+```
+
+Enable optional features:
+
+```bash
+cargo build --release --features sqlite-log,self-tune
+```
+
+## Contributing
+
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b my-feature`.
+3. Ensure `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test --lib` all pass.
+4. Open a pull request against `main`.
+
+CI enforces formatting, Clippy, the full test suite, and a release build before merging.
+
+## Reference
+
+The library behind the CLI, module by module. Each section is collapsed; open the one you need.
+
+<details>
+<summary><b>Token attribution export</b></summary>
 
 `attribution::AttributionExporter` exports per-token confidence, perplexity, and attribution scores to three formats compatible with LIME, Captum, and custom dashboards.
 
-### Data types
+#### Data types
 
 | Type | Description |
 |------|-------------|
@@ -193,7 +306,7 @@ Each token in the stream can be independently mutated before it reaches the outp
 | `SequenceAttribution` | Full sequence: all tokens + aggregate confidence, aggregate perplexity, semantic drift |
 | `AttributionExporter` | Serializes to JSONL, CSV, or self-contained HTML heatmap |
 
-### Export to JSONL (LIME / Captum compatible)
+#### Export to JSONL (LIME / Captum compatible)
 
 ```rust
 use every_other_token::attribution::{AttributionExporter, SequenceAttribution, TokenAttribution};
@@ -230,7 +343,7 @@ let html = exporter.to_html_heatmap(&seq);
 std::fs::write("heatmap.html", html).unwrap();
 ```
 
-### Semantic drift detection
+#### Semantic drift detection
 
 Semantic drift measures the confidence decay from the first half of the generated sequence to the second half. A positive value means the model became less certain toward the end of the response.
 
@@ -241,7 +354,7 @@ if drift > 0.15 {
 }
 ```
 
-### Finding the most and least confident tokens
+#### Finding the most and least confident tokens
 
 ```rust
 let (most_confident, least_confident) = exporter.confidence_extremes(&seq);
@@ -249,7 +362,7 @@ println!("Most confident positions: {:?}", most_confident);
 println!("Least confident positions: {:?}", least_confident);
 ```
 
-### Python interoperability
+#### Python interoperability
 
 The JSONL format maps directly to a pandas DataFrame:
 
@@ -273,16 +386,17 @@ with open("attribution.jsonl") as f:
 df = pd.DataFrame(rows)
 ```
 
----
+</details>
 
-## Token Attribution Map (causal leave-one-out)
+<details>
+<summary><b>Token Attribution Map (causal leave-one-out)</b></summary>
 
 `AttributionMap` computes per-output-token causal attribution scores using an
 approximate leave-one-out (LOO) proxy.  For each input token *i*, the model is
 re-run with token *i* masked; the drop in confidence of each output token is
 recorded as the influence score.
 
-### Computation model
+#### Computation model
 
 ```
 score(input_i, output_j) = baseline_confidence(output_j)
@@ -295,7 +409,7 @@ Negative score = input *i* was **hurting** output *j*.
 This requires N+1 inferences for N input tokens. Use `max_input_tokens` in your
 runner to control cost.
 
-### Example
+#### Example
 
 ```rust
 use every_other_token::attribution::{AttributionMap, AttributionRenderer};
@@ -321,7 +435,7 @@ let json = map.to_json().expect("serialization succeeds");
 std::fs::write("attribution_map.json", json).ok();
 ```
 
-### Terminal renderer
+#### Terminal renderer
 
 `AttributionRenderer` uses ANSI color bands matching the existing heatmap:
 
@@ -335,15 +449,16 @@ std::fs::write("attribution_map.json", json).ok();
 `with_top_k(N)` limits the display to the N most influential input tokens per
 output position.
 
----
+</details>
 
-## Prompt Mutation Lab
+<details>
+<summary><b>Prompt Mutation Lab</b></summary>
 
 `MutationLab` systematically varies specified tokens, phrases, or parameters in
 a base prompt, runs all variants through the model, and produces a ranked
 markdown table of results.
 
-### Mutation targets
+#### Mutation targets
 
 | Target | Description |
 |--------|-------------|
@@ -352,7 +467,7 @@ markdown table of results.
 | `SystemPrompt` | Replace the entire system prompt |
 | `Temperature` | Vary the sampling temperature (variant parsed as `f32`) |
 
-### Mutation metrics
+#### Mutation metrics
 
 | Metric | Description |
 |--------|-------------|
@@ -361,7 +476,7 @@ markdown table of results.
 | `TopTokenChange` | Whether any top predicted token changed vs. the baseline |
 | `SentimentShift` | Fraction of high-confidence tokens minus baseline fraction |
 
-### Example
+#### Example
 
 ```rust
 use every_other_token::mutation_lab::{
@@ -392,10 +507,14 @@ println!("Best variant: {:?}", result.best().map(|r| &r.variant));
 println!("Worst variant: {:?}", result.worst().map(|r| &r.variant));
 ```
 
-### Output table format
+#### Output table format
 
 ```markdown
-## Mutation Experiment Results
+
+</details>
+
+<details>
+<summary><b>Mutation Experiment Results</b></summary>
 
 **Base prompt:** `Explain {SLOT} to a 5-year-old.`
 **Target:** Word(1)
@@ -409,69 +528,10 @@ println!("Worst variant: {:?}", result.worst().map(|r| &r.variant));
 | 4 | `photosynthesis` | `Explain photosynthesis to a 5-y...` | 7.2981 |
 ```
 
----
+</details>
 
-## A/B system prompt testing
-
-Test how two different system prompts affect per-token confidence distributions, with automatic statistical significance testing.
-
-```bash
-./target/release/every-other-token "Explain machine learning" \
-    --research --runs 30 \
-    --system-a "You are a concise technical expert." \
-    --system-b "You are a friendly tutor explaining to a beginner." \
-    --significance \
-    --output ab_results.json
-```
-
-The output JSON includes:
-- Per-run confidence histograms for system A and system B
-- Welch's t-test statistic and p-value
-- Mean confidence delta between the two system prompts
-- Positions where the distributions diverged most
-
-### A/B via the web UI
-
-Launch with `--web` and select the **Experiment** view to see both system prompts streaming side-by-side with a live divergence map.
-
----
-
-## Web UI guide
-
-Launch with `--web` to open the single-page application at `http://localhost:8888`.
-
-| View | Description |
-|------|-------------|
-| **Single** | Live token stream with per-token confidence bars and perplexity pulse |
-| **Split** | Original vs transformed output side by side |
-| **Quad** | Four transforms applied simultaneously in a 2x2 grid |
-| **Diff** | OpenAI and Anthropic streaming the same prompt; diverging positions highlighted |
-| **Experiment** | A/B mode: two system prompts, live divergence map |
-| **Research** | Aggregate stats dashboard: perplexity histogram, confidence distribution, vocabulary diversity |
-
-Change the port with `--port 9000`. The port can also be set in `~/.eot.toml`.
-
----
-
-## Configuration file
-
-Create `~/.eot.toml` (global) or `.eot.toml` in the working directory (local wins over global):
-
-```toml
-provider     = "anthropic"
-model        = "claude-sonnet-4-6"
-transform    = "reverse"
-rate         = 0.5
-port         = 8888
-top_logprobs = 5
-system_a     = "You are a concise assistant."
-```
-
-All CLI flags override config file values.
-
----
-
-## CLI reference
+<details>
+<summary><b>CLI reference</b></summary>
 
 ```
 USAGE:
@@ -488,6 +548,7 @@ OPTIONS:
     --heatmap                       Enable token importance heatmap
     --web                           Launch web UI instead of terminal
     --port <PORT>                   Web UI port [default: 8888]
+    --no-open                       With --web, do not open a browser tab
     --research                      Headless research mode
     --runs <RUNS>                   Number of research runs [default: 10]
     --output <FILE>                 Research output JSON path [default: research_output.json]
@@ -510,13 +571,14 @@ OPTIONS:
     --log-db <FILE>                 SQLite experiment log (requires sqlite-log feature)
 ```
 
----
+</details>
 
-## Divergence Detection Engine
+<details>
+<summary><b>Divergence Detection Engine</b></summary>
 
 `divergence.rs` runs the same prompt through N model configurations simultaneously and computes a per-position **Jensen-Shannon divergence** score showing exactly where and how much models disagree.
 
-### Concepts
+#### Concepts
 
 | Term | Description |
 |------|-------------|
@@ -526,7 +588,7 @@ OPTIONS:
 | `DivergenceResult` | Complete run: all streams, all divergence points, aggregate statistics |
 | `DivergenceDetector` | Orchestrates analysis; threshold configurable |
 
-### Jensen-Shannon divergence
+#### Jensen-Shannon divergence
 
 At each token position `t`, the detector collects a probability distribution `P_i(t)` from each model (from the logprobs API). It then computes:
 
@@ -543,7 +605,7 @@ normalised by `log(n)` to give a score in `[0, 1]`.
 | ~0.5 | Substantial disagreement |
 | 1.0 | Models produce completely different tokens |
 
-### Usage
+#### Usage
 
 ```rust
 use every_other_token::divergence::{DivergenceDetector, ModelConfig};
@@ -565,7 +627,7 @@ println!("Mean JS: {:.4}", result.mean_divergence());
 println!("High-divergence positions: {:?}", result.high_divergence_positions(0.5));
 ```
 
-### Coloured diff report
+#### Coloured diff report
 
 `DivergenceResult::render_report()` produces a multi-line ANSI report:
 
@@ -575,13 +637,14 @@ println!("High-divergence positions: {:?}", result.high_divergence_positions(0.5
 
 Each model's full token stream is printed with its disagreement positions highlighted.
 
----
+</details>
 
-## Token Intervention Mode
+<details>
+<summary><b>Token Intervention Mode</b></summary>
 
 `intervention.rs` enables **causal interventions**: pausing generation at any token, injecting a correction, continuing generation from the injected token, and measuring the causal effect downstream.
 
-### Concepts
+#### Concepts
 
 | Term | Description |
 |------|-------------|
@@ -591,7 +654,7 @@ Each model's full token stream is printed with its disagreement positions highli
 | `causal_effect()` | Normalised token-level edit distance between original and final streams |
 | `causal_influence_map()` | Per-position influence score: how much each position affects downstream tokens |
 
-### Causal effect measurement
+#### Causal effect measurement
 
 ```rust
 use every_other_token::intervention::{InterventionHistory, Intervention};
@@ -609,7 +672,7 @@ history.apply(intervention, counterfactual);
 println!("Causal effect: {:.3}", history.causal_effect()); // fraction of tokens that changed
 ```
 
-### TUI token editor
+#### TUI token editor
 
 `TokenEditor` provides cursor navigation and token-level editing in any VT100 terminal:
 
@@ -627,7 +690,7 @@ let edit = editor.commit_edit(); // Some((1, " sky", " ocean"))
 println!("{}", editor.render()); // ANSI-highlighted stream
 ```
 
-### Causal influence map
+#### Causal influence map
 
 ```rust
 use every_other_token::intervention::causal_influence_map;
@@ -640,9 +703,10 @@ let map = causal_influence_map(&original, &counterfact);
 // map[1] = fraction of positions >1 that changed = 0.0  (c and d unchanged)
 ```
 
----
+</details>
 
-## Key modules
+<details>
+<summary><b>Key modules</b></summary>
 
 | Module | Responsibility |
 |--------|----------------|
@@ -669,9 +733,10 @@ let map = causal_influence_map(&original, &counterfact);
 | `bayesian.rs` | Bayesian confidence interval estimation across runs |
 | `checkpoint.rs` | Snapshot/restore for long research sessions |
 
----
+</details>
 
-## Feature flags
+<details>
+<summary><b>Feature flags</b></summary>
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -685,13 +750,14 @@ let map = causal_influence_map(&original, &counterfact);
 | `redis-backing` | Off | Write-through Redis persistence for agent memory and snapshots |
 | `wasm` | Off | WASM target bindings via `wasm-bindgen` |
 
----
+</details>
 
-## Semantic Similarity
+<details>
+<summary><b>Semantic Similarity</b></summary>
 
 `src/similarity.rs` provides TF-IDF based semantic similarity scoring.
 
-### CLI usage
+#### CLI usage
 
 ```bash
 # Compare two texts
@@ -701,7 +767,7 @@ every-other-token --similarity "the quick brown fox" "a fast red fox"
 every-other-token "$(cat my_prompts.txt)" --diversity-filter
 ```
 
-### Programmatic usage
+#### Programmatic usage
 
 ```rust
 use every_other_token::similarity::{SemanticScorer, DiversityFilter};
@@ -723,7 +789,10 @@ let filter = DiversityFilter::new(&seqs);
 let deduped = filter.filter(seqs, 0.85);
 ```
 
-## Streaming with Backpressure
+</details>
+
+<details>
+<summary><b>Streaming with Backpressure</b></summary>
 
 `src/stream_compress.rs` provides a streaming token compressor with three
 backpressure strategies.
@@ -734,7 +803,7 @@ backpressure strategies.
 | `Block` | Signals `Throttled` until the buffer drains below `low_watermark` |
 | `Compress` | Aggressively compresses incoming tokens (keeps every other) |
 
-### Example
+#### Example
 
 ```rust
 use every_other_token::stream_compress::{
@@ -755,41 +824,14 @@ let stats = sc.stats();
 println!("ratio: {:.2}", stats.ratio);
 ```
 
----
+</details>
 
-## Building from source
-
-```bash
-git clone https://github.com/Mattbusel/Every-Other-Token
-cd Every-Other-Token
-cargo build --release
-cargo test --lib
-```
-
-Enable optional features:
-
-```bash
-cargo build --release --features sqlite-log,self-tune
-```
-
----
-
-## Contributing
-
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b my-feature`.
-3. Ensure `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test --lib` all pass.
-4. Open a pull request against `main`.
-
-CI enforces formatting, Clippy, the full test suite, and a release build before merging.
-
----
-
-## Batch Processing
+<details>
+<summary><b>Batch Processing</b></summary>
 
 The `batch` module (`src/batch.rs`) provides a priority-queue-based concurrent pipeline for compressing many token sequences at once.
 
-### Data types
+#### Data types
 
 | Type | Description |
 |------|-------------|
@@ -798,7 +840,7 @@ The `batch` module (`src/batch.rs`) provides a priority-queue-based concurrent p
 | `BatchConfig` | `max_concurrent`, `queue_capacity`, `timeout` |
 | `BatchStats` | Aggregate: `jobs_submitted`, `jobs_completed`, `jobs_failed`, `avg_ratio`, `throughput_tokens_per_sec` |
 
-### Usage
+#### Usage
 
 ```bash
 # Process a JSONL file where each line is a JSON array of tokens
@@ -813,7 +855,7 @@ Each line of `tokens.jsonl` should be a JSON array:
 
 Results are streamed to stdout as JSONL. Aggregate stats are printed to stderr.
 
-### API example
+#### API example
 
 ```rust
 use every_other_token::batch::{BatchConfig, BatchProcessor};
@@ -831,13 +873,14 @@ while let Some(result) = stream.next().await {
 
 Higher-priority jobs are processed first via a `BinaryHeap`. Concurrent execution is bounded by `max_concurrent`.
 
----
+</details>
 
-## Quality-Adaptive Compression
+<details>
+<summary><b>Quality-Adaptive Compression</b></summary>
 
 The `adaptive` module (`src/adaptive.rs`) measures and optimises the quality of token-level compression.
 
-### Quality model
+#### Quality model
 
 ```
 overall_score = 0.4 * semantic_preservation
@@ -852,14 +895,14 @@ overall_score = 0.4 * semantic_preservation
 | `ratio` | `compressed_len / original_len`, lower means more compressed |
 | `overall_score` | Weighted combination (higher is better) |
 
-### Usage
+#### Usage
 
 ```bash
 # Print quality metrics for the compression applied to a prompt
 every-other-token "The quick brown fox jumps" --quality
 ```
 
-### API example
+#### API example
 
 ```rust
 use every_other_token::adaptive::{AdaptiveCompressor, CompressionTarget, QualityMetric};
@@ -879,9 +922,10 @@ let (compressed, quality) = compressor.compress(&tokens, &target);
 println!("compressed to {} tokens with score={:.3}", compressed.len(), quality.overall_score);
 ```
 
----
+</details>
 
-## Context Window Manager
+<details>
+<summary><b>Context Window Manager</b></summary>
 
 The `context` module provides `ContextWindow`, a priority-based token budget manager for LLM context construction.
 
@@ -925,9 +969,10 @@ println!("evictions: {}", stats.evictions);
 - `ContextStats` tracks block counts by type, utilization, and eviction count
 - `--context-budget <N>` CLI flag sets the token budget (default: 4096)
 
----
+</details>
 
-## Vocabulary Analyzer
+<details>
+<summary><b>Vocabulary Analyzer</b></summary>
 
 The `vocab` module provides `VocabularyAnalyzer`, measures vocabulary coverage, OOV rates, and Zipf's law fit for token sequences.
 
@@ -970,18 +1015,15 @@ println!("Zipf exponent: {:.3} (r²={:.3})", params.exponent, params.r_squared);
 - `zipf_score`: 1 - |exponent - 1.0|, normalized to [0, 1]
 - `--vocab-stats` CLI flag: prints vocabulary statistics for the current prompt
 
----
+</details>
 
 ## Status
 
-Research tool, actively developed. The CI workflow is currently failing on `main`; `cargo build` works. The screenshot above is from an early interactive version; the current CLI takes the prompt, transform and model as arguments (see the CLI reference).
-
----
+Research tool, actively developed. CI (the full test suite plus a feature-flag matrix) runs on every push and pull request. Tagged releases get prebuilt binaries for Linux, macOS and Windows from the release workflow.
 
 ## License
 
-MIT -- see [LICENSE](LICENSE) for details.
-
+MIT, see [LICENSE](LICENSE) for details.
 
 ## Hire the author
 

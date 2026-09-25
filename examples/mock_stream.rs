@@ -39,14 +39,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("prompt:    {prompt}");
     println!("transform: {transform:?} (applied to every other token)\n");
-    println!("{:>3}  {:<24} {:<24} {:>6} {:>6}", "#", "original", "shown", "conf", "ppl");
-    println!("{}", "-".repeat(68));
+    println!("{:>3}  {:<27} {:<27} {:>6} {:>6}", "#", "original", "shown", "conf", "ppl");
+    println!("{}", "-".repeat(74));
 
     let mut original = String::new();
     let mut shown = String::new();
     while let Ok(ev) = rx.try_recv() {
         println!(
-            "{:>3}  {:<24} {:<24} {:>6} {:>6}{}",
+            "{:>3}  {:<27} {:<27} {:>6} {:>6}{}",
             ev.index,
             format!("{:?}", ev.original),
             format!("{:?}", ev.text),

@@ -251,21 +251,21 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     );
     eprintln!("{}", "  Press Ctrl+C to stop.".bright_blue());
 
-    // Try to open the browser
+    // Try to open the browser, unless --no-open was given.
     #[cfg(target_os = "windows")]
-    {
+    if !default_args.no_open {
         let _ = std::process::Command::new("cmd")
             .args(["/C", &format!("start http://localhost:{}", port)])
             .spawn();
     }
     #[cfg(target_os = "macos")]
-    {
+    if !default_args.no_open {
         let _ = std::process::Command::new("open")
             .arg(format!("http://localhost:{}", port))
             .spawn();
     }
     #[cfg(target_os = "linux")]
-    {
+    if !default_args.no_open {
         let _ = std::process::Command::new("xdg-open")
             .arg(format!("http://localhost:{}", port))
             .spawn();
@@ -499,6 +499,7 @@ async fn handle_connection(
 
             let provider = match provider_str.as_str() {
                 "anthropic" => Provider::Anthropic,
+                "mock" => Provider::Mock,
                 _ => Provider::Openai,
             };
 
@@ -750,6 +751,7 @@ async fn handle_connection(
 
             let ab_provider = match provider_str.as_str() {
                 "anthropic" => Provider::Anthropic,
+                "mock" => Provider::Mock,
                 _ => Provider::Openai,
             };
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
@@ -1173,7 +1175,7 @@ mod tests {
 
     #[test]
     fn test_index_html_has_dark_theme() {
-        assert!(INDEX_HTML.contains("background:#0d1117"));
+        assert!(INDEX_HTML.contains("--bg:#0c0d0b"));
     }
 
     #[test]

@@ -6,26 +6,26 @@
 <title>Every Other Token</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d1117;--fg:#c9d1d9;--card-bg:#161b22;--border:#21262d}
+:root{--bg:#0c0d0b;--fg:#e6e1d3;--card-bg:#141512;--border:#25271f}
 body{background:var(--bg);color:var(--fg);font-family:'Cascadia Code','Fira Code',monospace;min-height:100vh;display:flex;flex-direction:column}
 body[data-theme=light]{--bg:#ffffff;--fg:#24292f;--card-bg:#f6f8fa;--border:#d0d7de}
-header{padding:16px 24px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between}
-header h1{font-size:1.2rem;color:#58a6ff}
+header{padding:16px 24px;border-bottom:1px solid #25271f;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:1.2rem;color:#e8c872}
 .hdr-right{display:flex;gap:8px}
-.controls{display:flex;gap:10px;padding:12px 24px;flex-wrap:wrap;align-items:end;border-bottom:1px solid #21262d;background:#161b22}
+.controls{display:flex;gap:10px;padding:12px 24px;flex-wrap:wrap;align-items:end;border-bottom:1px solid #25271f;background:#141512}
 .field{display:flex;flex-direction:column;gap:3px}
-.field label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
-.field input,.field select{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:.85rem}
-.field input:focus,.field select:focus{outline:none;border-color:#58a6ff}
+.field label{font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px}
+.field input,.field select{background:#0c0d0b;border:1px solid #36382f;color:#e6e1d3;padding:6px 10px;border-radius:6px;font-family:inherit;font-size:.85rem}
+.field input:focus,.field select:focus{outline:none;border-color:#e8c872}
 .field input[type=text]{min-width:240px}
 .btn{border:none;padding:6px 14px;border-radius:6px;font-family:inherit;font-size:.85rem;cursor:pointer;color:#fff}
 .btn-go{background:#238636}.btn-go:hover{background:#2ea043}
-.btn-go:disabled{background:#21262d;color:#484f58;cursor:not-allowed}
-.btn-mode{background:#30363d}.btn-mode:hover{background:#484f58}
-.btn-mode.active{background:#1f6feb}
+.btn-go:disabled{background:#25271f;color:#5f5b50;cursor:not-allowed}
+.btn-mode{background:#36382f}.btn-mode:hover{background:#5f5b50}
+.btn-mode.active{background:#4d4b3e}
 .btn-export{background:#6e40c9}.btn-export:hover{background:#8957e5}
-.toggle{display:flex;align-items:center;gap:5px;font-size:.8rem;color:#8b949e;cursor:pointer;user-select:none}
-.toggle input{accent-color:#58a6ff}
+.toggle{display:flex;align-items:center;gap:5px;font-size:.8rem;color:#96917f;cursor:pointer;user-select:none}
+.toggle input{accent-color:#e8c872}
 /* View modes */
 #views{flex:1;overflow:auto;position:relative}
 /* Single column */
@@ -33,42 +33,42 @@ header h1{font-size:1.2rem;color:#58a6ff}
 /* Side-by-side */
 .view-sidebyside{display:grid;grid-template-columns:1fr 1fr;height:100%}
 .sbs-col{padding:16px 20px;line-height:1.8;font-size:.95rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto}
-.sbs-col:first-child{border-right:1px solid #21262d}
-.sbs-label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
+.sbs-col:first-child{border-right:1px solid #25271f}
+.sbs-label{font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
 /* Multi-transform 2x2 grid */
 .view-multi{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;height:100%}
-.multi-panel{padding:12px 16px;line-height:1.6;font-size:.85rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #21262d}
+.multi-panel{padding:12px 16px;line-height:1.6;font-size:.85rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #25271f}
 .multi-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block}
-.mp-reverse .multi-label{color:#58a6ff}
+.mp-reverse .multi-label{color:#e8c872}
 .mp-uppercase .multi-label{color:#f0883e}
 .mp-mock .multi-label{color:#a371f7}
 .mp-noise .multi-label{color:#3fb950}
-.mp-reverse .token.odd{color:#58a6ff;font-weight:bold}
+.mp-reverse .token.odd{color:#e8c872;font-weight:bold}
 .mp-uppercase .token.odd{color:#f0883e;font-weight:bold}
 .mp-mock .token.odd{color:#a371f7;font-weight:bold}
 .mp-noise .token.odd{color:#3fb950;font-weight:bold}
 /* Tokens */
 .token{display:inline;animation:fadeIn .12s ease-in}
-.token.odd{color:#00d4ff;font-weight:bold}
-.token.even{color:#c9d1d9}
+.token.odd{color:#ff6a2b;font-weight:bold}
+.token.even{color:#e6e1d3}
 .heat-4{background:#f85149;color:#fff}.heat-3{background:#f0883e;color:#000}
-.heat-2{background:#e3b341;color:#000}.heat-1{background:#58a6ff;color:#fff}.heat-0{}
+.heat-2{background:#e3b341;color:#000}.heat-1{background:#e8c872;color:#fff}.heat-0{}
 @keyframes fadeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
 /* Graph */
-#graph-wrap{border-top:1px solid #21262d;background:#0a0e14;display:none;overflow-x:auto}
+#graph-wrap{border-top:1px solid #25271f;background:#090a08;display:none;overflow-x:auto}
 #graph-wrap.show{display:block}
-#graph-toggle-bar{padding:6px 24px;border-top:1px solid #21262d;background:#161b22;display:flex;align-items:center;gap:12px}
+#graph-toggle-bar{padding:6px 24px;border-top:1px solid #25271f;background:#141512;display:flex;align-items:center;gap:12px}
 canvas#depgraph{width:100%;height:200px;display:block}
 /* Stats */
-#stats{padding:8px 24px;border-top:1px solid #21262d;font-size:.78rem;color:#8b949e;background:#161b22;display:flex;gap:20px;flex-wrap:wrap}
+#stats{padding:8px 24px;border-top:1px solid #25271f;font-size:.78rem;color:#96917f;background:#141512;display:flex;gap:20px;flex-wrap:wrap}
 /* Chaos tooltip */
-.token[title]{position:relative;cursor:help;border-bottom:1px dotted #58a6ff}
-.token[title]:hover::after{content:attr(title);position:absolute;top:-1.8em;left:0;background:#1c2333;color:#58a6ff;padding:2px 6px;border-radius:4px;font-size:.7rem;white-space:nowrap;z-index:10;pointer-events:none}
+.token[title]{position:relative;cursor:help;border-bottom:1px dotted #e8c872}
+.token[title]:hover::after{content:attr(title);position:absolute;top:-1.8em;left:0;background:#1c2333;color:#e8c872;padding:2px 6px;border-radius:4px;font-size:.7rem;white-space:nowrap;z-index:10;pointer-events:none}
 /* Diff view */
 .view-diff{display:grid;grid-template-columns:1fr 1fr;height:100%}
 .diff-col{padding:16px 20px;line-height:1.8;font-size:.95rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto}
-.diff-col:first-child{border-right:1px solid #21262d}
-.diff-label{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
+.diff-col:first-child{border-right:1px solid #25271f}
+.diff-label{font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:block}
 .diff-match{background:#0d2010;color:#3fb950}
 .diff-diverge{background:#200d0d;color:#f85149}
 /* Token surgery */
@@ -78,84 +78,84 @@ canvas#depgraph{width:100%;height:200px;display:block}
 /* Confidence bars */
 .conf-bar{display:inline-block;width:100%;height:2px;border-radius:1px;margin-top:1px;vertical-align:bottom}
 .token-wrap{display:inline-flex;flex-direction:column;align-items:center;vertical-align:top}
-.conf-high{background:#3fb950}.conf-mid{background:#e3b341}.conf-low{background:#f85149}.conf-none{background:#30363d}
+.conf-high{background:#3fb950}.conf-mid{background:#e3b341}.conf-low{background:#f85149}.conf-none{background:#36382f}
 /* High-perplexity pulse */
 @keyframes perpPulse{0%,100%{opacity:1}50%{opacity:.4}}
 .high-perp{animation:perpPulse 1.2s ease-in-out 3}
 /* Perplexity sparkline */
-#perp-spark-wrap{padding:4px 24px;background:#161b22;border-top:1px solid #21262d;display:none}
+#perp-spark-wrap{padding:4px 24px;background:#141512;border-top:1px solid #25271f;display:none}
 #perp-spark-wrap.show{display:block}
 #perp-spark{width:100%;height:40px;display:block}
 /* A/B Experiment view */
 .view-experiment{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:3fr 1fr;height:100%;gap:0;min-height:0}
-.exp-panel{padding:12px 16px;line-height:1.8;font-size:.9rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #21262d}
-.exp-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;color:#58a6ff}
+.exp-panel{padding:12px 16px;line-height:1.8;font-size:.9rem;white-space:pre-wrap;word-wrap:break-word;overflow-y:auto;border:1px solid #25271f}
+.exp-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block;color:#e8c872}
 .exp-label.b{color:#a371f7}
-.exp-perp-chart{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;overflow:hidden}
-.exp-diverge-map{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;overflow-y:auto;font-size:.8rem}
-.ab-system-prompts{display:none;gap:10px;padding:6px 24px;background:#161b22;border-bottom:1px solid #21262d;flex-wrap:wrap}
+.exp-perp-chart{padding:8px 16px;background:#090a08;border:1px solid #25271f;overflow:hidden}
+.exp-diverge-map{padding:8px 16px;background:#090a08;border:1px solid #25271f;overflow-y:auto;font-size:.8rem}
+.ab-system-prompts{display:none;gap:10px;padding:6px 24px;background:#141512;border-bottom:1px solid #25271f;flex-wrap:wrap}
 .ab-system-prompts.show{display:flex}
 /* Research dashboard */
-#research-dash{display:none;padding:12px 24px;background:#0d1117;border-top:2px solid #21262d;font-size:.78rem}
+#research-dash{display:none;padding:12px 24px;background:#0c0d0b;border-top:2px solid #25271f;font-size:.78rem}
 #research-dash.show{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.dash-card{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:10px 12px}
-.dash-card h3{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.dash-card .val{font-size:1.1rem;color:#c9d1d9;font-weight:bold}
-.dash-card .sub{font-size:.7rem;color:#484f58;margin-top:2px}
+.dash-card{background:#141512;border:1px solid #25271f;border-radius:6px;padding:10px 12px}
+.dash-card h3{font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.dash-card .val{font-size:1.1rem;color:#e6e1d3;font-weight:bold}
+.dash-card .sub{font-size:.7rem;color:#5f5b50;margin-top:2px}
 #conf-hist{display:flex;align-items:flex-end;gap:1px;height:32px;margin-top:4px}
-.hist-bar{flex:1;background:#1f6feb;min-height:2px;border-radius:1px 1px 0 0}
-#citation{font-size:.68rem;color:#484f58;word-break:break-all;margin-top:4px;line-height:1.4}
+.hist-bar{flex:1;background:#4d4b3e;min-height:2px;border-radius:1px 1px 0 0}
+#citation{font-size:.68rem;color:#5f5b50;word-break:break-all;margin-top:4px;line-height:1.4}
 /* ---- Multiplayer ---- */
 #mp-panel{display:none;background:#0a1a14;border-bottom:1px solid #1a3a28;padding:8px 24px;gap:16px;flex-wrap:wrap;align-items:center}
 #mp-panel.show{display:flex}
-.mp-code{font-size:1.3rem;font-weight:bold;color:#3fb950;letter-spacing:4px;background:#0d1117;padding:4px 12px;border-radius:4px;border:1px solid #1a3a28;cursor:pointer;user-select:all}
-.mp-label{font-size:.65rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
-#mp-count-badge{display:inline-flex;align-items:center;justify-content:center;background:#21262d;border-radius:10px;padding:1px 8px;font-size:.75rem;color:#e3b341;min-width:24px}
+.mp-code{font-size:1.3rem;font-weight:bold;color:#3fb950;letter-spacing:4px;background:#0c0d0b;padding:4px 12px;border-radius:4px;border:1px solid #1a3a28;cursor:pointer;user-select:all}
+.mp-label{font-size:.65rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+#mp-count-badge{display:inline-flex;align-items:center;justify-content:center;background:#25271f;border-radius:10px;padding:1px 8px;font-size:.75rem;color:#e3b341;min-width:24px}
 /* Sidebar */
-#sidebar{position:fixed;right:0;top:0;width:200px;height:100vh;background:#0d1117;border-left:1px solid #21262d;display:none;flex-direction:column;z-index:200}
+#sidebar{position:fixed;right:0;top:0;width:200px;height:100vh;background:#0c0d0b;border-left:1px solid #25271f;display:none;flex-direction:column;z-index:200}
 #sidebar.show{display:flex}
-#sidebar-hdr{padding:10px 12px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+#sidebar-hdr{padding:10px 12px;border-bottom:1px solid #25271f;display:flex;justify-content:space-between;align-items:center;font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px}
 #participant-list{flex:1;overflow-y:auto;padding:8px}
 .p-item{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:4px;font-size:.76rem;margin-bottom:2px}
-.p-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:bold;color:#0d1117;flex-shrink:0}
+.p-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:bold;color:#0c0d0b;flex-shrink:0}
 .p-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.p-host{font-size:.55rem;background:#1f6feb;color:#fff;padding:1px 4px;border-radius:3px}
+.p-host{font-size:.55rem;background:#4d4b3e;color:#fff;padding:1px 4px;border-radius:3px}
 /* Chat */
-#chat-panel{position:fixed;right:200px;top:0;width:240px;height:100vh;background:#0a0e14;border-left:1px solid #21262d;display:none;flex-direction:column;z-index:199}
+#chat-panel{position:fixed;right:200px;top:0;width:240px;height:100vh;background:#090a08;border-left:1px solid #25271f;display:none;flex-direction:column;z-index:199}
 #chat-panel.show{display:flex}
-#chat-hdr{padding:8px 12px;border-bottom:1px solid #21262d;font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
+#chat-hdr{padding:8px 12px;border-bottom:1px solid #25271f;font-size:.7rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px}
 #chat-msgs{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px}
 .chat-msg{font-size:.72rem;line-height:1.45}
 .chat-author{font-weight:bold}
-.chat-text{color:#c9d1d9;word-break:break-word}
-.chat-ref{font-size:.64rem;color:#484f58;margin-top:1px}
-#chat-wrap{padding:8px;border-top:1px solid #21262d;display:flex;gap:4px}
-#chat-in{flex:1;background:#161b22;border:1px solid #30363d;color:#c9d1d9;border-radius:4px;padding:4px 7px;font-family:inherit;font-size:.73rem;outline:none}
-#chat-in:focus{border-color:#58a6ff}
-#chat-btn{background:#1f6feb;border:none;color:#fff;border-radius:4px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.73rem}
+.chat-text{color:#e6e1d3;word-break:break-word}
+.chat-ref{font-size:.64rem;color:#5f5b50;margin-top:1px}
+#chat-wrap{padding:8px;border-top:1px solid #25271f;display:flex;gap:4px}
+#chat-in{flex:1;background:#141512;border:1px solid #36382f;color:#e6e1d3;border-radius:4px;padding:4px 7px;font-family:inherit;font-size:.73rem;outline:none}
+#chat-in:focus{border-color:#e8c872}
+#chat-btn{background:#4d4b3e;border:none;color:#fff;border-radius:4px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.73rem}
 /* Vote bar */
-#vote-bar{display:none;gap:10px;padding:4px 24px;background:#0d1117;border-top:1px solid #21262d;align-items:center;font-size:.75rem}
+#vote-bar{display:none;gap:10px;padding:4px 24px;background:#0c0d0b;border-top:1px solid #25271f;align-items:center;font-size:.75rem}
 #vote-bar.show{display:flex}
-.v-btn{border:1px solid #30363d;background:#161b22;color:#c9d1d9;border-radius:4px;padding:2px 10px;cursor:pointer;font-family:inherit;font-size:.75rem}
-.v-btn:hover{background:#21262d}
+.v-btn{border:1px solid #36382f;background:#141512;color:#e6e1d3;border-radius:4px;padding:2px 10px;cursor:pointer;font-family:inherit;font-size:.75rem}
+.v-btn:hover{background:#25271f}
 /* Replay */
-#replay-prog{height:3px;background:#21262d;border-radius:2px;overflow:hidden;display:none;flex:1}
+#replay-prog{height:3px;background:#25271f;border-radius:2px;overflow:hidden;display:none;flex:1}
 #replay-prog.show{display:block}
 #replay-bar{height:100%;background:#a371f7;width:0%;transition:width .08s linear}
 /* Transform preview */
-#transform-preview{padding:4px 24px;background:#0a0e14;border-top:1px solid #21262d;font-size:.72rem;color:#8b949e;display:none}
+#transform-preview{padding:4px 24px;background:#090a08;border-top:1px solid #25271f;font-size:.72rem;color:#96917f;display:none}
 #transform-preview.show{display:block}
 /* Chain builder */
-#chain-builder{display:none;padding:6px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;margin-top:4px}
+#chain-builder{display:none;padding:6px 12px;background:#0c0d0b;border:1px solid #36382f;border-radius:6px;margin-top:4px}
 #chain-builder.show{display:block}
-#chain-builder label{display:flex;align-items:center;gap:5px;font-size:.75rem;color:#c9d1d9;margin-bottom:3px;cursor:pointer}
+#chain-builder label{display:flex;align-items:center;gap:5px;font-size:.75rem;color:#e6e1d3;margin-bottom:3px;cursor:pointer}
 #chain-current{font-size:.68rem;color:#e3b341;margin-top:4px}
 /* A/B bar chart */
-#ab-chart-wrap{padding:8px 16px;background:#0a0e14;border:1px solid #21262d;margin-top:8px}
-#ab-chart-title{font-size:.7rem;color:#8b949e;margin-bottom:4px}
+#ab-chart-wrap{padding:8px 16px;background:#090a08;border:1px solid #25271f;margin-top:8px}
+#ab-chart-title{font-size:.7rem;color:#96917f;margin-bottom:4px}
 #ab-chart{display:block;width:100%}
 /* Research runs */
-#research-runs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:.78rem;color:#8b949e}
+#research-runs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:.78rem;color:#96917f}
 /* Rec button */
 .btn-rec-on{background:#f85149}
 @keyframes recPulse{0%,100%{opacity:1}50%{opacity:.5}}
@@ -168,25 +168,25 @@ canvas#depgraph{width:100%;height:200px;display:block}
 /* Shortcuts modal */
 #shortcuts-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;align-items:center;justify-content:center}
 #shortcuts-modal.show{display:flex}
-#shortcuts-box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 28px;min-width:320px;max-width:480px}
-#shortcuts-box h2{font-size:.9rem;color:#58a6ff;margin-bottom:12px}
+#shortcuts-box{background:#141512;border:1px solid #36382f;border-radius:8px;padding:20px 28px;min-width:320px;max-width:480px}
+#shortcuts-box h2{font-size:.9rem;color:#e8c872;margin-bottom:12px}
 #shortcuts-box table{width:100%;border-collapse:collapse;font-size:.8rem}
-#shortcuts-box td{padding:4px 8px;color:#c9d1d9}
+#shortcuts-box td{padding:4px 8px;color:#e6e1d3}
 #shortcuts-box td:first-child{color:#e3b341;font-weight:bold;white-space:nowrap;width:120px}
 #shortcuts-box tr:hover{background:#1f2937}
-#shortcuts-close{float:right;background:none;border:none;color:#8b949e;cursor:pointer;font-size:1.1rem;margin-top:-4px}
+#shortcuts-close{float:right;background:none;border:none;color:#96917f;cursor:pointer;font-size:1.1rem;margin-top:-4px}
 /* Toast notifications */
 #toast-container{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .toast{padding:10px 16px;border-radius:6px;font-size:.8rem;color:#fff;animation:slideIn .2s ease-out;pointer-events:auto;max-width:320px;word-break:break-word}
 .toast-warning{background:#9e6a03;border:1px solid #e3b341}
 .toast-error{background:#6d1d1d;border:1px solid #f85149}
-.toast-info{background:#1f3a5f;border:1px solid #58a6ff}
-.join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#8b949e;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #21262d;background:#0d1117}
-@media(max-width:640px){#sidebar{width:100%;position:relative;height:auto;border-left:none;border-top:1px solid #21262d}#chat-panel{right:0;width:100%;border-left:none;border-top:1px solid #21262d}body.sidebar-open{padding-right:0!important}}
+.toast-info{background:#1f3a5f;border:1px solid #e8c872}
+.join-toast{animation:slideIn .2s ease-out;font-size:.7rem;color:#96917f;padding:4px 6px;margin-bottom:4px;border-radius:3px;border:1px solid #25271f;background:#0c0d0b}
+@media(max-width:640px){#sidebar{width:100%;position:relative;height:auto;border-left:none;border-top:1px solid #25271f}#chat-panel{right:0;width:100%;border-left:none;border-top:1px solid #25271f}body.sidebar-open{padding-right:0!important}}
 /* Deleted token placeholder */
-.token-deleted{color:#484f58;text-decoration:line-through;font-style:italic}
+.token-deleted{color:#5f5b50;text-decoration:line-through;font-style:italic}
 /* Host badge */
-.host-badge{background:#1f6feb;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:700;letter-spacing:.05em}
+.host-badge{background:#4d4b3e;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:700;letter-spacing:.05em}
 /* Colorblind-safe heatmap */
 body.cb-mode .heat-0{background:#000!important;color:#fff!important}
 body.cb-mode .heat-1{background:#555!important}
@@ -214,11 +214,37 @@ body.cb-mode .heat-4::after{content:'○';font-size:.5em}
   .view-sidebyside,.view-diff{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
   .view-multi{grid-template-columns:1fr;grid-template-rows:repeat(4,1fr)}
 }
+/* ---- Theme: the token stream. Warm ink, one signal color for intercepted tokens. ---- */
+:root{--xf:#ff6a2b;--gold:#e8c872}
+body{font-family:ui-monospace,'Cascadia Code','JetBrains Mono','SF Mono',Menlo,Consolas,monospace}
+header{gap:16px;flex-wrap:wrap;padding:14px 24px}
+header h1{font-size:1.05rem;color:#e6e1d3;white-space:nowrap;letter-spacing:-.01em;font-weight:600}
+header h1 .h1-x{color:var(--xf)}
+.hdr-right{flex-wrap:wrap;justify-content:flex-end;gap:6px}
+.hdr-right .btn{padding:5px 10px;font-size:.78rem}
+#join-code{width:104px!important}
+.btn{border-radius:5px;transition:background .12s,border-color .12s,color .12s}
+.btn-mode,.btn-export{background:transparent;border:1px solid #36382f;color:#c9c4b6}
+.btn-mode:hover,.btn-export:hover{background:#1c1d19;border-color:#5f5b50;color:#e6e1d3}
+.btn-mode.active{background:#e6e1d3;border-color:#e6e1d3;color:#0c0d0b}
+.btn-go{background:var(--xf);color:#170904;font-weight:700}
+.btn-go:hover{background:#ff8450}
+.btn-go:disabled{background:#25271f;color:#5f5b50}
+.field input:focus,.field select:focus{border-color:var(--gold)}
+.token.odd{color:var(--xf);font-weight:600}
+.view-single{font-size:1.05rem;line-height:2;max-width:78ch;padding:28px 32px}
+.conf-high{background:#7fd69f}.conf-mid{background:#e8c872}.conf-low{background:#ff6a6a}
+/* On tokens, confidence is an underline, not a fill: green sure, gold unsure, red guessing. */
+.token.conf-high:not([class*=heat-]),.token.conf-mid:not([class*=heat-]),.token.conf-low:not([class*=heat-]){background:none;text-decoration-line:underline;text-decoration-thickness:2px;text-underline-offset:7px}
+.token.conf-high{text-decoration-color:#7fd69f}.token.conf-mid{text-decoration-color:#e8c872}.token.conf-low{text-decoration-color:#ff5c7a}
+.token[data-ws]::before{content:attr(data-ws);display:inline-block;white-space:pre}
+.token[title]{border-bottom:none}
+@media(max-width:640px){.hdr-right{justify-content:flex-start;gap:6px}.hdr-right .btn{font-size:.72rem!important;padding:5px 9px!important}}
 </style>
 </head>
 <body>
 <header>
-  <h1>Every Other Token</h1>
+  <h1>every-<span class="h1-x">other</span>-token</h1>
   <div class="hdr-right">
     <button class="btn btn-mode active" id="btn-single" title="Single stream" aria-label="Single stream view">Single</button>
     <button class="btn btn-mode" id="btn-sbs" title="Side-by-side: original vs transformed" aria-label="Side-by-side view: original vs transformed">Split</button>
@@ -227,14 +253,14 @@ body.cb-mode .heat-4::after{content:'○';font-size:.5em}
     <button class="btn btn-mode" id="btn-experiment" title="A/B experiment: two system prompts, same user prompt" aria-label="A/B experiment mode">Experiment</button>
     <button class="btn btn-mode" id="btn-research" title="Research dashboard: stats, perplexity, confidence" aria-label="Research dashboard">Research</button>
     <button class="btn btn-export" id="btn-export" title="Export session as JSON" aria-label="Export session as JSON">Export JSON</button>
-    <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" style="background:#4a7c59" aria-label="Export session as CSV">Export CSV</button>
-    <button class="btn btn-export" id="btn-import" title="Import a previously exported JSON session" style="background:#3a4a6a" aria-label="Import JSON session">Import JSON</button>
+    <button class="btn btn-export" id="btn-export-csv" title="Export session as CSV" aria-label="Export session as CSV">Export CSV</button>
+    <button class="btn btn-export" id="btn-import" title="Import a previously exported JSON session" aria-label="Import JSON session">Import JSON</button>
     <input type="file" id="import-file" accept=".json" style="display:none" aria-label="Select JSON file to import">
     <button class="btn btn-mode" id="btn-cb-mode" aria-label="Toggle colorblind-safe mode" title="Colorblind safe" style="font-size:.78rem;padding:4px 10px">◑ CB</button>
     <button class="btn btn-mode" id="btn-theme" title="Toggle dark/light theme" style="font-size:1rem;padding:4px 10px" aria-label="Toggle dark/light theme"><span aria-hidden="true">🌙</span></button>
-    <button class="btn" style="background:#0a6a4c;font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session" aria-label="Host a collaborative session">Host Session</button>
-    <input type="text" id="join-code" placeholder="Room code" maxlength="6" pattern="[A-Z0-9]+" inputmode="text" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" style="background:#0d1117;border:1px solid #30363d;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px" aria-label="Room code">
-    <button class="btn" style="background:#1f6feb;font-size:.78rem;padding:5px 12px" id="btn-join">Join</button>
+    <button class="btn btn-mode" style="font-size:.78rem;padding:5px 12px" id="btn-host" title="Host a collaborative session" aria-label="Host a collaborative session">Host Session</button>
+    <input type="text" id="join-code" placeholder="Room code" maxlength="6" pattern="[A-Z0-9]+" inputmode="text" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" style="background:#0c0d0b;border:1px solid #36382f;color:#3fb950;border-radius:6px;padding:5px 8px;font-family:inherit;font-size:.78rem;width:88px;text-transform:uppercase;letter-spacing:2px" aria-label="Room code">
+    <button class="btn btn-mode" style="font-size:.78rem;padding:5px 12px" id="btn-join">Join</button>
   </div>
 </header>
 <div id="ab-prompts" class="ab-system-prompts">
@@ -256,17 +282,17 @@ body.cb-mode .heat-4::after{content:'○';font-size:.5em}
       <label><input type="checkbox" data-tx="scramble"> scramble</label>
       <label><input type="checkbox" data-tx="delete"> delete</label>
       <label><input type="checkbox" data-tx="synonym"> synonym</label>
-      <div id="chain-current" style="color:#484f58">none</div>
+      <div id="chain-current" style="color:#5f5b50">none</div>
     </div>
   </div>
-  <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></div>
+  <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="mock">Mock (no API key)</option></select></div>
   <div class="field"><label for="model">Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
   <label class="toggle"><input type="checkbox" id="graphtoggle"> Graph</label>
   <div class="field"><label for="min-confidence">Min Conf</label>
     <div style="display:flex;align-items:center;gap:4px">
-      <input type="range" id="min-confidence" min="0" max="100" value="0" style="width:80px;accent-color:#58a6ff">
-      <span id="conf-label" style="font-size:.78rem;color:#c9d1d9;min-width:28px">0%</span>
+      <input type="range" id="min-confidence" min="0" max="100" value="0" style="width:80px;accent-color:#e8c872">
+      <span id="conf-label" style="font-size:.78rem;color:#e6e1d3;min-width:28px">0%</span>
     </div>
   </div>
   <button class="btn btn-go" id="start">Stream</button>
@@ -297,100 +323,100 @@ body.cb-mode .heat-4::after{content:'○';font-size:.5em}
   <div class="view-experiment" id="v-experiment" style="display:none">
     <div class="exp-panel" id="exp-a"><span class="exp-label">System Prompt A</span></div>
     <div class="exp-panel" id="exp-b"><span class="exp-label b">System Prompt B</span></div>
-    <div class="exp-perp-chart" id="exp-perp"><span style="font-size:.7rem;color:#8b949e">Perplexity comparison (A=blue, B=purple) — run streams to populate</span><br><canvas id="exp-perp-canvas" style="width:100%;height:120px;display:block;margin-top:4px"></canvas></div>
-    <div class="exp-diverge-map" id="exp-diverge"><span style="font-size:.7rem;color:#8b949e">Divergence map — run streams to populate</span></div>
+    <div class="exp-perp-chart" id="exp-perp"><span style="font-size:.7rem;color:#96917f">Perplexity comparison (A=gold, B=purple): run streams to populate</span><br><canvas id="exp-perp-canvas" style="width:100%;height:120px;display:block;margin-top:4px"></canvas></div>
+    <div class="exp-diverge-map" id="exp-diverge"><span style="font-size:.7rem;color:#96917f">Divergence map: run streams to populate</span></div>
   </div>
-  <!-- A/B Agreement Chart — shown below experiment grid -->
-  <div id="ab-chart-wrap" style="display:none;padding:8px 16px;background:#0a0e14;border-top:1px solid #21262d">
-    <div id="ab-chart-title" style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Token Agreement — first 50 positions (green=match, red=diverge)</div>
+  <!-- A/B Agreement Chart: shown below experiment grid -->
+  <div id="ab-chart-wrap" style="display:none;padding:8px 16px;background:#090a08;border-top:1px solid #25271f">
+    <div id="ab-chart-title" style="font-size:.7rem;color:#96917f;margin-bottom:4px">Token Agreement: first 50 positions (green=match, red=diverge)</div>
     <canvas id="ab-chart" height="80" style="display:block;width:100%"></canvas>
   </div>
   <!-- Research dashboard -->
   <div id="v-research" style="display:none;padding:16px 24px;overflow-y:auto;height:100%">
-    <h2 style="color:#58a6ff;font-size:1rem;margin-bottom:4px">Research Dashboard</h2>
+    <h2 style="color:#e8c872;font-size:1rem;margin-bottom:4px">Research Dashboard</h2>
     <div id="research-runs-row">
       <span>Research runs:</span>
-      <input type="number" id="research-runs" value="3" min="1" max="20" style="width:45px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:3px 6px;border-radius:4px;font-family:inherit;font-size:.78rem">
+      <input type="number" id="research-runs" value="3" min="1" max="20" style="width:45px;background:#0c0d0b;border:1px solid #36382f;color:#e6e1d3;padding:3px 6px;border-radius:4px;font-family:inherit;font-size:.78rem">
       <span id="research-progress" style="color:#a371f7"></span>
     </div>
     <button id="btn-export-research" class="btn btn-export" style="font-size:.73rem;padding:4px 12px;margin-bottom:8px" aria-label="Export research stats as Markdown">Export Stats (MD)</button>
-    <p style="font-size:.75rem;color:#8b949e;margin-bottom:12px">Stats computed from the most recent stream. Stream tokens first.</p>
+    <p style="font-size:.75rem;color:#96917f;margin-bottom:12px">Stats computed from the most recent stream. Stream tokens first.</p>
     <div id="research-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"></div>
     <div style="margin-top:16px">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top 10 High-Perplexity Tokens</div>
-      <ol id="research-perp-list" style="list-style:none;font-size:.8rem;color:#c9d1d9"></ol>
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top 10 High-Perplexity Tokens</div>
+      <ol id="research-perp-list" style="list-style:none;font-size:.8rem;color:#e6e1d3"></ol>
     </div>
     <div style="margin-top:16px">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Perplexity Distribution</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:#8b949e;margin-bottom:4px">
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Perplexity Distribution</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.7rem;color:#96917f;margin-bottom:4px">
         Perplexity bins: <input type="range" id="perp-bin-slider" min="5" max="50" value="10" style="width:80px;accent-color:#a371f7">
         <span id="perp-bin-count">10</span>
       </label>
       <div id="research-perp-hist" style="display:flex;gap:2px;align-items:flex-end;height:48px;margin-top:4px"></div>
     </div>
     <div style="margin-top:16px">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Confidence Distribution</div>
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Confidence Distribution</div>
       <div id="research-conf-hist" style="display:flex;gap:2px;align-items:flex-end;height:48px;margin-top:4px"></div>
-      <div style="display:flex;justify-content:space-between;font-size:.6rem;color:#484f58;margin-top:2px"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:.6rem;color:#5f5b50;margin-top:2px"><span>0.0</span><span>0.5</span><span>1.0</span></div>
     </div>
     <div style="margin-top:16px" id="sig-test-section">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">A/B Significance Test (Even vs Odd Runs)</div>
-      <div id="sig-test-result" style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:10px 12px;font-size:.8rem">
-        <span style="color:#484f58">Run at least 4 tokens from two alternating runs to see results.</span>
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">A/B Significance Test (Even vs Odd Runs)</div>
+      <div id="sig-test-result" style="background:#141512;border:1px solid #25271f;border-radius:4px;padding:10px 12px;font-size:.8rem">
+        <span style="color:#5f5b50">Run at least 4 tokens from two alternating runs to see results.</span>
       </div>
     </div>
     <div style="margin-top:16px">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Citation</div>
-      <code id="research-citation" style="font-size:.7rem;color:#e3b341;white-space:pre-wrap;display:block;background:#161b22;padding:8px;border-radius:4px;border:1px solid #21262d"></code>
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Citation</div>
+      <code id="research-citation" style="font-size:.7rem;color:#e3b341;white-space:pre-wrap;display:block;background:#141512;padding:8px;border-radius:4px;border:1px solid #25271f"></code>
     </div>
     <div style="margin-top:16px" id="undo-history-section">
-      <div style="font-size:.72rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Surgery Edit History</div>
-      <div id="surgery-history" style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:8px 12px;font-size:.78rem;max-height:120px;overflow-y:auto;color:#c9d1d9">
-        <span style="color:#484f58">No edits yet.</span>
+      <div style="font-size:.72rem;color:#96917f;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Surgery Edit History</div>
+      <div id="surgery-history" style="background:#141512;border:1px solid #25271f;border-radius:4px;padding:8px 12px;font-size:.78rem;max-height:120px;overflow-y:auto;color:#e6e1d3">
+        <span style="color:#5f5b50">No edits yet.</span>
       </div>
       <div style="display:flex;gap:6px;margin-top:6px">
-        <button id="btn-undo-one" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px" title="Undo last edit (Ctrl+Z)" disabled>↩ Undo</button>
-        <button id="btn-undo-all" class="btn" style="background:#21262d;font-size:.73rem;padding:3px 10px" onclick="undoAll()">Undo All Edits</button>
+        <button id="btn-undo-one" class="btn" style="background:#25271f;font-size:.73rem;padding:3px 10px" title="Undo last edit (Ctrl+Z)" disabled>↩ Undo</button>
+        <button id="btn-undo-all" class="btn" style="background:#25271f;font-size:.73rem;padding:3px 10px" onclick="undoAll()">Undo All Edits</button>
       </div>
     </div>
   </div>
 </div>
 <div id="graph-wrap"><canvas id="depgraph" role="img" aria-label="Token dependency graph showing transformed vs untransformed token positions"></canvas></div>
-<div id="perp-spark-wrap"><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label="Perplexity sparkline for last 60 tokens"><title>Perplexity over last 60 tokens</title><polyline id="perp-line" points="" fill="none" stroke="#a371f7" stroke-width="1.5"/></svg></div>
-<div id="conf-spark-wrap" style="padding:4px 24px;background:#0a0e14;border-top:1px solid #21262d;display:none">
-  <div style="font-size:.65rem;color:#8b949e;margin-bottom:2px">Confidence (last 60 tokens)</div>
-  <canvas id="sparkline" width="600" height="60" style="display:block;background:#1a1a2e;border-radius:4px;width:100%;max-width:600px" role="img" aria-label="Confidence sparkline for last 60 tokens"></canvas>
+<div id="perp-spark-wrap"><div style="font-size:.65rem;color:#96917f;margin:2px 0">Perplexity (last 60 tokens)</div><svg id="perp-spark" viewBox="0 0 600 40" preserveAspectRatio="none" role="img" aria-label="Perplexity sparkline for last 60 tokens"><title>Perplexity over last 60 tokens</title><polyline id="perp-line" points="" fill="none" stroke="#e8c872" stroke-width="1.5"/></svg></div>
+<div id="conf-spark-wrap" style="padding:4px 24px;background:#090a08;border-top:1px solid #25271f;display:none">
+  <div style="font-size:.65rem;color:#96917f;margin-bottom:2px">Confidence (last 60 tokens)</div>
+  <canvas id="sparkline" width="600" height="60" style="display:block;background:#141512;border-radius:4px;width:100%;max-width:600px" role="img" aria-label="Confidence sparkline for last 60 tokens"></canvas>
 </div>
 <div id="stats"></div>
 <div id="research-dash"></div>
 
 <!-- Multiplayer session panel -->
 <div id="mp-panel">
-  <div><div class="mp-label">Room Code</div><div class="mp-code" id="mp-code" title="Click to copy join link">——————</div></div>
+  <div><div class="mp-label">Room Code</div><div class="mp-code" id="mp-code" title="Click to copy join link">------</div></div>
   <div><div class="mp-label">Participants</div><span id="mp-count-badge">1</span></div>
   <button class="btn" style="background:#238636;font-size:.75rem;padding:4px 11px" id="btn-copy-link">Copy Link</button>
   <button class="btn" style="background:#6e40c9;font-size:.75rem;padding:4px 11px;display:none" id="btn-replay" aria-label="Replay recording">▶ Replay</button>
   <div id="replay-prog"><div id="replay-bar"></div></div>
-  <div style="display:flex;align-items:center;gap:4px;font-size:.72rem;color:#8b949e">
+  <div style="display:flex;align-items:center;gap:4px;font-size:.72rem;color:#96917f">
     <span>Speed:</span>
     <input type="range" id="replay-speed" min="1" max="10" value="3" style="width:60px;accent-color:#a371f7">
     <span id="speed-label">3×</span>
   </div>
-  <button class="btn" id="btn-rec" style="background:#30363d;font-size:.75rem;padding:4px 11px" aria-label="Record session">⏺ Record</button>
-  <button class="btn" style="background:#21262d;font-size:.75rem;padding:4px 11px;margin-left:auto" id="btn-leave">Leave</button>
+  <button class="btn" id="btn-rec" style="background:#36382f;font-size:.75rem;padding:4px 11px" aria-label="Record session">⏺ Record</button>
+  <button class="btn" style="background:#25271f;font-size:.75rem;padding:4px 11px;margin-left:auto" id="btn-leave">Leave</button>
 </div>
 <!-- Vote bar -->
 <div id="vote-bar" role="region" aria-label="Transform voting">
-  <span style="color:#8b949e;font-size:.7rem">Transform vote:</span>
+  <span style="color:#96917f;font-size:.7rem">Transform vote:</span>
   <button class="v-btn" id="btn-vote-up">👍 <span id="vote-up-n">0</span></button>
   <button class="v-btn" id="btn-vote-dn">👎 <span id="vote-dn-n">0</span></button>
-  <span id="vote-label" style="font-size:.7rem;color:#484f58"></span>
+  <span id="vote-label" style="font-size:.7rem;color:#5f5b50"></span>
 </div>
 <!-- Participant sidebar -->
 <div id="sidebar" role="complementary" aria-label="Participants">
   <div id="sidebar-hdr">
     <span>Participants</span>
-    <button onclick="$('#chat-panel').classList.toggle('show')" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:.8rem" title="Toggle chat">💬</button>
+    <button onclick="$('#chat-panel').classList.toggle('show')" style="background:none;border:none;color:#96917f;cursor:pointer;font-size:.8rem" title="Toggle chat">💬</button>
   </div>
   <div id="participant-list"></div>
 </div>
@@ -448,13 +474,13 @@ let allTokens=[], graphNodes=[], surgeryLog=[], undoStack=[];
 function renderSurgeryHistory() {
   const el = document.getElementById('surgery-history');
   if (!el) return;
-  if (surgeryLog.length === 0) { el.innerHTML = '<span style="color:#484f58">No edits yet.</span>'; return; }
+  if (surgeryLog.length === 0) { el.innerHTML = '<span style="color:#5f5b50">No edits yet.</span>'; return; }
   const frag=document.createDocumentFragment();
   surgeryLog.slice().reverse().forEach(e=>{
     const row=document.createElement('div');
-    row.style.cssText='display:flex;gap:8px;padding:2px 0;border-bottom:1px solid #21262d';
+    row.style.cssText='display:flex;gap:8px;padding:2px 0;border-bottom:1px solid #25271f';
     const idx=document.createElement('span');
-    idx.style.cssText='color:#484f58;font-size:.7rem;flex-shrink:0';
+    idx.style.cssText='color:#5f5b50;font-size:.7rem;flex-shrink:0';
     idx.textContent='#'+e.index;
     const orig=document.createElement('span');
     orig.style.cssText='color:#f85149;text-decoration:line-through;flex:1;overflow:hidden;text-overflow:ellipsis';
@@ -538,7 +564,11 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity)
   }
   /* Perplexity pulse for surprising tokens (perplexity > 5) */
   if(perplexity!=null&&perplexity>5)s.classList.add('high-perp');
-  if(chaosLabel!=='deleted'&&text!=='')s.textContent=text;
+  if(chaosLabel!=='deleted'&&text!==''){
+    /* Leading whitespace sits outside the confidence underline. */
+    const m=/^(\s+)(\S[\s\S]*)$/.exec(text);
+    if(m){s.dataset.ws=m[1];s.textContent=m[2];}else s.textContent=text;
+  }
   s.addEventListener('contextmenu',function(e){
     e.preventDefault();
     navigator.clipboard&&navigator.clipboard.writeText(s.textContent).then(()=>{
@@ -547,6 +577,14 @@ function mkSpan(text,isOdd,importance,extraCls,chaosLabel,confidence,perplexity)
     });
   });
   return s;
+}
+
+/* Append a token span; its leading whitespace goes in as plain text so the
+   confidence underline and line wrapping only apply to the word itself. */
+function appendTok(container,sp){
+  const ws=sp.dataset.ws;
+  if(ws){container.appendChild(document.createTextNode(ws));delete sp.dataset.ws;}
+  container.appendChild(sp);
 }
 
 /* ---- Token search/filter ---- */
@@ -583,7 +621,7 @@ function updatePerpSparkline(perplexity){
   if (!svg) return;
   const tip = document.createElement('div');
   tip.id = 'spark-tip';
-  tip.style.cssText = 'display:none;position:fixed;background:#1c2333;color:#a371f7;padding:2px 8px;border-radius:4px;font-size:.7rem;pointer-events:none;z-index:100;border:1px solid #30363d';
+  tip.style.cssText = 'display:none;position:fixed;background:#1c2333;color:#a371f7;padding:2px 8px;border-radius:4px;font-size:.7rem;pointer-events:none;z-index:100;border:1px solid #36382f';
   document.body.appendChild(tip);
   svg.addEventListener('mousemove', e => {
     if (!perpWindow.length) return;
@@ -627,17 +665,17 @@ function updateSigTest(tokens) {
   if (!el) return;
   const r = welchT(evenConf, oddConf);
   if (!r) {
-    el.innerHTML = '<span style="color:#484f58">Not enough confidence data for t-test (need OpenAI provider).</span>';
+    el.innerHTML = '<span style="color:#5f5b50">Not enough confidence data for t-test (need OpenAI provider).</span>';
     return;
   }
   const sig = r.p < 0.05;
   const color = sig ? '#f85149' : '#3fb950';
   el.innerHTML = `
     <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <div><span style="color:#8b949e">Even tokens mean conf:</span> <strong style="color:#58a6ff">${r.ma.toFixed(4)}</strong> (n=${r.na})</div>
-      <div><span style="color:#8b949e">Odd tokens mean conf:</span> <strong style="color:#a371f7">${r.mb.toFixed(4)}</strong> (n=${r.nb})</div>
-      <div><span style="color:#8b949e">t-statistic:</span> <strong style="color:#e3b341">${r.t.toFixed(3)}</strong></div>
-      <div><span style="color:#8b949e">p-value:</span> <strong style="color:${color}">${r.p.toFixed(4)}</strong></div>
+      <div><span style="color:#96917f">Even tokens mean conf:</span> <strong style="color:#e8c872">${r.ma.toFixed(4)}</strong> (n=${r.na})</div>
+      <div><span style="color:#96917f">Odd tokens mean conf:</span> <strong style="color:#a371f7">${r.mb.toFixed(4)}</strong> (n=${r.nb})</div>
+      <div><span style="color:#96917f">t-statistic:</span> <strong style="color:#e3b341">${r.t.toFixed(3)}</strong></div>
+      <div><span style="color:#96917f">p-value:</span> <strong style="color:${color}">${r.p.toFixed(4)}</strong></div>
       <div style="padding:2px 8px;border-radius:3px;background:${sig?'#2d1b1b':'#0d2010'};color:${color};font-size:.75rem">${sig?'⚠ SIGNIFICANT (p<0.05)':'✓ Not significant'}</div>
     </div>`;
 }
@@ -684,7 +722,7 @@ function renderResearch(){
   const confHist=$('#research-conf-hist');
   const citation=$('#research-citation');
   if(!grid)return;
-  if(allTokens.length===0){grid.innerHTML='<div style="color:#8b949e;font-size:.8rem">No tokens yet. Run a stream first.</div>';return;}
+  if(allTokens.length===0){grid.innerHTML='<div style="color:#96917f;font-size:.8rem">No tokens yet. Run a stream first.</div>';return;}
   /* Vocab diversity */
   const unique=new Set(allTokens.map(t=>t.original.toLowerCase())).size;
   const diversity=(unique/allTokens.length).toFixed(3);
@@ -709,14 +747,14 @@ function renderResearch(){
   /* Top 10 perplexity tokens */
   if(perpList){
     const sorted=[...withPerp].sort((a,b)=>b.perplexity-a.perplexity).slice(0,10);
-    perpList.innerHTML=sorted.map((t,i)=>`<li style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d;font-size:.78rem"><span style="color:#c9d1d9">${i+1}. "${t.original}"</span><span style="color:#f85149">${t.perplexity.toFixed(1)}</span></li>`).join('');
+    perpList.innerHTML=sorted.map((t,i)=>`<li style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #25271f;font-size:.78rem"><span style="color:#e6e1d3">${i+1}. "${t.original}"</span><span style="color:#f85149">${t.perplexity.toFixed(1)}</span></li>`).join('');
   }
   /* Confidence histogram (10 buckets) */
   if(confHist&&withConf.length>0){
     const buckets=Array(10).fill(0);
     withConf.forEach(t=>{const b=Math.min(9,Math.floor(t.confidence*10));buckets[b]++});
     const maxB=Math.max(...buckets,1);
-    confHist.innerHTML=buckets.map((v,i)=>`<div style="flex:1;background:#1f6feb;height:${Math.round(v/maxB*44)+2}px;border-radius:2px 2px 0 0;opacity:${0.4+i*0.06}" title="${(i*10)}-${(i+1)*10}%: ${v} tokens"></div>`).join('');
+    confHist.innerHTML=buckets.map((v,i)=>`<div style="flex:1;background:#4d4b3e;height:${Math.round(v/maxB*44)+2}px;border-radius:2px 2px 0 0;opacity:${0.4+i*0.06}" title="${(i*10)}-${(i+1)*10}%: ${v} tokens"></div>`).join('');
   }
   /* Citation */
   if(citation){
@@ -743,7 +781,7 @@ function startExperiment(){
   if(es){es.close();es=null}
   $('#exp-a').innerHTML='<span class="exp-label">System Prompt A</span>';
   $('#exp-b').innerHTML='<span class="exp-label b">System Prompt B</span>';
-  $('#exp-diverge').innerHTML='<span style="font-size:.7rem;color:#8b949e">Divergence map — streaming...</span>';
+  $('#exp-diverge').innerHTML='<span style="font-size:.7rem;color:#96917f">Divergence map: streaming...</span>';
   expATokens2=[];expBTokens2=[];
   const p=encodeURIComponent($('#prompt').value);
   const t=$('#transform').value;
@@ -767,13 +805,13 @@ function startExperiment(){
         expATokens2.push(tk);
         const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
         sp.dataset.idx=tk.index;
-        $('#exp-a').appendChild(sp);$('#exp-a').scrollTop=$('#exp-a').scrollHeight;
+        appendTok($('#exp-a'),sp);$('#exp-a').scrollTop=$('#exp-a').scrollHeight;
         updatePerpSparkline(tk.perplexity);
       } else if(tk.side==='b'){
         expBTokens2.push(tk);
         const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label,tk.confidence,tk.perplexity);
         sp.dataset.idx=tk.index;
-        $('#exp-b').appendChild(sp);$('#exp-b').scrollTop=$('#exp-b').scrollHeight;
+        appendTok($('#exp-b'),sp);$('#exp-b').scrollTop=$('#exp-b').scrollHeight;
       }
       $('#stats').textContent='A: '+expATokens2.length+' tokens | B: '+expBTokens2.length+' tokens';
     }catch(err){console.warn('[eot] token parse error:', err);}
@@ -787,7 +825,7 @@ function startExperiment(){
 function renderExpDivergence(){
   const el=$('#exp-diverge');if(!el)return;
   const minLen=Math.min(expATokens2.length,expBTokens2.length);
-  if(minLen===0){el.innerHTML='<span style="font-size:.7rem;color:#8b949e">No tokens to compare.</span>';return;}
+  if(minLen===0){el.innerHTML='<span style="font-size:.7rem;color:#96917f">No tokens to compare.</span>';return;}
   let matches=0;
   const rows=[];
   for(let i=0;i<minLen;i++){
@@ -796,7 +834,7 @@ function renderExpDivergence(){
     rows.push(`<div style="display:flex;gap:8px;font-size:.75rem;padding:1px 0;color:${match?'#3fb950':'#f85149'}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(expATokens2[i].original)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escHtml(expBTokens2[i].original)}</span></div>`);
   }
   const pct=Math.round(matches/minLen*100);
-  el.innerHTML=`<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px">Similarity: ${pct}% (${matches}/${minLen})</div>`+rows.slice(0,50).join('');
+  el.innerHTML=`<div style="font-size:.7rem;color:#96917f;margin-bottom:4px">Similarity: ${pct}% (${matches}/${minLen})</div>`+rows.slice(0,50).join('');
   /* Hook for A/B chart enhancement (item 9) */
   if(typeof _renderExpDivergenceExtra==='function')_renderExpDivergenceExtra(expATokens2,expBTokens2,minLen,matches);
 }
@@ -836,8 +874,8 @@ function heatColor(imp){
   if(imp>=.8)return'#f85149';
   if(imp>=.6)return'#f0883e';
   if(imp>=.4)return'#e3b341';
-  if(imp>=.2)return'#58a6ff';
-  return'#484f58';
+  if(imp>=.2)return'#e8c872';
+  return'#5f5b50';
 }
 
 /* ---- Canvas dependency graph ---- */
@@ -882,11 +920,11 @@ function drawGraph(){
     /* Node circle */
     ctx.beginPath();
     ctx.arc(x,y,7,0,Math.PI*2);
-    ctx.fillStyle=n.transformed?'#00d4ff':'#c9d1d9';
+    ctx.fillStyle=n.transformed?'#ff6a2b':'#e6e1d3';
     ctx.fill();
-    ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.stroke();
+    ctx.strokeStyle='#36382f';ctx.lineWidth=1;ctx.stroke();
     /* Label */
-    ctx.fillStyle='#8b949e';
+    ctx.fillStyle='#96917f';
     ctx.font='10px monospace';
     ctx.textAlign='center';
     const label=n.text.length>6?n.text.slice(0,5)+'…':n.text;
@@ -952,16 +990,17 @@ $('#start').onclick=()=>{
       if(e.data==='[DONE]'){
         streamDone=true;
         evSrc.close();es=null;
-        /* Drain remaining queue */
-        _stopSseFlush();
-        _sseQueue.length=0;
-        $('#start').disabled=false;$('#start').textContent='Stream';
-        if($('#graphtoggle').checked)drawGraph();
-        enableSurgery($('#v-single'));
-        enableSurgery($('#sbs-orig'));
-        enableSurgery($('#sbs-xform'));
-        renderResearch();
-        updateUndoBtnState();
+        /* Render whatever is still queued, then finish. Clearing the queue
+           here dropped every token of a fast stream (e.g. the mock provider). */
+        _finishSseFlush(()=>{
+          $('#start').disabled=false;$('#start').textContent='Stream';
+          if($('#graphtoggle').checked)drawGraph();
+          enableSurgery($('#v-single'));
+          enableSurgery($('#sbs-orig'));
+          enableSurgery($('#sbs-xform'));
+          renderResearch();
+          updateUndoBtnState();
+        });
         return;
       }
       try{
@@ -978,7 +1017,7 @@ $('#start').onclick=()=>{
       if(_retryCount<MAX_RETRIES){
         const delay=Math.min(1000*Math.pow(2,_retryCount),16000);
         _retryCount++;
-        $('#stats').textContent='Connection lost — reconnecting in '+(delay/1000).toFixed(0)+'s… (attempt '+_retryCount+'/'+MAX_RETRIES+')';
+        $('#stats').textContent='Connection lost: reconnecting in '+(delay/1000).toFixed(0)+'s… (attempt '+_retryCount+'/'+MAX_RETRIES+')';
         _streamRetryTimer=setTimeout(()=>{
           es=new EventSource(url);
           attachStreamHandlers(es);
@@ -1000,7 +1039,7 @@ $('#start').onclick=()=>{
       if(probe.status===429){
         _stopSseFlush();
         $('#start').disabled=false;$('#start').textContent='Stream';
-        showNotice('Rate limited (429) — please wait 60s','error');
+        showNotice('Rate limited (429): please wait 60s','error');
         return;
       }
     }catch(_){}
@@ -1038,13 +1077,13 @@ function startDiff(){
         diffOpenaiTokens.push(tk);
         const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
         sp.dataset.idx=tk.index;
-        $('#diff-openai').appendChild(sp);
+        appendTok($('#diff-openai'),sp);
         $('#diff-openai').scrollTop=$('#diff-openai').scrollHeight;
       } else if(tk.side==='anthropic'){
         diffAnthropicTokens.push(tk);
         const sp=mkSpan(tk.text,tk.transformed,tk.importance,'',tk.chaos_label);
         sp.dataset.idx=tk.index;
-        $('#diff-anthropic').appendChild(sp);
+        appendTok($('#diff-anthropic'),sp);
         $('#diff-anthropic').scrollTop=$('#diff-anthropic').scrollHeight;
       }
       $('#stats').textContent='OpenAI: '+diffOpenaiTokens.length+' tokens | Anthropic: '+diffAnthropicTokens.length+' tokens';
@@ -1080,10 +1119,10 @@ function updateConfSparkline(confidence){
   const ctx=canvas.getContext('2d');
   const w=canvas.width,h=canvas.height;
   ctx.clearRect(0,0,w,h);
-  ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='#141512';ctx.fillRect(0,0,w,h);
   if(confWindow.length<2)return;
   const avg=confWindow.reduce((a,b)=>a+b,0)/confWindow.length;
-  const color=avg>=0.7?'#3fb950':avg>=0.4?'#e3b341':'#f85149';
+  const color=avg>=0.7?'#7fd69f':avg>=0.4?'#e8c872':'#ff6a6a';
   ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;
   confWindow.forEach((v,i)=>{
     const x=Math.round(i/(confWindow.length-1)*w);
@@ -1229,9 +1268,9 @@ document.addEventListener('keydown', function(e){
 });
 
 /* ================================================================
-   MULTIPLAYER — WebSocket collaboration
+   MULTIPLAYER: WebSocket collaboration
    ================================================================ */
-let ws=null, myId=null, myColor='#58a6ff', myName='Guest', amHost=false;
+let ws=null, myId=null, myColor='#e8c872', myName='Guest', amHost=false;
 let roomCode=null, isRecording=false, hasReplay=false;
 const peerColors={};
 
@@ -1239,7 +1278,7 @@ function sendWs(obj){if(ws&&ws.readyState===WebSocket.OPEN){try{ws.send(JSON.str
 
 /* ---- Security helpers ---- */
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function safeCssColor(c){return/^#[0-9a-fA-F]{3,8}$|^[a-z]+$/i.test(String(c))?String(c):'#58a6ff';}
+function safeCssColor(c){return/^#[0-9a-fA-F]{3,8}$|^[a-z]+$/i.test(String(c))?String(c):'#e8c872';}
 
 function initRoom(code,asHost){
   roomCode=code; amHost=asHost;
@@ -1259,7 +1298,7 @@ function initRoom(code,asHost){
   };
   ws.onerror=e=>{
     console.error('WS',e);
-    showToast('Connection error — check network','#f85149');
+    showToast('Connection error: check network','#f85149');
   };
 }
 
@@ -1315,7 +1354,7 @@ function onWsMsg(m){
     case 'replay_done':
       $('#replay-prog').classList.remove('show'); break;
     case 'stream_done':
-      /* Host's stream finished — re-enable stream button for guests */
+      /* Host's stream finished: re-enable stream button for guests */
       $('#start').disabled=false;$('#start').textContent='Stream';
       if(!amHost){enableSurgery($('#v-single'));renderResearch();}
       break;
@@ -1340,7 +1379,7 @@ function addPToList(p){
 function setParticipantCount(n){$('#mp-count-badge').textContent=n;}
 function incrPCount(d){$('#mp-count-badge').textContent=Math.max(1,parseInt($('#mp-count-badge').textContent||'1')+d);}
 function showToast(text,color){
-  const t=document.createElement('div');t.className='join-toast';t.style.borderColor=color||'#21262d';t.textContent=text;
+  const t=document.createElement('div');t.className='join-toast';t.style.borderColor=color||'#25271f';t.textContent=text;
   $('#participant-list').prepend(t);setTimeout(()=>t.remove(),3000);
 }
 
@@ -1371,7 +1410,7 @@ function renderChatMsg(m){
   const ts=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   const tsSpan=document.createElement('span');
   tsSpan.title=new Date().toISOString();
-  tsSpan.style.cssText='font-size:.6rem;color:#484f58;cursor:help;margin-left:4px';
+  tsSpan.style.cssText='font-size:.6rem;color:#5f5b50;cursor:help;margin-left:4px';
   tsSpan.textContent=ts;
   d.appendChild(author);d.appendChild(sep);d.appendChild(body);d.appendChild(tsSpan);
   if(m.token_index!=null){
@@ -1499,7 +1538,7 @@ document.getElementById('shortcuts-modal').onclick = e => {
     document.getElementById('shortcuts-modal').classList.remove('show');
 };
 /* ================================================================
-   ITEM 1: SSE event batching — 100ms flush loop
+   ITEM 1: SSE event batching: 100ms flush loop
    ================================================================ */
 let _sseQueue = [];
 let _sseFlushRunning = false;
@@ -1519,19 +1558,19 @@ function _startSseFlush(countRef, xformedRef, modeRef) {
 
         const singleSp = mkSpan(tk.text, tk.transformed, tk.importance, '', tk.chaos_label, tk.confidence, tk.perplexity);
         singleSp.dataset.idx = tk.index;
-        vsingle.appendChild(singleSp);
+        appendTok(vsingle, singleSp);
         updatePerpSparkline(tk.perplexity);
         updateConfSparkline(tk.confidence);
 
         const origSp = mkSpan(tk.original, false, tk.importance, null, null, tk.confidence, tk.perplexity); origSp.dataset.idx = tk.index;
-        $('#sbs-orig').appendChild(origSp);
+        appendTok($('#sbs-orig'), origSp);
         const xformSp = mkSpan(tk.text, tk.transformed, tk.importance, '', tk.chaos_label, tk.confidence, tk.perplexity); xformSp.dataset.idx = tk.index;
-        $('#sbs-xform').appendChild(xformSp);
+        appendTok($('#sbs-xform'), xformSp);
 
         ['reverse','uppercase','mock','noise','chaos'].forEach(txName => {
           const panel = $('#mp-' + txName);
           if (!panel) return;
-          panel.appendChild(mkSpan(tk.transformed ? TX[txName](tk.original) : tk.original, tk.transformed, tk.importance));
+          appendTok(panel, mkSpan(tk.transformed ? TX[txName](tk.original) : tk.original, tk.transformed, tk.importance));
         });
 
         graphNodes.push(tk);
@@ -1559,11 +1598,24 @@ function _startSseFlush(countRef, xformedRef, modeRef) {
       const elapsedStr = (elapsedSec).toFixed(1);
       $('#stats').textContent = 'Tokens: ' + countRef.count + ' | Transformed: ' + xformedRef.xformed + ' | Mode: ' + modeRef.mode + ' | ' + elapsedStr + 's | ' + tokSec + ' tok/s';
     }
+    if (_sseOnDrained && _sseQueue.length === 0) {
+      const done = _sseOnDrained;
+      _sseOnDrained = null;
+      _sseFlushRunning = false;
+      done();
+      return;
+    }
     setTimeout(flush, 100);
   }
   setTimeout(flush, 100);
 }
-function _stopSseFlush() { _sseFlushRunning = false; }
+let _sseOnDrained = null;
+function _stopSseFlush() { _sseFlushRunning = false; _sseOnDrained = null; }
+/* Stop the flush loop once the queue is empty, then call onDone. */
+function _finishSseFlush(onDone) {
+  if (!_sseFlushRunning) { onDone(); return; }
+  _sseOnDrained = onDone;
+}
 
 /* ITEM 4: stream start timestamp */
 let _streamStart = null;
@@ -1586,7 +1638,7 @@ let _streamStart = null;
     const prev = $('#transform-preview');
     if (!prev) return;
     prev.classList.add('show');
-    prev.innerHTML = '<span style="color:#484f58">Preview: </span><span style="color:#8b949e">' + escHtml(SAMPLE) + '</span><span style="color:#484f58"> → </span><span style="color:#e3b341">' + escHtml(transformed) + '</span>';
+    prev.innerHTML = '<span style="color:#5f5b50">Preview: </span><span style="color:#96917f">' + escHtml(SAMPLE) + '</span><span style="color:#5f5b50"> → </span><span style="color:#e3b341">' + escHtml(transformed) + '</span>';
   }
   const txSel = $('#transform');
   if (txSel) txSel.addEventListener('input', updatePreview);
@@ -1698,26 +1750,26 @@ $('#btn-undo-one').onclick = undoOne;
 (function(){
   const _origPush = Array.prototype.push;
   const _origPop = Array.prototype.pop;
-  /* We can't patch array prototype globally; instead hook surgery commit via MutationObserver —
+  /* We can't patch array prototype globally; instead hook surgery commit via MutationObserver -
      Instead, update btn state on each undo and on stream start/clear */
 })();
 
 /* ================================================================
-   ITEM 9: A/B analytics enhancements — bar chart hook
+   ITEM 9: A/B analytics enhancements: bar chart hook
    ================================================================ */
 function _renderExpDivergenceExtra(tokA, tokB, minLen, matches) {
   const el = $('#exp-diverge');
   if (minLen === 0) { const cw=$('#ab-chart-wrap');if(cw)cw.style.display='none'; return; }
 
-  /* Summary line — appended to diverge panel */
+  /* Summary line: appended to diverge panel */
   const agreements = [];
   for (let i = 0; i < minLen; i++) {
     agreements.push(tokA[i].original === tokB[i].original);
   }
   const pct = Math.round(matches / minLen * 100);
   const summaryDiv = document.createElement('div');
-  summaryDiv.style.cssText = 'font-size:.72rem;color:#8b949e;margin-bottom:4px;margin-top:4px';
-  summaryDiv.innerHTML = '<strong style="color:#c9d1d9">Agreement: ' + pct + '%</strong> &nbsp;|&nbsp; Matching: <span style="color:#3fb950">' + matches + '</span> &nbsp;|&nbsp; Diverging: <span style="color:#f85149">' + (minLen - matches) + '</span>';
+  summaryDiv.style.cssText = 'font-size:.72rem;color:#96917f;margin-bottom:4px;margin-top:4px';
+  summaryDiv.innerHTML = '<strong style="color:#e6e1d3">Agreement: ' + pct + '%</strong> &nbsp;|&nbsp; Matching: <span style="color:#3fb950">' + matches + '</span> &nbsp;|&nbsp; Diverging: <span style="color:#f85149">' + (minLen - matches) + '</span>';
   if (el) el.appendChild(summaryDiv);
 
   /* Bar chart */
@@ -1740,13 +1792,13 @@ function _renderExpDivergenceExtra(tokA, tokB, minLen, matches) {
   const chartH = 55;
   const xOff = 30;
   /* Axes */
-  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#36382f'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(xOff, 5); ctx.lineTo(xOff, chartH + 5); ctx.lineTo(w - 5, chartH + 5); ctx.stroke();
   /* Title */
-  ctx.fillStyle = '#8b949e'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#96917f'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
   ctx.fillText('Token Agreement', w / 2, 12);
   /* X-axis label */
-  ctx.fillStyle = '#484f58'; ctx.font = '9px monospace';
+  ctx.fillStyle = '#5f5b50'; ctx.font = '9px monospace';
   ctx.fillText('Token position', w / 2, 76);
   /* Bars */
   for (let i = 0; i < positions; i++) {
@@ -1755,7 +1807,7 @@ function _renderExpDivergenceExtra(tokA, tokB, minLen, matches) {
     ctx.fillRect(x, 10, Math.max(1, barW - 2), chartH - 5);
   }
   /* X-axis tick labels */
-  ctx.fillStyle = '#484f58'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#5f5b50'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
   [0, Math.floor(positions / 2), positions - 1].forEach(i => {
     if (i < positions) ctx.fillText(i + 1, xOff + i * barW + barW / 2, chartH + 14);
   });
@@ -1792,7 +1844,7 @@ document.getElementById('btn-export-research').onclick = () => {
     '## Top 10 High-Perplexity Tokens',
     '',
     ...withPerp.sort((a,b)=>b.perplexity-a.perplexity).slice(0,10).map((t,i)=>
-      `${i+1}. \`${t.original}\` — perplexity ${t.perplexity.toFixed(2)}`
+      `${i+1}. \`${t.original}\`: perplexity ${t.perplexity.toFixed(2)}`
     ),
     '',
     '## Surgery Log',
