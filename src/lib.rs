@@ -321,6 +321,10 @@ pub struct TokenInterceptor {
     /// Optional stream timeout in seconds. When set, `intercept_stream` will fail
     /// with a timeout error if the entire stream does not complete within this duration.
     pub timeout_secs: Option<u64>,
+    /// Whitespace seen since the last emitted token in web / JSON-stream mode.
+    /// It is prepended to the next token's `text` and `original` so consumers
+    /// that concatenate events get the spaces back (issue #3).
+    pending_ws: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +545,7 @@ impl TokenInterceptor {
             anthropic_max_tokens: 4096,
             stream_start_instant: None,
             timeout_secs: None,
+            pending_ws: String::new(),
         })
     }
 
@@ -742,7 +747,8 @@ impl TokenInterceptor {
             }
         }
 
-        if self.web_tx.is_none() {
+        // JSON stream mode keeps stdout pure JSONL, so no header or footer.
+        if self.web_tx.is_none() && !self.json_stream {
             self.print_header(prompt);
         }
 
@@ -790,7 +796,7 @@ impl TokenInterceptor {
             Provider::Mock => self.stream_mock(&effective_prompt).await?,
         }
 
-        if self.web_tx.is_none() {
+        if self.web_tx.is_none() && !self.json_stream {
             self.print_footer();
         }
         Ok(())
@@ -1037,7 +1043,7 @@ impl TokenInterceptor {
         // Simulates a response to any prompt without hitting any API.
         // First 20 characters (not bytes): slicing by byte index panicked on
         // prompts where byte 20 falls inside a multi-byte UTF-8 character.
-        let prompt_prefix: String = prompt.chars().take(20).collect();
+        let prompt_prefix: String = prompt.chars().take(40).collect();
         let fixture: Vec<(String, f32)> = vec![
             ("The".to_string(), -0.12),
             (" quick".to_string(), -0.45),
@@ -1057,18 +1063,10 @@ impl TokenInterceptor {
             (" for".to_string(), -0.27),
             (" prompt".to_string(), -0.53),
             (":".to_string(), -0.18),
-            (" \"".to_string(), -0.39),
-            (prompt_prefix, -0.71),
+            (format!(" {prompt_prefix}"), -0.71),
         ];
 
-        // Vary fixture starting position based on prompt content for more realistic tests
-        let prompt_hash: usize = prompt
-            .bytes()
-            .fold(0usize, |acc, b| acc.wrapping_add(b as usize));
-        let offset = prompt_hash % fixture.len();
-
-        for idx in 0..fixture.len() {
-            let (token_text, logprob) = &fixture[(idx + offset) % fixture.len()];
+        for (idx, (token_text, logprob)) in fixture.iter().enumerate() {
             let token_text = token_text.clone();
             let confidence = logprob.exp().clamp(0.0_f32, 1.0_f32);
             let perplexity = (-logprob).exp();
@@ -1076,13 +1074,17 @@ impl TokenInterceptor {
             let should_transform = idx % 2 == 1;
 
             let (display_text, chaos_label) = if should_transform {
-                let (t, label) = self.transform.apply_with_label(&token_text);
+                // Transform the word and keep its leading space where it was,
+                // so " quick" reversed shows as " kciuq", not "kciuq ".
+                let word = token_text.trim_start();
+                let lead = &token_text[..token_text.len() - word.len()];
+                let (t, label) = self.transform.apply_with_label(word);
                 let cl = if matches!(self.transform, Transform::Chaos) {
                     Some(label.to_string())
                 } else {
                     None
                 };
-                (t, cl)
+                (format!("{lead}{t}"), cl)
             } else {
                 (token_text.clone(), None)
             };
@@ -1289,6 +1291,17 @@ impl TokenInterceptor {
                 // Delete transform: the result is an empty string (chaos_label="deleted").
                 let is_deleted = should_transform && display_text.is_empty();
 
+                // Web / JSON consumers never see whitespace tokens, so carry the
+                // whitespace that preceded this token onto its text. A deleted
+                // token leaves it pending for the next one.
+                let (display_text, original_text) =
+                    if (self.web_tx.is_some() || self.json_stream) && !is_deleted {
+                        let lead = std::mem::take(&mut self.pending_ws);
+                        (format!("{lead}{display_text}"), format!("{lead}{token}"))
+                    } else {
+                        (display_text, token.clone())
+                    };
+
                 // Web / terminal / json output — skip deleted tokens for display.
                 if !is_deleted {
                     // Record per-token arrival latency relative to stream start.
@@ -1297,7 +1310,7 @@ impl TokenInterceptor {
                     if let Some(tx) = &self.web_tx {
                         let event = TokenEvent {
                             text: display_text.clone(),
-                            original: token.clone(),
+                            original: original_text.clone(),
                             index: i,
                             transformed: should_transform,
                             importance,
@@ -1317,7 +1330,7 @@ impl TokenInterceptor {
                         // JSON stream mode: one line per token
                         let event = TokenEvent {
                             text: display_text.clone(),
-                            original: token.clone(),
+                            original: original_text.clone(),
                             index: i,
                             transformed: should_transform,
                             importance,
@@ -1353,6 +1366,10 @@ impl TokenInterceptor {
                 // transformed), but terminal output still needs it or every
                 // word runs into the next one.
                 print!("{}", token);
+            } else {
+                // Web / JSON stream: hold the whitespace and attach it to the
+                // next emitted token so the text keeps its spacing.
+                self.pending_ws.push_str(&token);
             }
         }
 
@@ -1376,46 +1393,54 @@ impl TokenInterceptor {
     /// `heatmap_mode` is active, additional legend lines are printed.
     /// This method is a no-op when `web_tx` is set (web mode handles its own header).
     pub fn print_header(&self, prompt: &str) {
-        println!("{}", "EVERY OTHER TOKEN INTERCEPTOR".bright_cyan().bold());
+        let label = |k: &str| format!("{:<11}", k).dimmed();
+        let transform = format!("{:?}", self.transform).to_lowercase();
+        println!();
         println!(
-            "{}: {}",
-            "Provider".bright_yellow(),
-            self.provider.to_string().bright_white()
+            "{}  {}",
+            "every-other-token".bold(),
+            format!("v{}", env!("CARGO_PKG_VERSION")).dimmed()
         );
-        println!("{}: {:?}", "Transform".bright_yellow(), self.transform);
-        println!("{}: {}", "Model".bright_yellow(), self.model);
-        println!("{}: {}", "Prompt".bright_yellow(), prompt);
+        println!();
+        println!(
+            "{}{} {}",
+            label("provider"),
+            self.provider.to_string().bright_white(),
+            format!("({})", self.model).dimmed()
+        );
+        println!(
+            "{}{} {}",
+            label("transform"),
+            transform.bright_cyan(),
+            format!("at rate {}", self.rate).dimmed()
+        );
+        println!("{}{}", label("prompt"), prompt);
         if self.orchestrator {
             println!(
-                "{}: {}",
-                "Orchestrator".bright_magenta(),
-                "ON (MCP pipeline at localhost:3000)".bright_magenta()
+                "{}{}",
+                label("pipeline"),
+                "MCP orchestrator at localhost:3000".bright_magenta()
             );
         }
         if self.visual_mode {
             println!(
-                "{}: {}",
-                "Visual Mode".bright_green(),
-                "ON (even=normal, odd=cyan+bold)".bright_green()
+                "{}{}  {}",
+                label("legend"),
+                "original",
+                "transformed".bright_cyan().bold()
             );
         }
         if self.heatmap_mode {
             println!(
-                "{}: {}",
-                "Heatmap Mode".bright_magenta(),
-                "ON (color intensity = token importance)".bright_magenta()
-            );
-            println!(
-                "{}: {} {} {} {}",
-                "Legend".bright_white(),
-                "Low".on_blue(),
-                "Medium".on_yellow(),
-                "High".on_red(),
-                "Critical".on_bright_red().bright_white()
+                "{}{} {} {} {}",
+                label("heatmap"),
+                " low ".on_blue(),
+                " medium ".on_yellow(),
+                " high ".on_red(),
+                " critical ".on_bright_red().bright_white()
             );
         }
-        println!("{}", "=".repeat(50).bright_blue());
-        println!("{}", "Response (with transformations):".bright_green());
+        println!("{}", "─".repeat(56).dimmed());
         println!();
     }
 
@@ -1423,9 +1448,15 @@ impl TokenInterceptor {
     ///
     /// Reports total token count and how many tokens were transformed.
     pub fn print_footer(&self) {
-        println!("\n{}", "=".repeat(50).bright_blue());
-        println!("Complete! Processed {} tokens.", self.token_count);
-        println!("Transform applied to {} tokens.", self.transformed_count);
+        println!();
+        println!();
+        println!("{}", "─".repeat(56).dimmed());
+        println!(
+            "{} tokens streamed, {} transformed",
+            self.token_count.to_string().bold(),
+            self.transformed_count.to_string().bright_cyan().bold()
+        );
+        println!();
     }
 }
 
@@ -1622,6 +1653,7 @@ mod tests {
             anthropic_max_tokens: 4096,
             stream_start_instant: None,
             timeout_secs: None,
+            pending_ws: String::new(),
         }
     }
 
@@ -1693,7 +1725,8 @@ mod tests {
         assert_eq!(events[0].original, "hello");
         assert!(!events[0].transformed);
         assert_eq!(events[0].index, 0);
-        assert_eq!(events[1].original, "world");
+        // The space before "world" rides on the token (issue #3).
+        assert_eq!(events[1].original, " world");
         assert!(events[1].transformed);
         assert_eq!(events[1].index, 1);
     }
@@ -1710,9 +1743,9 @@ mod tests {
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
-        // "world" reversed = "dlrow"
-        assert_eq!(events[1].text, "dlrow");
-        assert_eq!(events[1].original, "world");
+        // "world" reversed = "dlrow"; the transform only touches the word.
+        assert_eq!(events[1].text, " dlrow");
+        assert_eq!(events[1].original, " world");
     }
 
     #[test]
@@ -1828,6 +1861,50 @@ mod tests {
         }
     }
 
+    // -- issue #3: web / JSON consumers keep the spaces between words --
+    #[test]
+    fn test_web_events_keep_whitespace() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.web_tx = Some(tx);
+
+        // Chunks as a real provider sends them: leading spaces, and one
+        // chunk that ends in whitespace.
+        interceptor.process_content_logprob(" quick brown", None, vec![]);
+        interceptor.process_content_logprob(" fox ", None, vec![]);
+        interceptor.process_content_logprob("jumps", None, vec![]);
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        let original: String = events.iter().map(|e| e.original.as_str()).collect();
+        assert_eq!(original, " quick brown fox jumps");
+        let shown: String = events.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(shown, " quick nworb fox spmuj");
+        // Counting and alternation are unchanged by the whitespace.
+        assert_eq!(events.iter().map(|e| e.index).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
+        assert_eq!(interceptor.token_count, 4);
+        assert_eq!(interceptor.transformed_count, 2);
+    }
+
+    #[test]
+    fn test_web_deleted_token_keeps_whitespace_pending() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
+        let mut interceptor = make_test_interceptor();
+        interceptor.transform = Transform::Delete;
+        interceptor.web_tx = Some(tx);
+
+        interceptor.process_content("one two three");
+
+        let mut events = Vec::new();
+        while let Ok(e) = rx.try_recv() {
+            events.push(e);
+        }
+        let shown: String = events.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(shown, "one  three");
+    }
+
     #[test]
     fn test_sidebyside_original_is_raw_token() {
         let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
@@ -1843,8 +1920,8 @@ mod tests {
 
         let originals: Vec<&str> = events.iter().map(|e| e.original.as_str()).collect();
         assert!(originals.contains(&"quick"));
-        assert!(originals.contains(&"brown"));
-        assert!(originals.contains(&"fox"));
+        assert!(originals.contains(&" brown"));
+        assert!(originals.contains(&" fox"));
     }
 
     // -- even/odd alternation for graph --
@@ -2046,8 +2123,8 @@ mod tests {
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
-        assert_eq!(events[1].text, "WORLD");
-        assert_eq!(events[1].original, "world");
+        assert_eq!(events[1].text, " WORLD");
+        assert_eq!(events[1].original, " world");
     }
 
     #[test]
@@ -2063,7 +2140,7 @@ mod tests {
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
-        assert_eq!(events[1].text, "wOrLd");
+        assert_eq!(events[1].text, " wOrLd");
     }
 
     #[test]
@@ -2079,8 +2156,8 @@ mod tests {
         while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
-        assert!(events[1].text.starts_with("world"));
-        assert_eq!(events[1].text.len(), 6); // "world" + 1 noise char
+        assert!(events[1].text.starts_with(" world"));
+        assert_eq!(events[1].text.len(), 7); // " world" + 1 noise char
     }
 
     // -- web_tx none falls back to terminal mode --
@@ -2578,6 +2655,7 @@ mod research_tests {
             anthropic_max_tokens: 4096,
             stream_start_instant: None,
             timeout_secs: None,
+            pending_ws: String::new(),
         }
     }
 
@@ -2792,7 +2870,8 @@ mod research_tests {
         while let Ok(ev) = rx.try_recv() {
             originals.push(ev.original);
         }
-        let expected: String = prompt.chars().take(20).collect();
+        // The mock echoes the prompt (up to 40 characters) as one token.
+        let expected: String = format!(" {}", prompt.chars().take(40).collect::<String>());
         assert!(originals.contains(&expected), "prompt prefix token missing");
     }
 
@@ -2813,9 +2892,9 @@ mod research_tests {
             .intercept_stream("hello")
             .await
             .expect("mock stream should succeed");
-        // 19 fixture tokens plus the echoed prompt, one word each.
-        assert_eq!(interceptor.token_count, 20);
-        assert_eq!(interceptor.transformed_count, 10);
+        // 18 fixture tokens plus the echoed prompt, one word each.
+        assert_eq!(interceptor.token_count, 19);
+        assert_eq!(interceptor.transformed_count, 9);
     }
 
     // -- run_research_headless tests (Mock provider, no API key required) --

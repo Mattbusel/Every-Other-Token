@@ -48,6 +48,10 @@ pub struct Args {
     #[arg(long, default_value = "8888")]
     pub port: u16,
 
+    /// With --web, do not open a browser tab automatically
+    #[arg(long)]
+    pub no_open: bool,
+
     /// Enable headless research mode — runs N times and outputs JSON stats
     #[arg(long)]
     pub research: bool,
