@@ -28,7 +28,7 @@
 //! use every_other_token::checkpoint::{ExperimentCheckpointer, CheckpointConfig};
 //! use every_other_token::bayesian::ThompsonBandit;
 //!
-//! # async fn example() -> anyhow::Result<()> {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = CheckpointConfig {
 //!     path: std::path::PathBuf::from(".eot_checkpoint.json"),
 //!     interval: 10,  // save every 10 completed runs

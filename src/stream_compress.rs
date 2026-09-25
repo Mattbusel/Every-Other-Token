@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn test_drain_returns_compressed() {
         let mut sc = StreamCompressor::new(default_config(), 0.5);
-        sc.push(make_tokens(10)).ok();
+        let _ = sc.push(make_tokens(10));
         let out = sc.drain();
         assert!(out.len() <= 5, "expected ~50% of 10 = 5, got {}", out.len());
         assert!(!out.is_empty());
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_drain_clears_buffer() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(4)).ok();
+        let _ = sc.push(make_tokens(4));
         sc.drain();
         assert_eq!(sc.buffer_len(), 0);
     }
@@ -334,7 +334,7 @@ mod tests {
     fn test_drop_strategy_drops_when_full() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
         // Fill buffer to capacity
-        sc.push(make_tokens(10)).ok();
+        let _ = sc.push(make_tokens(10));
         let result = sc.push(vec!["overflow".into()]);
         match result {
             PushResult::Dropped(n) => assert_eq!(n, 1),
@@ -346,7 +346,7 @@ mod tests {
     fn test_drop_strategy_partial_drop() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
         // Fill to 8 (2 spaces left)
-        sc.push(make_tokens(8)).ok();
+        let _ = sc.push(make_tokens(8));
         let result = sc.push(make_tokens(5));
         match result {
             PushResult::Dropped(n) => assert_eq!(n, 3),
@@ -365,7 +365,7 @@ mod tests {
         };
         let mut sc = StreamCompressor::new(config, 1.0);
         // Fill past high watermark
-        sc.push(make_tokens(7)).ok();
+        let _ = sc.push(make_tokens(7));
         let result = sc.push(vec!["extra".into()]);
         assert_eq!(result, PushResult::Throttled);
     }
@@ -377,7 +377,7 @@ mod tests {
             ..default_config()
         };
         let mut sc = StreamCompressor::new(config, 1.0);
-        sc.push(make_tokens(3)).ok();
+        let _ = sc.push(make_tokens(3));
         let result = sc.push(make_tokens(2));
         assert_eq!(result, PushResult::Accepted);
     }
@@ -392,9 +392,9 @@ mod tests {
         };
         let mut sc = StreamCompressor::new(config, 1.0);
         // Fill past high watermark
-        sc.push(make_tokens(8)).ok();
+        let _ = sc.push(make_tokens(8));
         let buf_before = sc.buffer_len();
-        sc.push(make_tokens(6)).ok(); // Should be halved before adding
+        let _ = sc.push(make_tokens(6)); // Should be halved before adding
         let added = sc.buffer_len() - buf_before;
         assert!(added <= 3, "above watermark should aggressively compress, added {}", added);
     }
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn test_ratio_100_percent_keeps_all() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(8)).ok();
+        let _ = sc.push(make_tokens(8));
         let out = sc.drain();
         assert_eq!(out.len(), 8);
     }
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn test_ratio_0_percent_keeps_none() {
         let mut sc = StreamCompressor::new(default_config(), 0.0);
-        sc.push(make_tokens(8)).ok();
+        let _ = sc.push(make_tokens(8));
         let out = sc.drain();
         assert_eq!(out.len(), 0);
     }
@@ -426,7 +426,7 @@ mod tests {
             strategy: BackpressureStrategy::Drop,
         };
         let mut sc = StreamCompressor::new(config, 0.5);
-        sc.push(make_tokens(20)).ok();
+        let _ = sc.push(make_tokens(20));
         let out = sc.drain();
         assert!(
             out.len() >= 8 && out.len() <= 12,
@@ -440,15 +440,15 @@ mod tests {
     #[test]
     fn test_stats_tokens_in_tracked() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(5)).ok();
-        sc.push(make_tokens(3)).ok();
+        let _ = sc.push(make_tokens(5));
+        let _ = sc.push(make_tokens(3));
         assert_eq!(sc.stats().tokens_in, 8);
     }
 
     #[test]
     fn test_stats_tokens_out_tracked_after_drain() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(5)).ok();
+        let _ = sc.push(make_tokens(5));
         sc.drain();
         assert_eq!(sc.stats().tokens_out, 5);
     }
@@ -456,8 +456,8 @@ mod tests {
     #[test]
     fn test_stats_drops_tracked() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(10)).ok();
-        sc.push(make_tokens(3)).ok();
+        let _ = sc.push(make_tokens(10));
+        let _ = sc.push(make_tokens(3));
         assert!(sc.stats().drops > 0);
     }
 
@@ -470,7 +470,7 @@ mod tests {
             strategy: BackpressureStrategy::Drop,
         };
         let mut sc = StreamCompressor::new(config, 0.5);
-        sc.push(make_tokens(10)).ok();
+        let _ = sc.push(make_tokens(10));
         sc.drain();
         let r = sc.stats().ratio;
         assert!(r > 0.0 && r <= 1.0, "ratio should be in (0, 1], got {}", r);
@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn test_reset_clears_state() {
         let mut sc = StreamCompressor::new(default_config(), 1.0);
-        sc.push(make_tokens(5)).ok();
+        let _ = sc.push(make_tokens(5));
         sc.reset();
         assert_eq!(sc.buffer_len(), 0);
         assert_eq!(sc.stats().tokens_in, 0);
@@ -499,7 +499,7 @@ mod tests {
         let mut total_out = 0usize;
 
         for _ in 0..5 {
-            sc.push(make_tokens(6)).ok();
+            let _ = sc.push(make_tokens(6));
             let out = sc.drain();
             total_out += out.len();
         }
@@ -517,7 +517,7 @@ mod tests {
             strategy: BackpressureStrategy::Drop,
         };
         let mut sc = StreamCompressor::new(config, 1.0);
-        sc.push(make_tokens(10)).ok();
+        let _ = sc.push(make_tokens(10));
         let out = sc.drain_n(5);
         assert_eq!(out.len(), 5);
         assert_eq!(sc.buffer_len(), 5);
@@ -532,7 +532,7 @@ mod tests {
             strategy: BackpressureStrategy::Block,
         };
         let mut sc = StreamCompressor::new(config, 1.0);
-        sc.push(make_tokens(7)).ok();
+        let _ = sc.push(make_tokens(7));
         let r1 = sc.push(make_tokens(1));
         assert_eq!(r1, PushResult::Throttled);
 

@@ -331,7 +331,9 @@ mod tests {
     fn test_count_syllables() {
         assert_eq!(ResponseEnhancer::count_syllables("cat"), 1);
         assert_eq!(ResponseEnhancer::count_syllables("hello"), 2);
-        assert_eq!(ResponseEnhancer::count_syllables("beautiful"), 4);
+        // beau-ti-ful is three syllables; the old expectation of 4 was wrong.
+        assert_eq!(ResponseEnhancer::count_syllables("beautiful"), 3);
+        assert_eq!(ResponseEnhancer::count_syllables("information"), 4);
         assert_eq!(ResponseEnhancer::count_syllables("a"), 1);
     }
 
