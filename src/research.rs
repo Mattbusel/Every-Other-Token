@@ -1630,59 +1630,16 @@ mod tests {
     #[tokio::test]
     async fn test_run_research_runs_zero_returns_error() {
         use crate::providers::Provider;
-        let args = crate::cli::Args {
-            prompt: "test".to_string(),
-            transform: "reverse".to_string(),
-            model: "gpt-3.5-turbo".to_string(),
-            provider: Provider::Mock,
-            visual: false,
-            heatmap: false,
-            orchestrator: false,
-            web: false,
-            port: 8888,
-            research: true,
-            runs: 0,
-            output: "/tmp/test_research_out.json".to_string(),
-            system_a: None,
-            top_logprobs: 5,
-            system_b: None,
-            db: None,
-            significance: false,
-            heatmap_export: None,
-            heatmap_min_confidence: 0.0,
-            heatmap_sort_by: "position".to_string(),
-            record: None,
-            replay: None,
-            rate: None,
-            seed: None,
-            log_db: None,
-            baseline: false,
-            prompt_file: None,
-            diff_terminal: false,
-            json_stream: false,
-            completions: None,
-            rate_range: None,
-            dry_run: false,
-            template: None,
-            min_confidence: None,
-            format: "json".to_string(),
-            collapse_window: 5,
-            orchestrator_url: "http://localhost:3000".to_string(),
-            max_retries: 3,
-            anthropic_max_tokens: 4096,
-            synonym_file: None,
-            api_key: None,
-            replay_speed: 1.0,
-            timeout: 120,
-            export_timeseries: None,
-            json_schema: false,
-            list_models: None,
-            validate_config: false,
-            sse_buffer_size: 1000,
-            batch: None,
-            export_logprobs: None,
-            compare: None,
-        };
+        use clap::Parser;
+        let mut args = crate::cli::Args::try_parse_from(["every-other-token", "test"])
+            .expect("default args parse");
+        args.provider = Provider::Mock;
+        args.research = true;
+        args.runs = 0;
+        args.output = std::env::temp_dir()
+            .join("test_research_out.json")
+            .to_string_lossy()
+            .into_owned();
         let result = run_research(&args).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("--runs must be at least 1"));

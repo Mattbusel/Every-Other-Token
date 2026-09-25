@@ -22,7 +22,7 @@
 //!
 //! let cfg = ComparisonConfig::default();
 //! let cmp = CrossModelComparator::new(cfg);
-//! let result = cmp.compare_distributions("gpt-4o", "claude-3-5-sonnet", &[], &[]);
+//! let result = cmp.compare_distributions("gpt-4o", "claude-3-5-sonnet", "Why is the sky blue?", &[], &[]);
 //! assert_eq!(result.model_a, "gpt-4o");
 //! ```
 

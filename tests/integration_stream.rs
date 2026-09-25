@@ -3,6 +3,7 @@
 /// This test binds to a random OS-assigned port, spawns `serve()` in a background
 /// task, then makes a real TCP-level HTTP GET / request and asserts that the
 /// response is 200 OK with a text/html Content-Type.
+use clap::Parser;
 use every_other_token::cli::Args;
 use every_other_token::providers::Provider;
 use every_other_token::web::serve;
@@ -11,55 +12,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Build a minimal [`Args`] value that is safe to pass to `serve()` in tests.
 fn test_args(port: u16) -> Args {
-    Args {
-        prompt: "test".to_string(),
-        transform: "reverse".to_string(),
-        model: "mock-fixture-v1".to_string(),
-        provider: Provider::Mock,
-        visual: false,
-        heatmap: false,
-        orchestrator: false,
-        web: true,
-        port,
-        research: false,
-        runs: 1,
-        output: "research_output.json".to_string(),
-        system_a: None,
-        top_logprobs: 0,
-        system_b: None,
-        db: None,
-        significance: false,
-        heatmap_export: None,
-        heatmap_min_confidence: 0.0,
-        heatmap_sort_by: "position".to_string(),
-        record: None,
-        replay: None,
-        rate: None,
-        seed: None,
-        log_db: None,
-        baseline: false,
-        prompt_file: None,
-        diff_terminal: false,
-        json_stream: false,
-        completions: None,
-        rate_range: None,
-        dry_run: false,
-        template: None,
-        min_confidence: None,
-        format: "json".to_string(),
-        collapse_window: 5,
-        orchestrator_url: "http://localhost:3000".to_string(),
-        max_retries: 3,
-        anthropic_max_tokens: 4096,
-        synonym_file: None,
-        api_key: None,
-        replay_speed: 1.0,
-        timeout: 120,
-        export_timeseries: None,
-        json_schema: false,
-        list_models: None,
-        validate_config: false,
-    }
+    // Start from the real CLI defaults so this helper keeps compiling when
+    // new flags are added, then override what the test cares about.
+    let mut args = Args::try_parse_from(["every-other-token", "test"]).expect("default args parse");
+    args.model = "mock-fixture-v1".to_string();
+    args.provider = Provider::Mock;
+    args.web = true;
+    args.port = port;
+    args.top_logprobs = 0;
+    args
 }
 
 #[tokio::test]

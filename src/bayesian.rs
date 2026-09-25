@@ -49,8 +49,9 @@
 //!     bandit.update(&arm_name, mean_confidence);
 //! }
 //!
-//! let winner = bandit.best_arm();
-//! println!("Best transform: {} (mean={:.3})", winner.name, winner.posterior_mean());
+//! if let Some(winner) = bandit.best_arm() {
+//!     println!("Best transform: {} (mean={:.3})", winner.name, winner.posterior_mean());
+//! }
 //! ```
 
 use rand::Rng;

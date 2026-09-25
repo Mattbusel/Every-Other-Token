@@ -81,13 +81,32 @@ cargo install --git https://github.com/Mattbusel/Every-Other-Token
 ### Prerequisites
 
 - Rust 1.81 or later
-- An OpenAI API key (`OPENAI_API_KEY`) and/or an Anthropic API key (`ANTHROPIC_API_KEY`)
+- For real models: an OpenAI API key (`OPENAI_API_KEY`) and/or an Anthropic API key (`ANTHROPIC_API_KEY`). The mock provider needs neither.
 
 ```bash
 git clone https://github.com/Mattbusel/Every-Other-Token
 cd Every-Other-Token
 cargo build --release
+```
 
+### Try it without an API key
+
+The `mock` provider replays a canned token stream (with logprobs) through the real interception pipeline, so you can see what the tool does before spending any tokens:
+
+```bash
+# Every other token reversed, transformed tokens highlighted
+./target/release/every-other-token "What is consciousness?" --provider mock --visual
+
+# Per-token table: original vs. intercepted token, confidence, perplexity
+cargo run --example mock_stream
+cargo run --example mock_stream -- "Your prompt here" uppercase
+```
+
+The reply text is fixed (a pangram plus your prompt echoed back); only the provider is fake.
+
+### Use a real model
+
+```bash
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```

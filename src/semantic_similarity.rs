@@ -117,7 +117,11 @@ impl SimilarityEngine {
 
         self.idf = df
             .into_iter()
-            .map(|(term, count)| (term, (n / count as f64).ln()))
+            // Smoothed IDF: ln((1 + N) / (1 + df)) + 1. Plain ln(N / df) gives
+            // every term that appears in all documents a weight of zero, so a
+            // one-document corpus produced empty vectors and a self-similarity
+            // of 0 instead of 1.
+            .map(|(term, count)| (term, ((1.0 + n) / (1.0 + count as f64)).ln() + 1.0))
             .collect();
     }
 

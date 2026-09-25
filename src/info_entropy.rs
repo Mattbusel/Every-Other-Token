@@ -244,6 +244,12 @@ impl NgramModel {
 
     /// Generate `length` tokens starting from `seed`, sampling with
     /// temperature `temp` using a simple LCG seeded with `rng_seed`.
+    ///
+    /// Output is reproducible for a given `rng_seed`. When the current context
+    /// was never seen in training (for example the last token of the corpus),
+    /// sampling backs off to the overall next-token distribution instead of
+    /// stopping early. Fewer than `length` tokens are returned only when the
+    /// model was trained on too few tokens to have any transitions.
     pub fn generate(
         &self,
         seed: &[String],
@@ -264,18 +270,33 @@ impl NgramModel {
             };
 
             // Gather candidates and apply temperature.
-            let candidates: Vec<(String, f64)> = if let Some(next_map) = self.counts.get(&ctx) {
-                let total = *self.total_counts.get(&ctx).unwrap_or(&0) as f64;
-                next_map
-                    .iter()
-                    .map(|(tok, &cnt)| {
-                        let p = (cnt as f64 + 1.0) / (total + self.vocab_size as f64);
-                        (tok.clone(), (p.ln() / temp).exp())
-                    })
-                    .collect()
-            } else {
-                Vec::new()
+            // Next-token counts for this context, or (back-off) summed over
+            // every context when this one was never observed.
+            let backoff: HashMap<String, u32>;
+            let next_map: &HashMap<String, u32> = match self.counts.get(&ctx) {
+                Some(m) => m,
+                None => {
+                    let mut agg: HashMap<String, u32> = HashMap::new();
+                    for m in self.counts.values() {
+                        for (tok, &cnt) in m {
+                            *agg.entry(tok.clone()).or_insert(0) += cnt;
+                        }
+                    }
+                    backoff = agg;
+                    &backoff
+                }
             };
+            let total: f64 = next_map.values().map(|&c| c as f64).sum();
+            let mut candidates: Vec<(String, f64)> = next_map
+                .iter()
+                .map(|(tok, &cnt)| {
+                    let p = (cnt as f64 + 1.0) / (total + self.vocab_size as f64);
+                    (tok.clone(), (p.ln() / temp).exp())
+                })
+                .collect();
+            // HashMap iteration order is random per process; sort so that the
+            // same rng_seed always yields the same output.
+            candidates.sort_by(|a, b| a.0.cmp(&b.0));
 
             if candidates.is_empty() {
                 break;
@@ -454,6 +475,26 @@ mod tests {
         let seed = toks(&["a"]);
         let generated = model.generate(&seed, 5, 1.0, 42);
         assert_eq!(generated.len(), 5);
+    }
+
+    #[test]
+    fn ngram_generate_backs_off_past_unseen_context() {
+        // "d" only appears as the final token, so it has no continuation.
+        let tokens = toks(&["a", "b", "c", "d"]);
+        let model = NgramModel::train(&tokens, 2);
+        let generated = model.generate(&toks(&["d"]), 8, 1.0, 7);
+        assert_eq!(generated.len(), 8);
+    }
+
+    #[test]
+    fn ngram_generate_is_reproducible_for_same_seed() {
+        let tokens = toks(&["a", "b", "a", "c", "a", "d", "b", "c", "d", "a"]);
+        let model = NgramModel::train(&tokens, 2);
+        let first = model.generate(&toks(&["a"]), 20, 1.0, 99);
+        for _ in 0..10 {
+            let fresh = NgramModel::train(&tokens, 2);
+            assert_eq!(fresh.generate(&toks(&["a"]), 20, 1.0, 99), first);
+        }
     }
 
     #[test]

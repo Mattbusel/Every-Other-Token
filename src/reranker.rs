@@ -428,7 +428,7 @@ mod tests {
             seq(&["cat", "dog", "pet"]),   // nearly identical
             seq(&["space", "rocket", "orbit"]), // diverse
         ];
-        let result = reranker.mmr_rerank(sequences, "cat", 2, 2);
+        let result = reranker.mmr_rerank(sequences, "cat", 0.5, 2);
         assert_eq!(result.len(), 2);
         // The diverse sequence should be selected
         let has_diverse = result

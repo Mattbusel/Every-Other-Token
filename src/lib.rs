@@ -1035,7 +1035,9 @@ impl TokenInterceptor {
     async fn stream_mock(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Canned fixture: realistic token stream with logprob data.
         // Simulates a response to any prompt without hitting any API.
-        let prompt_prefix = prompt[..prompt.len().min(20)].to_string();
+        // First 20 characters (not bytes): slicing by byte index panicked on
+        // prompts where byte 20 falls inside a multi-byte UTF-8 character.
+        let prompt_prefix: String = prompt.chars().take(20).collect();
         let fixture: Vec<(String, f32)> = vec![
             ("The".to_string(), -0.12),
             (" quick".to_string(), -0.45),
@@ -1085,12 +1087,16 @@ impl TokenInterceptor {
                 (token_text.clone(), None)
             };
 
-            if should_transform {
-                self.transformed_count += 1;
-            }
-            self.token_count += 1;
-
             if let Some(tx) = &self.web_tx {
+                // Count here only for the web path: the terminal / JSON path
+                // below goes through process_content_logprob, which does its
+                // own counting. Counting in both places doubled every token
+                // and made the CLI transform every token instead of every
+                // other one.
+                if should_transform {
+                    self.transformed_count += 1;
+                }
+                self.token_count += 1;
                 let evt = TokenEvent {
                     text: display_text.clone(),
                     original: token_text.clone(),
@@ -1342,6 +1348,11 @@ impl TokenInterceptor {
                 }
 
                 self.token_count += 1;
+            } else if self.web_tx.is_none() && !self.json_stream {
+                // Whitespace is not a token (it is never counted or
+                // transformed), but terminal output still needs it or every
+                // word runs into the next one.
+                print!("{}", token);
             }
         }
 
@@ -2755,6 +2766,56 @@ mod research_tests {
         // At minimum, both should produce some output
         assert!(!texts1.is_empty());
         assert!(!texts2.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_stream_non_ascii_prompt_does_not_panic() {
+        // Byte 20 of this prompt falls inside a two-byte 'é'. The mock
+        // provider used to slice the prompt by bytes and panic here.
+        let prompt = "aéééééééééééééééééé";
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut interceptor = TokenInterceptor::new(
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            false,
+            false,
+            false,
+        )
+        .expect("mock interceptor")
+        .with_web_tx(tx);
+        interceptor
+            .intercept_stream(prompt)
+            .await
+            .expect("mock stream should succeed");
+        let mut originals = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            originals.push(ev.original);
+        }
+        let expected: String = prompt.chars().take(20).collect();
+        assert!(originals.contains(&expected), "prompt prefix token missing");
+    }
+
+    #[tokio::test]
+    async fn test_mock_stream_terminal_path_counts_each_token_once() {
+        let mut interceptor = TokenInterceptor::new(
+            Provider::Mock,
+            Transform::Reverse,
+            "mock-fixture-v1".to_string(),
+            false,
+            false,
+            false,
+        )
+        .expect("mock interceptor")
+        .with_rate(0.5);
+        interceptor.json_stream = true;
+        interceptor
+            .intercept_stream("hello")
+            .await
+            .expect("mock stream should succeed");
+        // 19 fixture tokens plus the echoed prompt, one word each.
+        assert_eq!(interceptor.token_count, 20);
+        assert_eq!(interceptor.transformed_count, 10);
     }
 
     // -- run_research_headless tests (Mock provider, no API key required) --
