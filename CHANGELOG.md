@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-09-25
+
+First release since 4.1.2. It carries the library modules added since then
+(divergence detection, logit lens, activation patching, circuit discovery,
+Thompson-sampling bandit, checkpointing, SSE backpressure, batch research mode
+and the many analysis modules added in rounds 3 to 32; see `git log v4.1.2..v4.2.0`),
+plus the fixes below.
+
+### Added
+
+- `examples/mock_stream.rs`: `cargo run --example mock_stream` runs the real
+  interceptor against the mock provider (no API key) and prints a per-token
+  table of original and intercepted text, confidence and perplexity.
+- `.github/workflows/release.yml`: pushing a `vX.Y.Z` tag builds binaries for
+  Linux x86_64, macOS arm64 and x86_64, and Windows x86_64 and attaches them,
+  with SHA-256 checksums, to a GitHub Release. crates.io publishing is manual.
+
+### Fixed
+
+- Mock provider no longer panics on prompts whose 20th byte falls inside a
+  multi-byte UTF-8 character.
+- Mock provider in terminal mode counted every token twice, so the CLI
+  transformed every token instead of every other one.
+- Terminal output now keeps the spaces between words (whitespace tokens were
+  dropped, so words ran together).
+- `StanceClassifier` matched keywords as substrings, so "disagree" counted as
+  support; it now matches words.
+- `NgramModel::generate` is reproducible for a given seed and no longer stops
+  early at a context with no observed continuation.
+- `SimilarityEngine` uses smoothed IDF, so terms present in every document
+  (including any term of a one-document corpus) no longer get zero weight.
+- Test suite compiles and passes again (stale `cli::Args` literals, doctests
+  referencing APIs that did not exist, wrong expectations in two tests).
+
+## Earlier unreleased notes (included in 4.2.0)
+
 ### Added
 
 - Module-level `//!` doc comments on all previously undocumented public modules
@@ -29,9 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Async unit tests for `run_research_headless` using the Mock provider (no API
   key required): empty-prompt error path, multi-run accumulation, vocab
   diversity bounds, and citation string format.
-- `.github/workflows/release.yml`: release workflow that triggers on `v*.*.*`
-  tags, builds release binaries for Linux (musl), macOS, and Windows, publishes
-  a GitHub Release with attached binaries, and publishes to crates.io.
 - `EotConfig` struct and all its fields now carry `///` doc comments explaining
   each configuration option and its valid range.
 - `make_test_interceptor` helper added to the `research_tests` module so
