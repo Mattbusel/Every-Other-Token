@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-09-25
+
+### Fixed
+- Web UI and `--json-stream` keep the spaces between words with real providers (#3).
+- Web UI no longer drops tokens that arrive before the end-of-stream event, so fast streams render.
+- Choosing the mock provider in the web UI uses the mock instead of silently falling back to OpenAI.
+- `--json-stream` output is pure JSON: the human header and footer are no longer mixed in.
+- The mock provider's reply reads as a sentence and echoes up to 40 characters of the prompt.
+
+### Added
+- `--no-open` flag so `--web` does not open a browser tab.
+- Web UI "Mock (no API key)" provider option, confidence underlines per token, restyled terminal header and footer.
+- Animated README hero and project site at https://mattbusel.github.io/Every-Other-Token/.
+
 ## [4.2.0] - 2026-09-25
 
 First release since 4.1.2. It carries the library modules added since then
