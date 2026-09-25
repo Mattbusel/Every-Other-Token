@@ -949,3 +949,8 @@ Research tool, actively developed. The CI workflow is currently failing on `main
 ## License
 
 MIT -- see [LICENSE](LICENSE) for details.
+
+
+## Hire the author
+
+**Need this kind of engineering on your product?** I take on a small number of client builds: LLM features, iOS apps and performance work, fixed price. [Services and pricing](https://mattbusel.github.io/) · [Email](mailto:mattbusel@gmail.com) · [LinkedIn](https://www.linkedin.com/in/matthewbusel/)
