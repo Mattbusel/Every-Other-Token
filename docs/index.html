@@ -3,12 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>every-other-token</title>
-<meta name="description" content="A Rust CLI and web UI that sits on an LLM's token stream as it arrives, rewrites every other token, and shows per-token confidence and perplexity from the logprobs.">
-<meta property="og:title" content="every-other-token">
-<meta property="og:description" content="Intercept an LLM's token stream live: rewrite every other token, see how sure the model was about each one.">
-<meta property="og:image" content="https://mattbusel.github.io/Every-Other-Token/assets/social-preview.png">
+<title>every-other-token: LLM token stream viewer and interceptor</title>
+<meta name="description" content="Free CLI and web UI that shows per-token confidence and perplexity of an OpenAI or Anthropic stream and rewrites tokens live. Windows .exe, no API key to try.">
+<link rel="canonical" href="https://mattbusel.github.io/Every-Other-Token/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="every-other-token">
+<meta property="og:url" content="https://mattbusel.github.io/Every-Other-Token/">
+<meta property="og:title" content="every-other-token: watch an LLM stream token by token">
+<meta property="og:description" content="See how sure the model was about every token, and rewrite every other token as it streams. OpenAI, Anthropic, or a mock with no API key.">
+<meta property="og:image" content="https://mattbusel.github.io/Every-Other-Token/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="every-other-token output: every other token reversed, with a confidence bar and percentage under each token">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="every-other-token: watch an LLM stream token by token">
+<meta name="twitter:description" content="Per-token confidence and perplexity for OpenAI and Anthropic streams, with live token rewriting. Free, open source, Windows .exe.">
+<meta name="twitter:image" content="https://mattbusel.github.io/Every-Other-Token/assets/og.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "every-other-token",
+  "description": "CLI and web UI that intercepts an OpenAI or Anthropic token stream live, shows per-token confidence and perplexity from logprobs, and rewrites every other token. A mock provider runs with no API key.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "softwareVersion": "4.3.1",
+  "url": "https://mattbusel.github.io/Every-Other-Token/",
+  "downloadUrl": "https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe",
+  "codeRepository": "https://github.com/Mattbusel/Every-Other-Token",
+  "programmingLanguage": "Rust",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "Matthew Busel", "url": "https://github.com/Mattbusel" }
+}
+</script>
 <meta name="theme-color" content="#0c0d0b">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c0d0b'/%3E%3Crect x='6' y='20' width='8' height='3' rx='1.5' fill='%23e6e1d3'/%3E%3Crect x='18' y='20' width='8' height='3' rx='1.5' fill='%23ff6a2b'/%3E%3Crect x='6' y='10' width='8' height='6' rx='1' fill='%23e6e1d3'/%3E%3Crect x='18' y='10' width='8' height='6' rx='1' fill='%23ff6a2b'/%3E%3C/svg%3E">
 <style>
@@ -97,6 +126,14 @@ footer a{color:var(--dim)}
 }
 @media (max-width:420px){nav .links .opt{display:none}}
 @media (prefers-reduced-motion:reduce){.tk{animation:none}.caret{animation:none}}
+.dl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:26px}
+.dl a.win{display:inline-block;background:var(--xf);color:#170904;font-weight:700;text-decoration:none;border-radius:8px;padding:12px 20px;font-size:15px}
+.dl a.win:hover{background:#ff8450}
+.dl a.alt{color:var(--dim);font-size:13px}
+.how img{width:100%;height:auto;display:block;border-radius:14px}
+.how ol{margin:18px 0 0 20px;color:var(--dim);max-width:78ch}
+.how ol li{margin:6px 0}
+.how ol b{color:var(--ink);font-weight:500}
 </style>
 </head>
 <body>
@@ -114,6 +151,11 @@ footer a{color:var(--dim)}
 <header class="hero">
   <h1>Read the stream,<br>not the <span class="x">answer</span>.</h1>
   <p class="lead"><b>every-other-token</b> is a Rust CLI and web UI that sits on an OpenAI or Anthropic token stream as it arrives. It rewrites every other token (or any fraction), and it tells you how sure the model was about each one: confidence <code>exp(logprob)</code> and perplexity <code>exp(-logprob)</code>, per token, live.</p>
+
+  <div class="dl">
+    <a class="win" href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
+    <a class="alt" href="#install">macOS, Linux, Scoop, Homebrew, Cargo</a>
+  </div>
 
   <div class="player" id="player">
     <div class="pbar" role="group" aria-label="Transform">
@@ -139,9 +181,21 @@ footer a{color:var(--dim)}
   <p class="note">Recorded from the real <code>/stream</code> endpoint of <code>every-other-token --web --provider mock</code>. The mock provider replays a fixed reply with fixed logprobs through the same interception pipeline a real model goes through, so it runs with no API key. Point it at OpenAI or Anthropic and the tokens and numbers are the model's own.</p>
 </header>
 
+<section class="how" id="how-it-works">
+  <h2><span class="n">00</span>How it works</h2>
+  <p class="sub">Four stages, shown on a real run of the mock provider with the reverse transform at rate 0.5.</p>
+  <img src="img/how-it-works.svg" width="1000" height="640" alt="Diagram: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON" loading="lazy">
+  <ol>
+    <li><b>Intercept.</b> It opens the model's streaming (SSE) connection itself, so it sees each chunk the moment it arrives.</li>
+    <li><b>Score.</b> Each token gets confidence <code>exp(logprob)</code>, perplexity <code>exp(-logprob)</code> and the top alternatives.</li>
+    <li><b>Mutate.</b> Every other token by default (<code>--rate</code>), or only the ones below <code>--min-confidence</code>, goes through a transform.</li>
+    <li><b>Output.</b> Terminal, web UI, JSON lines, CSV or an HTML heatmap.</li>
+  </ol>
+</section>
+
 <section id="install">
   <h2><span class="n">01</span>Running in two minutes</h2>
-  <p class="sub">Prebuilt binaries for Linux x86_64, macOS (Apple Silicon and Intel) and Windows x86_64 are on the <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest">releases page</a>. Or build it with Cargo (Rust 1.81+).</p>
+  <p class="sub">No Rust needed: <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe">Windows .exe</a> (double-click it and the web UI opens), <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-aarch64-apple-darwin.tar.gz">macOS Apple Silicon</a>, <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-apple-darwin.tar.gz">macOS Intel</a>, <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-unknown-linux-gnu.tar.gz">Linux x86_64</a>. Or <code>scoop install every-other-token</code> after <code>scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket</code>, <code>brew install mattbusel/tap/every-other-token</code>, or <code>cargo install every-other-token</code> (Rust 1.81+).</p>
   <div class="cmds">
     <div class="cmd"><div class="hd"><span>install</span><button class="copy" data-copy="cargo install every-other-token">copy</button></div>
 <pre><span class="p">$ </span>cargo install every-other-token</pre></div>

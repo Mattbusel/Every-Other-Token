@@ -64,6 +64,8 @@ jobs:
           cp "target/${{ matrix.target }}/release/every-other-token" README.md LICENSE "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          # Versionless copy so releases/latest/download/<file> links never go stale.
+          cp "$name.tar.gz" "every-other-token-${{ matrix.target }}.tar.gz"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -75,6 +77,10 @@ jobs:
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+          # Versionless copies so releases/latest/download/<file> links never go stale:
+          # the bare .exe (download and run) and the zip.
+          Copy-Item "target/${{ matrix.target }}/release/every-other-token.exe" "every-other-token-windows-x86_64.exe"
+          Copy-Item "$name.zip" "every-other-token-${{ matrix.target }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -82,6 +88,7 @@ jobs:
           path: |
             every-other-token-*.tar.gz*
             every-other-token-*.zip*
+            every-other-token-*.exe
 
   release:
     name: Publish GitHub Release

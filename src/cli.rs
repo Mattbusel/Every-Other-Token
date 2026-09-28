@@ -9,14 +9,28 @@ use clap::Parser;
 
 #[derive(Parser)]
 #[command(name = "every-other-token")]
-#[command(version = "4.0.0")]
-#[command(about = "A real-time token stream mutator for LLM interpretability research")]
+#[command(version)]
+#[command(
+    about = "Watch an LLM answer token by token: confidence and perplexity for every token, and rewrite every other token live"
+)]
+#[command(after_help = "Examples (no API key needed with --provider mock):
+  every-other-token \"Why is the sky blue?\" --provider mock
+  every-other-token \"Why is the sky blue?\" uppercase --provider mock --json-stream
+  every-other-token --web --provider mock
+
+With a real model, set OPENAI_API_KEY or ANTHROPIC_API_KEY first:
+  every-other-token \"Why is the sky blue?\" --visual
+  every-other-token \"Why is the sky blue?\" --provider anthropic --visual
+
+Run with no arguments to open the web UI.
+Docs: https://mattbusel.github.io/Every-Other-Token/")]
 pub struct Args {
     /// Input prompt to send to the LLM (optional when using --web)
     #[arg(default_value = "")]
     pub prompt: String,
 
-    /// Transformation type (reverse, uppercase, mock, noise)
+    /// Transform applied to the chosen tokens: reverse, uppercase, mock, noise, chaos,
+    /// scramble, delete, synonym, delay:N, or a chain like reverse,uppercase
     #[arg(default_value = "reverse")]
     pub transform: String,
 
@@ -24,7 +38,7 @@ pub struct Args {
     #[arg(default_value = "gpt-3.5-turbo")]
     pub model: String,
 
-    /// LLM provider: openai or anthropic
+    /// LLM provider: openai, anthropic, or mock (no API key needed)
     #[arg(long, value_enum, default_value = "openai")]
     pub provider: Provider,
 
@@ -52,7 +66,7 @@ pub struct Args {
     #[arg(long)]
     pub no_open: bool,
 
-    /// Enable headless research mode — runs N times and outputs JSON stats
+    /// Enable headless research mode: runs N times and outputs JSON stats
     #[arg(long)]
     pub research: bool,
 
@@ -108,10 +122,10 @@ pub struct Args {
     /// At 0.5 every other token is transformed; at 0.3 roughly one in three.
     /// Uses a deterministic Bresenham spread so results are reproducible when
     /// combined with --seed.
-    ///
-    /// Stored as `Option<f64>` so the config-file loader can distinguish
-    /// "the user explicitly passed --rate" from "the user left it at the
-    /// default".  The effective value is `rate.unwrap_or(0.5)`.
+    //
+    // Stored as `Option<f64>` so the config-file loader can distinguish
+    // "the user explicitly passed --rate" from "the user left it at the
+    // default".  The effective value is `rate.unwrap_or(0.5)`.
     #[arg(long)]
     pub rate: Option<f64>,
 
@@ -395,6 +409,23 @@ pub fn apply_template(template: &str, prompt: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_version_matches_crate_version() {
+        use clap::CommandFactory;
+        assert_eq!(
+            Args::command().get_version(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn test_help_lists_mock_provider_and_examples() {
+        use clap::CommandFactory;
+        let help = Args::command().render_long_help().to_string();
+        assert!(help.contains("--provider mock"));
+        assert!(help.contains("OPENAI_API_KEY"));
+    }
 
     #[test]
     fn test_resolve_model_anthropic_default_swap() {

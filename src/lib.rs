@@ -1,12 +1,43 @@
 //! # every-other-token
 //!
-//! A real-time LLM token stream interceptor for token-level interaction research.
+//! Watch an LLM answer token by token: intercept the OpenAI or Anthropic stream,
+//! score every token's confidence and perplexity, and rewrite every other token live.
 //!
 //! This crate sits between the caller and the model, intercepts the token stream
-//! as it arrives over SSE, applies one of five transform strategies to tokens at
-//! configurable positions, scores model confidence at each position using the
-//! OpenAI logprob API, and routes the enriched events to a terminal renderer, a
-//! zero-dependency web UI, and an optional WebSocket collaboration room.
+//! as it arrives over SSE, applies a transform (reverse, uppercase, noise, delete,
+//! synonym, chains and more) to tokens at configurable positions, scores model
+//! confidence at each position from the logprobs the API returns, and routes the
+//! enriched [`TokenEvent`]s to a terminal renderer, a zero-dependency web UI, JSON
+//! lines, and an optional WebSocket collaboration room.
+//!
+//! ## Example
+//!
+//! Runs offline against the built-in mock provider (no API key):
+//!
+//! ```
+//! use every_other_token::{providers::Provider, transforms::Transform, TokenInterceptor};
+//!
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+//! let mut interceptor = TokenInterceptor::new(
+//!     Provider::Mock,
+//!     Transform::Reverse,
+//!     "mock-fixture-v1".to_string(),
+//!     false, // visual
+//!     false, // heatmap
+//!     false, // orchestrator
+//! )
+//! .unwrap()
+//! .with_web_tx(tx);
+//! interceptor.intercept_stream("Why is the sky blue?").await.unwrap();
+//!
+//! let first = rx.recv().await.unwrap(); // "The", kept
+//! let second = rx.recv().await.unwrap(); // " quick", reversed
+//! assert_eq!(first.text, "The");
+//! assert_eq!(second.text.trim(), "kciuq");
+//! assert!(second.confidence.is_some()); // exp(logprob) from the stream
+//! # });
+//! ```
 //!
 //! ## New interpretability modules
 //!
@@ -1594,7 +1625,8 @@ pub async fn run_research_headless(
     let estimated_cost_usd = total as f64 / 1000.0 * 0.002;
 
     let citation = format!(
-        "Every Other Token v4.0.0 | prompt=\"{}\" | provider={} | model={} | transform={:?} | runs={} | tokens={}",
+        "Every Other Token v{} | prompt=\"{}\" | provider={} | model={} | transform={:?} | runs={} | tokens={}",
+        env!("CARGO_PKG_VERSION"),
         prompt, provider, model, transform, runs, total
     );
 
@@ -2616,7 +2648,11 @@ mod research_tests {
             mean_confidence: confidence.map(|c| c as f64),
             top_perplexity_tokens: vec!["word".to_string()],
             estimated_cost_usd: tokens as f64 / 1000.0 * 0.002,
-            citation: format!("Every Other Token v4.0.0 | tokens={}", tokens),
+            citation: format!(
+                "Every Other Token v{} | tokens={}",
+                env!("CARGO_PKG_VERSION"),
+                tokens
+            ),
         }
     }
 

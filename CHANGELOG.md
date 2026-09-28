@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-09-28
+
+### Fixed
+- `--version` printed 4.0.0; it now reports the real crate version (research citations too).
+- `--help` explains the tool in one plain sentence, lists every transform and the mock provider, and ends with copy-paste examples.
+- Starting with no arguments (double-clicking the Windows .exe) says how to try it without an API key.
+
+### Changed
+- Releases also attach versionless files (`every-other-token-windows-x86_64.exe` and per-platform archives) so `releases/latest/download/...` links stay valid.
+- README cut to a one-screen overview with a "How it works" diagram and real examples; the full reference moved to `docs/`.
+
 ## [4.3.0] - 2026-09-25
 
 ### Fixed
@@ -105,7 +116,7 @@ plus the fixes below.
   `development-tools`; updated `keywords` to include `interpretability`; added
   `opt-level = 3` and `strip = true` to `[profile.release]`.
 
-### Added (production hardening — 2026-03-18)
+### Added (production hardening, 2026-03-18)
 - External integration test suites `tests/transforms_tests.rs` and
   `tests/store_heatmap_replay_tests.rs` covering `Transform`, `ExperimentStore`,
   `HeatmapExporter`, `Recorder`, and `Replayer` from outside the crate boundary.

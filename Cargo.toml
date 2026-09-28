@@ -1,16 +1,16 @@
 [package]
 name = "every-other-token"
-version = "4.3.0"
+version = "4.3.1"
 edition = "2021"
 rust-version = "1.81"
-authors = ["AI Research Tools"]
-description = "A real-time LLM stream interceptor for token-level interaction research"
+authors = ["Matthew Busel"]
+description = "Watch an LLM answer token by token: a CLI and web UI that intercepts the OpenAI or Anthropic stream, shows per-token confidence and perplexity from logprobs, and rewrites every other token live. Mock provider needs no API key."
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/Mattbusel/Every-Other-Token"
-homepage = "https://github.com/Mattbusel/Every-Other-Token"
+homepage = "https://mattbusel.github.io/Every-Other-Token/"
 documentation = "https://docs.rs/every-other-token"
-keywords = ["llm", "ai", "research", "token", "interpretability"]
+keywords = ["llm", "logprobs", "interpretability", "openai", "anthropic"]
 categories = ["command-line-utilities", "science", "development-tools"]
 
 [dependencies]

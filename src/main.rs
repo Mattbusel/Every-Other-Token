@@ -37,9 +37,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         && !args.stats
         && !args.benchmark
     {
-        eprintln!("[eot] No prompt given — launching web UI at http://localhost:{}", args.port);
-        eprintln!("[eot] Tip: set OPENAI_API_KEY or ANTHROPIC_API_KEY in your environment.");
-        eprintln!("[eot] Run with --help for full CLI usage.");
+        eprintln!(
+            "[eot] No prompt given, so opening the web UI at http://localhost:{}",
+            args.port
+        );
+        if std::env::var("OPENAI_API_KEY").is_err() && std::env::var("ANTHROPIC_API_KEY").is_err() {
+            eprintln!("[eot] No API key found. Pick \"Mock (no API key)\" in the provider menu to try it offline,");
+            eprintln!("[eot] or set OPENAI_API_KEY or ANTHROPIC_API_KEY and start it again.");
+        }
+        eprintln!("[eot] Run with --help for command-line usage. Close this window to stop.");
         args.web = true;
     }
 
