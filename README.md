@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://mattbusel.github.io/Every-Other-Token/"><img src="https://raw.githubusercontent.com/Mattbusel/Every-Other-Token/main/assets/hero.svg" width="100%" alt="every-other-token streaming a reply token by token: every other token is reversed and highlighted, with a confidence bar under each token"></a>
+  <a href="https://mattbusel.github.io/Every-Other-Token/"><img src="assets/hero.svg" width="100%" alt="every-other-token streaming a reply token by token: every other token is reversed and highlighted, with a confidence bar under each token"></a>
 </p>
 
 <h1 align="center">every-other-token</h1>
@@ -25,7 +25,7 @@
 
 ## How it works
 
-<img src="https://raw.githubusercontent.com/Mattbusel/Every-Other-Token/main/docs/img/how-it-works.svg" width="100%" alt="Diagram of the four stages on a real run: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON">
+<img src="docs/img/how-it-works.svg" width="100%" alt="Diagram of the four stages on a real run: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON">
 
 1. **Intercept.** It opens the model's streaming connection (SSE) itself, so it sees each chunk the moment it arrives.
 2. **Score.** Each token gets `confidence = exp(logprob)` and `perplexity = exp(-logprob)`, plus the top alternatives the model considered.
@@ -79,7 +79,7 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 
 **4. Watch it in the browser** with `every-other-token --web --provider mock` (or just double-click the .exe). Split view: the original stream on the left, the rewritten one on the right, each token underlined by its confidence.
 
-<img src="https://raw.githubusercontent.com/Mattbusel/Every-Other-Token/main/assets/web-ui.png" width="100%" alt="every-other-token web UI in split view: original token stream on the left, transformed stream on the right, each token underlined by its confidence">
+<img src="assets/web-ui.png" width="100%" alt="every-other-token web UI in split view: original token stream on the left, transformed stream on the right, each token underlined by its confidence">
 
 ## Use it in 3 steps
 

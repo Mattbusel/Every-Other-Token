@@ -227,7 +227,7 @@ See `every-other-token --help` for the full list. Key flags:
 | `--model` | `gpt-3.5-turbo` | Model name |
 | `--provider` | `openai` | API provider |
 | `--rate` | `0.5` | Transform fraction |
-| `--rate-range` | *(none)* | e.g. `"0.2-0.8"` — random rate per run |
+| `--rate-range` | *(none)* | e.g. `"0.2-0.8"`: random rate per run |
 | `--seed` | *(entropy)* | Fixed RNG seed |
 | `--top-logprobs` | `5` | Alternative tokens per position |
 | `--web` | `false` | Launch the web UI instead of terminal output |
@@ -275,4 +275,4 @@ response resets the failure counter.
 
 ---
 
-*Generated from source — for the authoritative rustdoc see <https://docs.rs/every-other-token>.*
+*Generated from source; for the authoritative rustdoc see <https://docs.rs/every-other-token>.*
