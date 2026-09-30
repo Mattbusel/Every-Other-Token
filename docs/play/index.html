@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>every-other-token playground</title>
+<meta name="description" content="Type a prompt and watch every other word of the reply come out reversed, uppercased, scrambled or deleted as it streams. Runs in your browser, no API key needed.">
+<link rel="canonical" href="https://every-other-token.vercel.app/play/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="every-other-token">
+<meta property="og:url" content="https://every-other-token.vercel.app/play/">
+<meta property="og:title" content="every-other-token playground: every other word, reversed">
+<meta property="og:description" content="Type a prompt, watch every other token of the reply get rewritten live, with a confidence bar under each one. No API key needed.">
+<meta property="og:image" content="https://every-other-token.vercel.app/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://every-other-token.vercel.app/assets/og.png">
+<meta name="theme-color" content="#0c0d0b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c0d0b'/%3E%3Crect x='6' y='20' width='8' height='3' rx='1.5' fill='%23e6e1d3'/%3E%3Crect x='18' y='20' width='8' height='3' rx='1.5' fill='%23ff6a2b'/%3E%3Crect x='6' y='10' width='8' height='6' rx='1' fill='%23e6e1d3'/%3E%3Crect x='18' y='10' width='8' height='6' rx='1' fill='%23ff6a2b'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0c0d0b;--bg2:#090a08;--card:#131411;--line:#25271f;--line2:#36382f;
+  --ink:#e6e1d3;--dim:#a19c8c;--faint:#6b675b;--xf:#ff6a2b;--xfbg:rgba(255,106,43,.12);--gold:#e8c872;
+  --hi:#7fd69f;--mid:#e8c872;--lo:#ff5c7a;--onxf:#170904;
+  --mono:ui-monospace,'Cascadia Code','JetBrains Mono','SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f6f3ea;--bg2:#fbf9f3;--card:#efebdf;--line:#dcd6c6;--line2:#c7c0ad;
+    --ink:#1b1c17;--dim:#56534a;--faint:#7c776a;--xf:#c9430c;--xfbg:rgba(201,67,12,.09);--gold:#9a7412;
+    --hi:#1f8a4c;--mid:#a67a00;--lo:#c42a4a;--onxf:#fff;
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f6f3ea;--bg2:#fbf9f3;--card:#efebdf;--line:#dcd6c6;--line2:#c7c0ad;
+  --ink:#1b1c17;--dim:#56534a;--faint:#7c776a;--xf:#c9430c;--xfbg:rgba(201,67,12,.09);--gold:#9a7412;
+  --hi:#1f8a4c;--mid:#a67a00;--lo:#c42a4a;--onxf:#fff;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--ink);text-decoration-color:var(--line2);text-underline-offset:4px}
+a:hover{text-decoration-color:var(--xf)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+.x{color:var(--xf)}
+nav{display:flex;align-items:center;justify-content:space-between;padding:22px 0;gap:16px}
+.logo{font-weight:700;font-size:16px;text-decoration:none;letter-spacing:-.01em;white-space:nowrap}
+nav .links{display:flex;gap:18px;align-items:center;font-size:13px;color:var(--dim)}
+nav .links a{color:var(--dim);text-decoration:none}
+nav .links a:hover{color:var(--ink)}
+.theme{font:inherit;font-size:12px;color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:6px;padding:2px 9px;cursor:pointer}
+header{padding:30px 0 22px}
+h1{font-size:clamp(30px,5.4vw,56px);line-height:1.04;letter-spacing:-.035em;font-weight:700}
+.lead{max-width:64ch;color:var(--dim);font-size:16px;margin-top:16px}
+.lead b{color:var(--ink);font-weight:500}
+.panel{border:1px solid var(--line);border-radius:14px;background:var(--bg2);overflow:hidden}
+.ctl{padding:16px;border-bottom:1px solid var(--line);background:var(--card);display:grid;gap:14px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lbl{font-size:12px;color:var(--faint);min-width:74px}
+textarea{font:inherit;font-size:16px;width:100%;min-height:62px;resize:vertical;color:var(--ink);background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;line-height:1.45}
+textarea:focus,input:focus,select:focus{outline:2px solid var(--gold);outline-offset:1px}
+.tab{font:inherit;font-size:13px;color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:6px;padding:4px 11px;cursor:pointer}
+.tab:hover{color:var(--ink);border-color:var(--faint)}
+.tab[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+select,input[type=text],input[type=password],input[type=url]{font:inherit;font-size:14px;color:var(--ink);background:var(--bg2);border:1px solid var(--line2);border-radius:6px;padding:4px 8px}
+input[type=range]{accent-color:var(--xf);width:160px;max-width:100%}
+.rateval{font-size:13px;min-width:10ch;color:var(--ink)}
+.go{font:inherit;font-size:14px;font-weight:700;background:var(--xf);color:var(--onxf);border:0;border-radius:7px;padding:7px 18px;cursor:pointer}
+.go:hover{filter:brightness(1.1)}
+.go:disabled{opacity:.55;cursor:default}
+.btn{font:inherit;font-size:13px;color:var(--dim);background:transparent;border:1px solid var(--line2);border-radius:6px;padding:5px 11px;cursor:pointer}
+.btn:hover{color:var(--ink);border-color:var(--faint)}
+.btn.ok{color:var(--hi);border-color:var(--hi)}
+.push{margin-left:auto}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.seg button{font:inherit;font-size:13px;color:var(--dim);background:transparent;border:0;padding:4px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.live{display:none;gap:10px;border:1px dashed var(--line2);border-radius:10px;padding:12px}
+.live.on{display:grid}
+.live .row input{flex:1 1 220px;min-width:0}
+.fine{font-size:12.5px;color:var(--faint);max-width:90ch}
+.fine b{color:var(--dim);font-weight:500}
+.stage{padding:22px 18px 18px;min-height:220px;line-height:1;display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:12px 0}
+.stage:empty::before{content:"Press run to stream a reply.";color:var(--faint);font-size:14px}
+.tk{display:inline-flex;flex-direction:column;align-items:stretch;gap:5px;animation:tin .16s ease-out both;cursor:default}
+.tk .t{font-size:clamp(16px,2vw,20px);line-height:1.25;padding:3px 5px;border-radius:5px;white-space:pre;border:1px solid transparent}
+.tk.x .t{color:var(--xf);font-weight:700;background:var(--xfbg);border-color:color-mix(in srgb,var(--xf) 35%,transparent)}
+.tk.x{cursor:pointer}
+.tk.x.orig .t{color:var(--ink);font-weight:400;border-style:dashed}
+.tk.del .t{color:var(--faint);text-decoration:line-through;font-weight:400}
+.tk .bar{height:3px;border-radius:2px;background:var(--line);margin:0 5px;position:relative;overflow:hidden}
+.tk .bar i{position:absolute;inset:0 auto 0 0;border-radius:2px}
+.tk .bar.none{background:transparent;border-top:1px dotted var(--line2);height:0;margin-top:1px}
+.tk .lab{font-size:10px;color:var(--faint);line-height:1;padding:0 5px;height:10px}
+.sp{display:inline-block;width:.5em}
+.br{flex-basis:100%;height:0}
+@keyframes tin{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.caret{display:inline-block;width:.55em;height:1.2em;background:var(--xf);margin:3px 0 0 3px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.pfoot{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint)}
+.pfoot b{color:var(--ink);font-weight:500}
+.sw{display:inline-block;width:16px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+.legend{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.status{padding:10px 18px;border-top:1px solid var(--line);font-size:13px;color:var(--dim);display:none}
+.status.on{display:block}
+.status.err{color:var(--lo)}
+.plain{padding:0 18px 16px;font-size:14px;color:var(--dim);white-space:pre-wrap;word-wrap:break-word;display:none}
+.plain.on{display:block}
+.note{font-size:12.5px;color:var(--faint);margin-top:12px;max-width:86ch}
+code{font-family:var(--mono);font-size:.92em;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.real{margin-top:56px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:22px}
+.real h2{font-size:clamp(20px,2.6vw,26px);letter-spacing:-.02em;line-height:1.15}
+.real p{color:var(--dim);margin-top:8px;max-width:70ch}
+.cmd{margin-top:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);overflow:hidden}
+.cmd .hd{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--faint)}
+pre{margin:0;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:14px;line-height:1.7;color:var(--ink)}
+pre .p{color:var(--xf);user-select:none}
+.dl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:18px}
+.dl a.win{display:inline-block;background:var(--xf);color:var(--onxf);font-weight:700;text-decoration:none;border-radius:8px;padding:10px 18px;font-size:14px}
+.dl a.alt{color:var(--dim);font-size:13px}
+footer{margin-top:48px;border-top:1px solid var(--line);padding:22px 0 36px;font-size:13px;color:var(--faint);display:flex;flex-wrap:wrap;gap:10px 24px;justify-content:space-between}
+footer a{color:var(--dim)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (max-width:820px){
+  .wrap{padding:0 16px}
+  header{padding-top:12px}
+  .legend{margin-left:0}
+  .lbl{min-width:0;width:100%}
+  .push{margin-left:0}
+  nav .links .opt{display:none}
+}
+@media (prefers-reduced-motion:reduce){.tk{animation:none}.caret{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+  <a class="logo" href="../">every-<span class="x">other</span>-token</a>
+  <div class="links">
+    <a href="../">about</a>
+    <a class="opt" href="#real">install</a>
+    <a href="https://gitlab.com/mattbusel/Every-Other-Token">gitlab</a>
+    <button class="theme" id="theme" type="button" aria-label="Switch light or dark theme">theme</button>
+  </div>
+</nav>
+
+<header>
+  <h1>Every other word,<br><span class="x">sdrawkcab</span>.</h1>
+  <p class="lead">Type a prompt. A reply streams in token by token, and <b>every other token</b> gets rewritten on the way: reversed, uppercased, scrambled, deleted. The bar under each token is how sure the model was about it. Runs entirely in your browser; no API key needed.</p>
+</header>
+
+<div class="panel" id="panel">
+  <div class="ctl">
+    <label class="sr" for="prompt">Prompt</label>
+    <textarea id="prompt" maxlength="500" spellcheck="true" placeholder="Ask it anything">Why is the sky blue?</textarea>
+
+    <div class="row" role="group" aria-label="Transform">
+      <span class="lbl">transform</span>
+      <span id="tabs" class="row"></span>
+    </div>
+
+    <div class="row">
+      <span class="lbl">then</span>
+      <label class="sr" for="chain">Chain a second transform</label>
+      <select id="chain"><option value="">nothing (single transform)</option></select>
+      <span class="lbl" style="min-width:auto;width:auto;margin-left:10px">rate</span>
+      <label class="sr" for="rate">Fraction of tokens rewritten</label>
+      <input type="range" id="rate" min="0" max="1" step="0.05" value="0.5">
+      <span class="rateval" id="rateval">0.50</span>
+    </div>
+
+    <div class="row">
+      <span class="lbl">source</span>
+      <span class="seg" role="group" aria-label="Source">
+        <button type="button" data-src="mock" aria-pressed="true">mock model</button>
+        <button type="button" data-src="live" aria-pressed="false">my OpenAI key</button>
+      </span>
+      <label class="sr" for="reply">Mock reply style</label>
+      <select id="reply" title="Mock reply">
+        <option value="varied">varied replies</option>
+        <option value="fixture">CLI fixture (same as --provider mock)</option>
+      </select>
+    </div>
+
+    <div class="live" id="live">
+      <div class="row">
+        <label class="lbl" for="key">API key</label>
+        <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="sk-...">
+      </div>
+      <div class="row">
+        <label class="lbl" for="base">base URL</label>
+        <input type="url" id="base" spellcheck="false" value="https://api.openai.com/v1">
+      </div>
+      <div class="row">
+        <label class="lbl" for="model">model</label>
+        <input type="text" id="model" spellcheck="false" value="gpt-4o-mini">
+      </div>
+      <div class="row">
+        <label style="font-size:13px;color:var(--dim);display:flex;gap:8px;align-items:center"><input type="checkbox" id="remember"> remember the key on this device</label>
+        <button class="btn" type="button" id="forget">forget key</button>
+      </div>
+      <p class="fine"><b>Your key stays in this browser.</b> The page calls the provider directly from your browser; there is no server of ours in between. It is only saved if you tick "remember" (browser storage on this device). Any OpenAI-compatible endpoint works if it streams <code>/chat/completions</code> with <code>logprobs</code> and allows browser (CORS) requests; if it does not, the request is blocked and this page will tell you.</p>
+    </div>
+
+    <div class="row">
+      <button class="go" id="run" type="button">run</button>
+      <button class="btn" id="stop" type="button" disabled>stop</button>
+      <button class="btn" id="reroll" type="button" title="Different random choices for noise, chaos and scramble, and a different mock reply">reroll</button>
+      <span class="push"></span>
+      <button class="btn" id="copytext" type="button">copy text</button>
+      <button class="btn" id="copylink" type="button">copy link</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage" aria-live="off"></div>
+  <div class="plain" id="plain"></div>
+  <div class="status" id="status" role="status"></div>
+  <div class="pfoot">
+    <span><b id="n">0</b> tokens</span>
+    <span><b id="nx">0</b> rewritten</span>
+    <span>mean confidence <b id="mc">-</b></span>
+    <span id="conftag">confidence: simulated</span>
+    <span class="legend"><span><i class="sw" style="background:var(--hi)"></i>sure &ge;70%</span><span><i class="sw" style="background:var(--mid)"></i>unsure</span><span><i class="sw" style="background:var(--lo)"></i>guessing &lt;40%</span></span>
+  </div>
+</div>
+<p class="note" id="mocknote">The mock model is a small script in this page, not a real model: it picks a canned reply and makes up plausible confidence numbers, so the bars are <b>simulated</b>. The token rules are the real ones: same tokenizer, same transforms, and the same rate rule as the Rust tool (token <i>i</i> is rewritten when <code>floor((i+1)*rate) &gt; floor(i*rate)</code>, so 0.5 means every other token). Hover a token for its numbers; click or tap a rewritten one to flip it back to the original. With your own key, the tokens and the confidence are the model's own.</p>
+
+<section class="real" id="real">
+  <h2>Get the real tool</h2>
+  <p><b>every-other-token</b> does this to a live OpenAI or Anthropic stream in your terminal or its own web UI, with perplexity, top alternatives, confidence gating, provider diffs, JSON and CSV export. Free and open source (MIT), written in Rust.</p>
+  <div class="cmd"><div class="hd"><span>install</span><button class="btn" type="button" id="copyinstall" data-copy="cargo install --locked every-other-token">copy</button></div>
+<pre><span class="p">$ </span>cargo install --locked every-other-token
+<span class="p">$ </span>every-other-token "Why is the sky blue?" --provider mock</pre></div>
+  <div class="dl">
+    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
+    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token">Source on GitLab</a>
+    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">All releases</a>
+  </div>
+</section>
+
+<footer>
+  <span>every-other-token playground &middot; MIT &middot; by <a href="https://gitlab.com/mattbusel">Matthew Busel</a></span>
+  <span><a href="../">project site</a> &middot; <a href="https://gitlab.com/mattbusel/Every-Other-Token">gitlab.com/mattbusel/Every-Other-Token</a></span>
+</footer>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// Ported from src/transforms.rs and src/lib.rs (every-other-token 4.3.x).
+// ---------------------------------------------------------------------------
+const NOISE_CHARS = ['*', '+', '~', '@', '#', '$', '%'];
+const SYNONYMS = {"good":"great","bad":"poor","fast":"quick","slow":"gradual","big":"large","small":"tiny","happy":"glad","sad":"unhappy","smart":"clever","old":"aged","new":"fresh","hot":"warm","cold":"cool","hard":"tough","easy":"simple","start":"begin","end":"finish","make":"create","get":"obtain","use":"employ","say":"state","go":"proceed","see":"observe","know":"understand","think":"believe","come":"arrive","take":"acquire","give":"provide","find":"locate","tell":"inform","bright":"vivid","dark":"dim","clean":"pure","dirty":"grimy","strong":"powerful","weak":"frail","rich":"wealthy","young":"youthful","pretty":"beautiful","ugly":"hideous","loud":"noisy","quiet":"silent","angry":"furious","calm":"serene","brave":"courageous","scared":"frightened","funny":"amusing","serious":"solemn","kind":"gentle","cruel":"harsh","empty":"hollow","full":"packed","rough":"coarse","smooth":"sleek","sharp":"keen","dull":"blunt","deep":"profound","shallow":"superficial","wide":"broad","narrow":"slim","long":"lengthy","short":"brief","heavy":"weighty","light":"featherweight","warm":"heated","frozen":"icy","luminous":"bright","gloomy":"dreary","lively":"energetic","tired":"weary","healthy":"robust","sick":"ill","safe":"secure","dangerous":"hazardous","important":"crucial","trivial":"minor","simple":"plain","complex":"intricate","rare":"scarce","common":"ordinary","strange":"peculiar","normal":"typical","ancient":"archaic","modern":"contemporary","local":"regional","distant":"remote","walk":"stroll","run":"sprint","eat":"consume","drink":"sip","write":"compose","read":"peruse","speak":"articulate","listen":"hear","look":"glance","touch":"feel","help":"assist","stop":"halt","try":"attempt","fail":"falter","win":"triumph","forfeit":"lose","buy":"purchase","sell":"trade","build":"construct","break":"shatter","fix":"repair","cut":"slice","push":"shove","pull":"tug","throw":"toss","catch":"grab","jump":"leap","fall":"plunge","rise":"ascend","drop":"descend","open":"unlock","close":"shut","move":"shift","stay":"remain","change":"alter","grow":"expand","shrink":"diminish","show":"display","hide":"conceal","choose":"select","allow":"permit","prevent":"hinder","need":"require","want":"desire","like":"enjoy","hate":"despise","fear":"dread","love":"adore","send":"dispatch","receive":"accept","keep":"retain","misplace":"lose","follow":"pursue","lead":"guide","wait":"linger","hurry":"rush","agree":"concur","refuse":"decline","house":"dwelling","car":"vehicle","book":"volume","friend":"companion","work":"labor","time":"duration","way":"method","place":"location","thing":"object","part":"component","life":"existence","day":"period","man":"person","woman":"individual","child":"youth","world":"realm","school":"institution","country":"nation","city":"metropolis","family":"household","group":"collective","system":"framework","problem":"issue","idea":"concept","question":"inquiry","result":"outcome","road":"path","tree":"plant","water":"liquid","fire":"flame","glow":"light","sound":"noise","food":"nourishment","money":"currency","power":"strength","mind":"intellect","heart":"soul","hand":"palm","eye":"gaze","word":"term","story":"tale","truth":"fact","dream":"vision","goal":"objective","plan":"strategy","step":"stage","rule":"law","right":"privilege","choice":"option","chance":"opportunity"};
+const TRANSFORMS = ['reverse', 'uppercase', 'mock', 'noise', 'chaos', 'scramble', 'delete', 'synonym', 'delay'];
+const DELAY_MS = 100; // `delay` with no :N defaults to 100 ms in the Rust parser
+
+// Seeded PRNG so a shared link reproduces noise, chaos and scramble exactly.
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function fnv(s) {
+  let h = 0x811c9dc5;
+  for (const ch of s) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+const rangeInt = (rng, n) => Math.floor(rng() * n);
+
+function applyMock(tok) {
+  return Array.from(tok).map((c, i) => i % 2 === 0 ? c.toLowerCase() : c.toUpperCase()).join('');
+}
+function applyOne(name, tok, rng) {
+  switch (name) {
+    case 'reverse': return [Array.from(tok).reverse().join(''), 'reverse'];
+    case 'uppercase': return [tok.toUpperCase(), 'uppercase'];
+    case 'mock': return [applyMock(tok), 'mock'];
+    case 'noise': return [tok + NOISE_CHARS[rangeInt(rng, NOISE_CHARS.length)], 'noise'];
+    case 'scramble': {
+      const c = Array.from(tok);
+      for (let i = c.length - 1; i >= 1; i--) { const j = rangeInt(rng, i + 1); [c[i], c[j]] = [c[j], c[i]]; }
+      return [c.join(''), 'scramble'];
+    }
+    case 'delete': return ['', 'delete'];
+    case 'synonym': {
+      const s = Object.prototype.hasOwnProperty.call(SYNONYMS, tok.toLowerCase()) ? SYNONYMS[tok.toLowerCase()] : null;
+      return [s == null ? tok : s, 'synonym'];
+    }
+    case 'delay': return [tok, 'delay'];
+    case 'chaos': {
+      const k = rangeInt(rng, 4);
+      if (k === 0) return applyOne('reverse', tok, rng);
+      if (k === 1) return applyOne('uppercase', tok, rng);
+      if (k === 2) return applyOne('mock', tok, rng);
+      return applyOne('noise', tok, rng);
+    }
+  }
+  return [tok, name];
+}
+function applyChain(names, tok, rng) {
+  let cur = tok; const labels = [];
+  for (const n of names) { const [next, l] = applyOne(n, cur, rng); cur = next; labels.push(l); }
+  return [cur, labels.join('+')];
+}
+
+// tokenize(): words, single punctuation characters, single whitespace characters.
+const EXTRA_PUNCT = new Set(['\u2014', '\u2013', '\u2026', '\u00ab', '\u00bb', '\u201c', '\u201d', '\u2018', '\u2019', '\u201e', '\u2039', '\u203a', '\u00b7']);
+const isWs = c => /\s/u.test(c);
+const isPunct = c => (/[!-\/:-@\[-`{-~]/.test(c) && c.length === 1 && c.charCodeAt(0) < 128) || EXTRA_PUNCT.has(c);
+function isCjk(c) {
+  const p = c.codePointAt(0);
+  return (p >= 0x4E00 && p <= 0x9FFF) || (p >= 0x3400 && p <= 0x4DBF) || (p >= 0x20000 && p <= 0x2A6DF) ||
+    (p >= 0xF900 && p <= 0xFAFF) || (p >= 0x3000 && p <= 0x303F) || (p >= 0xFF00 && p <= 0xFFEF);
+}
+function tokenize(text) {
+  const out = []; let cur = '';
+  for (const ch of text) {
+    if (isWs(ch) || isPunct(ch)) { if (cur) { out.push(cur); cur = ''; } out.push(ch); }
+    else if (isCjk(ch)) { if (cur) { out.push(cur); cur = ''; } out.push(ch); }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+// The interceptor: same counting, rate rule and logprob attachment as
+// TokenInterceptor::process_content_logprob.
+class Interceptor {
+  constructor(names, rate, rng, emit) {
+    this.names = names; this.rate = rate; this.rng = rng; this.emit = emit;
+    this.count = 0; this.transformed = 0; this.pendingWs = '';
+  }
+  feed(content, logprob, alts) {
+    let firstReal = true; let delay = 0;
+    for (const token of tokenize(content)) {
+      if (token.trim() === '') { this.pendingWs += token; continue; }
+      const i = this.count;
+      const should = Math.floor((i + 1) * this.rate) > Math.floor(i * this.rate);
+      let conf = null, ppl = null, top = [];
+      if (firstReal) {
+        firstReal = false;
+        if (logprob != null) { conf = Math.min(1, Math.max(0, Math.exp(logprob))); ppl = Math.exp(-logprob); top = alts || []; }
+      }
+      let text = token, label = null;
+      if (should) {
+        this.transformed++;
+        [text, label] = applyChain(this.names, token, this.rng);
+        if (this.names.includes('delay')) delay = DELAY_MS;
+      }
+      const deleted = should && text === '';
+      const ws = this.pendingWs; this.pendingWs = '';
+      this.emit({ index: i, original: token, text, ws, transformed: should, deleted, label, conf, ppl, top });
+      this.count++;
+    }
+    return delay;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mock model
+// ---------------------------------------------------------------------------
+// The exact fixture from stream_mock() in src/lib.rs.
+function fixtureChunks(prompt) {
+  const pre = Array.from(prompt).slice(0, 40).join('');
+  return [["The", -0.12], [" quick", -0.45], [" brown", -0.78], [" fox", -0.23], [" jumps", -0.56], [" over", -0.34],
+    [" the", -0.11], [" lazy", -0.89], [" dog", -0.19], [".", -0.07], [" This", -0.62], [" is", -0.15], [" a", -0.08],
+    [" mock", -0.31], [" response", -0.44], [" for", -0.27], [" prompt", -0.53], [":", -0.18], [" " + pre, -0.71]];
+}
+
+const REPLIES = [
+  { k: /\b(sky|blue|sunset|rainbow)\b/i, t: "The sky looks blue because sunlight is made of every color, and the tiny molecules in the air scatter short blue waves far more than long red ones. So when you look up, blue light is arriving from every direction at once. At sunset the light travels through much more air, the blue gets scattered away, and you are left with the orange and red." },
+  { k: /\b(love|crush|date|dating|relationship|girlfriend|boyfriend|marry)\b/i, t: "Love is mostly paying attention. Remember the small things, show up when it is inconvenient, and say the kind thing out loud instead of just thinking it. Nobody is great at this every day, and that is fine, because the trying is most of it." },
+  { k: /\b(cat|cats|dog|dogs|pet|puppy|kitten)\b/i, t: "Cats and dogs have different ideas about friendship. A dog decides you are wonderful the moment you walk in the door. A cat watches you from across the room for about three years and then sits on your keyboard, which is the highest honor it knows how to give." },
+  { k: /\b(code|coding|bug|rust|python|javascript|program|programming|compile|compiler|software)\b/i, t: "Before you rewrite the whole thing, read the error message slowly, all the way to the end. Then make the smallest change that could possibly fix it and run it again. Most bugs are one wrong assumption hiding in a line you were sure about." },
+  { k: /\b(pizza|food|eat|cook|cooking|recipe|dinner|lunch|breakfast|hungry)\b/i, t: "The secret to a good pizza at home is a very hot oven, less sauce than you think, and patience with the dough. Let it rest overnight in the fridge. It will feel like nothing is happening, and then it will be the best thing you have made all year." },
+  { k: /\b(meaning|life|purpose|happy|happiness|death|universe)\b/i, t: "Nobody has a final answer to that, but a good working one is this: find a few people you like, do something useful with your hands or your head, and go outside more than you think you need to. The meaning tends to show up while you are busy with those." },
+  { k: /\b(money|rich|invest|crypto|stock|stocks|job|salary|career)\b/i, t: "The boring answer is the one that works: spend less than you earn, keep an emergency fund, and put the rest somewhere cheap and diversified for a long time. Anyone promising you fast money is usually the one making it." },
+  { k: /\b(ai|robot|robots|gpt|model|models|llm|chatbot|claude)\b/i, t: "A language model writes one token at a time, and for each one it has a spread of guesses with a probability on every option. Most of the time it is very sure. Every so often it is guessing, and that is exactly the moment worth watching." },
+  { t: "That is a great question, and the honest answer is that it depends on who you ask. Some people will tell you it is simple, others will write an entire book about it. The truth is probably somewhere in the middle, slightly closer to the book." },
+  { t: "Here is the short version. Start with what you already know, check the one thing you are least sure about, and do not trust any answer that sounds too confident. Including this one, which was written one word at a time." },
+  { t: "Great question! First, take a deep breath. Second, remember that nobody has ever solved anything by reading the same paragraph eleven times. Third, go get a glass of water. The answer will still be here when you come back." },
+  { t: "Absolutely. I would be happy to help with that. To be completely transparent, I am a very small script pretending to be a large language model, but I am giving it everything I have, one token at a time." },
+];
+const FUNCTION_WORDS = new Set(("the a an of to and or but is are was were be been it its in on at by for with as that this these those i you he she we they me my your our their so if then than not no do does did just very more most much many some any all every one two three from up out about into over under after before when where why how what who which there here can could will would should may might must has have had").split(' '));
+
+// Synthesize a plausible logprob for a word. Clearly labelled as simulated in the UI.
+function fakeLogprob(word, rng) {
+  const w = word.toLowerCase().replace(/[^a-z']/g, '');
+  let lo, hi;
+  if (!w) { lo = 0.02; hi = 0.25; }                       // punctuation: nearly certain
+  else if (FUNCTION_WORDS.has(w)) { lo = 0.03; hi = 0.45; }
+  else if (w.length <= 5) { lo = 0.15; hi = 1.1; }
+  else { lo = 0.3; hi = 1.7; }
+  let lp = -(lo + rng() * (hi - lo));
+  if (rng() < 0.07) lp -= 0.9 + rng() * 1.3;              // the occasional real guess
+  return Math.round(lp * 100) / 100;
+}
+function variedChunks(prompt, seed, rng) {
+  const keyed = REPLIES.find(r => r.k && r.k.test(prompt));
+  const pick = keyed && seed % 3 !== 2 ? keyed : REPLIES[(fnv(prompt) + seed) % REPLIES.length];
+  // Split into API-style chunks: " word" or a single punctuation mark.
+  const parts = pick.t.match(/\s*[A-Za-z0-9']+|\s*[^\sA-Za-z0-9']/g) || [];
+  return parts.map(p => [p, fakeLogprob(p, rng)]);
+}
+
+// ---------------------------------------------------------------------------
+// UI
+// ---------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const band = c => c >= 0.7 ? 'var(--hi)' : c >= 0.4 ? 'var(--mid)' : 'var(--lo)';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) { } },
+  del(k) { try { localStorage.removeItem(k); } catch (_) { } },
+};
+
+const state = { t: 'reverse', chain: '', rate: 0.5, src: 'mock', reply: 'varied', seed: 1 };
+let run = null; // { cancelled, abort }
+let plainText = '';
+
+const tabs = $('#tabs');
+for (const name of TRANSFORMS) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'tab'; b.dataset.t = name; b.textContent = name;
+  b.addEventListener('click', () => { state.t = name; syncUi(); start(); });
+  tabs.appendChild(b);
+  const o = document.createElement('option'); o.value = name; o.textContent = name; $('#chain').appendChild(o);
+}
+
+function transformNames() { return state.chain ? [state.t, state.chain] : [state.t]; }
+function transformLabel() { return transformNames().join(','); }
+
+function syncUi() {
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === state.t)));
+  $('#chain').value = state.chain;
+  $('#rate').value = String(state.rate);
+  $('#rateval').textContent = state.rate.toFixed(2) + (state.rate === 0.5 ? ' (every other)' : '');
+  document.querySelectorAll('[data-src]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.src === state.src)));
+  $('#live').classList.toggle('on', state.src === 'live');
+  $('#reply').style.display = state.src === 'mock' ? '' : 'none';
+  $('#reply').value = state.reply;
+  $('#mocknote').style.display = state.src === 'mock' ? '' : 'none';
+}
+
+function setStatus(msg, err) {
+  const s = $('#status');
+  s.textContent = msg || ''; s.classList.toggle('on', !!msg); s.classList.toggle('err', !!err);
+}
+
+function makeChip(ev) {
+  const el = document.createElement('span');
+  el.className = 'tk' + (ev.deleted ? ' del' : ev.transformed ? ' x' : '');
+  const t = document.createElement('span'); t.className = 't';
+  t.textContent = ev.deleted ? ev.original : ev.text;
+  const bar = document.createElement('span'); bar.className = 'bar';
+  if (ev.conf != null) {
+    const i = document.createElement('i'); i.style.width = Math.max(4, Math.round(ev.conf * 100)) + '%'; i.style.background = band(ev.conf); bar.appendChild(i);
+  } else bar.classList.add('none');
+  const lab = document.createElement('span'); lab.className = 'lab';
+  lab.textContent = ev.conf != null ? Math.round(ev.conf * 100) + '%' : '';
+  el.append(t, bar, lab);
+  let tip = '#' + ev.index + '  "' + ev.original + '"';
+  if (ev.transformed) tip += ev.deleted ? '  deleted' : '  -> "' + ev.text + '" (' + ev.label + ')';
+  if (ev.conf != null) tip += '\nconfidence ' + (ev.conf * 100).toFixed(1) + '%, perplexity ' + ev.ppl.toFixed(2);
+  else tip += '\nno confidence for this token';
+  if (ev.top && ev.top.length) tip += '\nalternatives: ' + ev.top.map(a => JSON.stringify(a.token) + ' ' + Math.round(a.p * 100) + '%').join(', ');
+  el.title = tip;
+  el.tabIndex = 0;
+  if (ev.transformed && !ev.deleted) {
+    const flip = () => { const o = el.classList.toggle('orig'); t.textContent = o ? ev.original : ev.text; };
+    el.addEventListener('click', flip);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+  }
+  el.dataset.original = ev.original; el.dataset.shown = ev.deleted ? '' : ev.text; el.dataset.x = ev.transformed ? '1' : '0';
+  return el;
+}
+
+function start() {
+  if (run) { run.cancelled = true; if (run.abort) run.abort.abort(); }
+  const prompt = $('#prompt').value.trim() || 'Why is the sky blue?';
+  const stage = $('#stage'); stage.textContent = '';
+  setStatus('');
+  plainText = '';
+  let n = 0, nx = 0, sum = 0, nc = 0;
+  $('#n').textContent = '0'; $('#nx').textContent = '0'; $('#mc').textContent = '-';
+  $('#conftag').textContent = state.src === 'mock' ? 'confidence: simulated' : 'confidence: from the model';
+  const caret = document.createElement('span'); caret.className = 'caret'; caret.setAttribute('aria-hidden', 'true');
+  stage.appendChild(caret);
+  const rng = mulberry32(fnv(prompt + '|' + transformLabel() + '|' + state.rate + '|' + state.seed));
+  const my = { cancelled: false, abort: null };
+  run = my;
+  const emit = ev => {
+    if (my.cancelled) return;
+    if (ev.ws) {
+      const parts = ev.ws.split('\n');
+      parts.forEach((p, i) => {
+        if (i > 0) { const br = document.createElement('span'); br.className = 'br'; stage.insertBefore(br, caret); }
+        if (p.length) { const sp = document.createElement('span'); sp.className = 'sp'; stage.insertBefore(sp, caret); }
+      });
+    }
+    stage.insertBefore(makeChip(ev), caret);
+    plainText += (ev.deleted ? '' : ev.ws + ev.text);
+    n++; if (ev.transformed) nx++;
+    if (ev.conf != null) { sum += ev.conf; nc++; }
+    $('#n').textContent = n; $('#nx').textContent = nx; $('#mc').textContent = nc ? Math.round(sum / nc * 100) + '%' : '-';
+  };
+  const ic = new Interceptor(transformNames(), state.rate, rng, emit);
+  $('#run').disabled = true; $('#stop').disabled = false;
+  const done = (msg, err) => {
+    if (my !== run) return;
+    caret.remove(); $('#run').disabled = false; $('#stop').disabled = true;
+    if (msg) setStatus(msg, err);
+    run = null;
+  };
+  my.done = done;
+  if (state.src === 'mock') runMock(prompt, ic, my, rng, done);
+  else runLive(prompt, ic, my, done);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runMock(prompt, ic, my, rng, done) {
+  const chunks = state.reply === 'fixture' ? fixtureChunks(prompt) : variedChunks(prompt, state.seed, rng);
+  for (const [text, lp] of chunks) {
+    if (my.cancelled) return;
+    const extra = ic.feed(text, lp, []);
+    const ppl = Math.exp(-lp);
+    await sleep((reduce ? 15 : 45 + Math.round(ppl * 40)) + extra);
+  }
+  done();
+}
+
+async function runLive(prompt, ic, my, done) {
+  const key = $('#key').value.trim();
+  const base = ($('#base').value.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const model = $('#model').value.trim() || 'gpt-4o-mini';
+  if (!key) { done('Paste an API key first, or switch back to the mock model.', true); return; }
+  if ($('#remember').checked) { store.set('eot.key', key); store.set('eot.base', base); store.set('eot.model', model); }
+  const ctrl = new AbortController(); my.abort = ctrl;
+  let res;
+  try {
+    res = await fetch(base + '/chat/completions', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], stream: true, temperature: 0.7, logprobs: true, top_logprobs: 5 }),
+    });
+  } catch (e) {
+    if (my.cancelled) return;
+    done('The request did not go through. The most likely reason is that ' + base + ' does not allow calls from a web page (CORS), or the URL is wrong. The real tool has no such limit: it calls the API from your machine.', true);
+    return;
+  }
+  if (!res.ok) {
+    let body = ''; try { body = (await res.text()).slice(0, 300); } catch (_) { }
+    let msg = 'The provider answered ' + res.status + '.';
+    try { const j = JSON.parse(body); if (j.error && j.error.message) msg += ' ' + j.error.message; } catch (_) { if (body) msg += ' ' + body; }
+    done(msg, true); return;
+  }
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''; let sawLogprobs = false;
+  try {
+    for (;;) {
+      const { value, done: fin } = await reader.read();
+      if (fin || my.cancelled) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+        let j; try { j = JSON.parse(line.slice(6)); } catch (_) { continue; }
+        const ch = j.choices && j.choices[0]; if (!ch || !ch.delta || typeof ch.delta.content !== 'string') continue;
+        const lc = ch.logprobs && ch.logprobs.content && ch.logprobs.content[0];
+        if (lc) sawLogprobs = true;
+        const alts = lc && lc.top_logprobs ? lc.top_logprobs.map(a => ({ token: a.token, p: Math.min(1, Math.exp(a.logprob)) })) : [];
+        const extra = ic.feed(ch.delta.content, lc ? lc.logprob : null, alts);
+        if (extra) await sleep(extra);
+      }
+    }
+  } catch (e) {
+    if (my.cancelled) return;
+    done('The stream broke off: ' + (e && e.message ? e.message : e), true); return;
+  }
+  if (my.cancelled) return;
+  done(sawLogprobs ? '' : 'This endpoint did not send logprobs, so there is no confidence to show. The transforms still ran.');
+}
+
+// Share link: prompt, transform, rate, reply style and seed live in the URL hash.
+function linkFor() {
+  const p = new URLSearchParams();
+  p.set('p', $('#prompt').value.trim());
+  p.set('t', transformLabel());
+  if (state.rate !== 0.5) p.set('r', String(state.rate));
+  if (state.reply !== 'varied') p.set('m', state.reply);
+  p.set('s', String(state.seed));
+  return location.origin + location.pathname + '#' + p.toString();
+}
+function readHash() {
+  if (!location.hash || location.hash.length < 2) return false;
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.has('p')) $('#prompt').value = p.get('p').slice(0, 500);
+  if (p.has('t')) {
+    const parts = p.get('t').toLowerCase().replace(/^chain:/, '').split(',').map(s => s.trim().replace(/^delay:\d+$/, 'delay')).filter(s => TRANSFORMS.includes(s));
+    if (parts[0]) { state.t = parts[0]; state.chain = parts[1] || ''; }
+  }
+  if (p.has('r')) { const r = parseFloat(p.get('r')); if (r >= 0 && r <= 1) state.rate = Math.round(r * 20) / 20; }
+  if (p.get('m') === 'fixture') state.reply = 'fixture';
+  if (p.has('s')) { const s = parseInt(p.get('s'), 10); if (s >= 0) state.seed = s; }
+  state.src = 'mock';
+  return true;
+}
+
+async function copy(btn, text, label) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {
+    try { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (_) { }
+  }
+  btn.textContent = ok ? 'copied' : 'copy failed'; btn.classList.toggle('ok', ok);
+  setTimeout(() => { btn.textContent = label; btn.classList.remove('ok'); }, 1400);
+}
+
+$('#run').addEventListener('click', start);
+$('#stop').addEventListener('click', () => { if (run) { run.cancelled = true; if (run.abort) run.abort.abort(); run.done && run.done('Stopped.'); } });
+$('#reroll').addEventListener('click', () => { state.seed = 1 + Math.floor(Math.random() * 99999); start(); });
+$('#chain').addEventListener('change', e => { state.chain = e.target.value; syncUi(); start(); });
+$('#rate').addEventListener('input', e => { state.rate = parseFloat(e.target.value); syncUi(); });
+$('#rate').addEventListener('change', () => start());
+$('#reply').addEventListener('change', e => { state.reply = e.target.value; start(); });
+document.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => { state.src = b.dataset.src; syncUi(); if (state.src === 'mock') start(); else { $('#key').focus(); setStatus(''); } }));
+$('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); } });
+$('#copylink').addEventListener('click', e => { const u = linkFor(); history.replaceState(null, '', u); copy(e.currentTarget, u, 'copy link'); });
+$('#copytext').addEventListener('click', e => copy(e.currentTarget, plainText.trim(), 'copy text'));
+$('#copyinstall').addEventListener('click', e => copy(e.currentTarget, e.currentTarget.dataset.copy, 'copy'));
+$('#remember').addEventListener('change', e => { if (!e.target.checked) store.del('eot.key'); });
+$('#forget').addEventListener('click', () => { store.del('eot.key'); $('#key').value = ''; $('#remember').checked = false; setStatus('Key removed from this page and this device.'); });
+$('#theme').addEventListener('click', () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  const next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next; store.set('eot.theme', next);
+});
+window.addEventListener('hashchange', () => { if (readHash()) { syncUi(); start(); } });
+
+(function init() {
+  const th = store.get('eot.theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+  const k = store.get('eot.key');
+  if (k) { $('#key').value = k; $('#remember').checked = true; }
+  const b = store.get('eot.base'); if (b) $('#base').value = b;
+  const m = store.get('eot.model'); if (m) $('#model').value = m;
+  readHash();
+  syncUi();
+  start();
+})();
+</script>
+</body>
+</html>

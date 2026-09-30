@@ -18,6 +18,8 @@
   <a href="https://docs.rs/every-other-token"><img src="https://img.shields.io/docsrs/every-other-token?labelColor=0c0d0b" alt="docs.rs"></a>
 </p>
 
+**Try it in your browser, no install and no API key:** [every-other-token.vercel.app/play](https://every-other-token.vercel.app/play/). Type a prompt and watch every other token come out reversed.
+
 `every-other-token` is a free LLM token stream viewer and interceptor for the command line and the browser. It sits on the live OpenAI or Anthropic stream, shows the confidence and perplexity of each token from the logprobs, and can rewrite every other token (or any fraction) as it arrives. A built-in mock provider lets you try all of it with no API key.
 
 **Who it's for:** anyone curious how language models pick their words, plus people doing LLM interpretability research, red-teaming and prompt engineering.

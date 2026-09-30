@@ -122,14 +122,17 @@ footer a{color:var(--dim)}
   .shot .scroll img{width:680px;max-width:none}
   nav .links{gap:14px}
   .legend{margin-left:0}
+  .sub code{white-space:normal;overflow-wrap:anywhere}
   header.hero{padding-top:28px}
 }
-@media (max-width:420px){nav .links .opt{display:none}}
+@media (max-width:420px){nav .links .opt{display:none}nav .links{gap:11px}}
 @media (prefers-reduced-motion:reduce){.tk{animation:none}.caret{animation:none}}
 .dl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:26px}
 .dl a.win{display:inline-block;background:var(--xf);color:#170904;font-weight:700;text-decoration:none;border-radius:8px;padding:12px 20px;font-size:15px}
 .dl a.win:hover{background:#ff8450}
 .dl a.alt{color:var(--dim);font-size:13px}
+.dl a.play{display:inline-block;color:var(--ink);font-weight:700;text-decoration:none;border:1px solid var(--xf);border-radius:8px;padding:11px 18px;font-size:15px}
+.dl a.play:hover{background:rgba(255,106,43,.12)}
 .how img{width:100%;height:auto;display:block;border-radius:14px}
 .how ol{margin:18px 0 0 20px;color:var(--dim);max-width:78ch}
 .how ol li{margin:6px 0}
@@ -141,6 +144,7 @@ footer a{color:var(--dim)}
 <nav>
   <a class="logo" href="./">every-<span class="x">other</span>-token</a>
   <div class="links">
+    <a href="play/">playground</a>
     <a href="#install">install</a>
     <a class="opt" href="https://docs.rs/every-other-token">docs.rs</a>
     <a class="opt" href="https://crates.io/crates/every-other-token">crates.io</a>
@@ -154,6 +158,7 @@ footer a{color:var(--dim)}
 
   <div class="dl">
     <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
+    <a class="play" href="play/">Try it in your browser: type a prompt, no key</a>
     <a class="alt" href="#install">macOS, Linux, Scoop, Homebrew, Cargo</a>
   </div>
 
