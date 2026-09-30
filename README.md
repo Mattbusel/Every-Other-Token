@@ -7,8 +7,8 @@
 <p align="center"><b>See how sure an AI model is about every single word it writes, and change its words while it is still writing.</b></p>
 
 <p align="center">
-  <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe"><b>Download for Windows (.exe)</b></a> &nbsp;&middot;&nbsp;
-  <a href="#install">macOS and Linux</a> &nbsp;&middot;&nbsp;
+  <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe"><b>Download for Windows (.exe)</b></a> &nbsp;&middot;&nbsp;
+  <a href="#install">Linux and macOS</a> &nbsp;&middot;&nbsp;
   <a href="https://mattbusel.github.io/Every-Other-Token/">Project site</a> &nbsp;&middot;&nbsp;
   <a href="#documentation">Docs</a>
 </p>
@@ -33,17 +33,18 @@
 
 ## Install
 
-| Platform | How |
-|---|---|
-| **Windows** | [**Download every-other-token-windows-x86_64.exe**](https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe), then double-click it. The web UI opens in your browser. (Unsigned, so SmartScreen may ask: *More info*, then *Run anyway*.) |
-| **macOS** (Apple Silicon) | [every-other-token-aarch64-apple-darwin.tar.gz](https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-aarch64-apple-darwin.tar.gz) |
-| **macOS** (Intel) | [every-other-token-x86_64-apple-darwin.tar.gz](https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-apple-darwin.tar.gz) |
-| **Linux** (x86_64) | [every-other-token-x86_64-unknown-linux-gnu.tar.gz](https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-unknown-linux-gnu.tar.gz) |
-| **Scoop** (Windows) | `scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket` then `scoop install every-other-token` |
-| **Homebrew** (macOS, Linux) | `brew install mattbusel/tap/every-other-token` |
-| **Cargo** (any OS with Rust) | `cargo install every-other-token` |
+**Linux** (x86_64, Ubuntu 20.04+ / Debian 11+). One line, no dependencies, installs to `~/.local/bin`:
 
-No Rust toolchain is needed for the downloads. Every release also lists versioned archives with SHA-256 checksums on the [releases page](https://github.com/Mattbusel/Every-Other-Token/releases/latest).
+```sh
+mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-linux-x86_64.tar.gz | tar xz --strip-components=1 -C ~/.local/bin --wildcards '*/every-other-token'
+```
+
+| Other systems | |
+|---|---|
+| **Windows** | [Download every-other-token-windows-x86_64.exe](https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe) and run it. (Unsigned, so SmartScreen may ask: *More info*, then *Run anyway*.) |
+| **macOS, or from source** | `cargo install --locked every-other-token` |
+
+Double-click the Windows .exe and the web UI opens in your browser. Every release, with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/Every-Other-Token/-/releases).
 
 ## Examples
 
@@ -82,7 +83,7 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 
 ## Use it in 3 steps
 
-1. **Get it.** Download the .exe above (or `brew`, `scoop`, `cargo install`).
+1. **Get it.** Use the Linux one-liner or the Windows .exe above (or `cargo install`).
 2. **Try it offline.** Run `every-other-token "Why is the sky blue?" --provider mock`, or double-click the .exe and pick **Mock (no API key)** in the provider menu.
 3. **Point it at a real model.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, then run `every-other-token "Why is the sky blue?" --visual` (terminal, colored by confidence) or `every-other-token --web` (browser). Real confidence numbers come from OpenAI logprobs; Anthropic's stream has none, so there the tool uses its own importance score.
 
