@@ -15,7 +15,6 @@
 
 <p align="center">
   <a href="https://crates.io/crates/every-other-token"><img src="https://img.shields.io/crates/v/every-other-token.svg?color=ff6a2b&labelColor=0c0d0b" alt="crates.io version"></a>
-  <a href="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml"><img src="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://docs.rs/every-other-token"><img src="https://img.shields.io/docsrs/every-other-token?labelColor=0c0d0b" alt="docs.rs"></a>
 </p>
 
