@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>every-other-token: LLM token stream viewer and interceptor</title>
 <meta name="description" content="Free CLI and web UI that shows per-token confidence and perplexity of an OpenAI or Anthropic stream and rewrites tokens live. Windows .exe, no API key to try.">
-<link rel="canonical" href="https://mattbusel.github.io/Every-Other-Token/">
+<link rel="canonical" href="https://every-other-token.vercel.app/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="every-other-token">
-<meta property="og:url" content="https://mattbusel.github.io/Every-Other-Token/">
+<meta property="og:url" content="https://every-other-token.vercel.app/">
 <meta property="og:title" content="every-other-token: watch an LLM stream token by token">
 <meta property="og:description" content="See how sure the model was about every token, and rewrite every other token as it streams. OpenAI, Anthropic, or a mock with no API key.">
-<meta property="og:image" content="https://mattbusel.github.io/Every-Other-Token/assets/og.png">
+<meta property="og:image" content="https://every-other-token.vercel.app/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="every-other-token output: every other token reversed, with a confidence bar and percentage under each token">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="every-other-token: watch an LLM stream token by token">
 <meta name="twitter:description" content="Per-token confidence and perplexity for OpenAI and Anthropic streams, with live token rewriting. Free, open source, Windows .exe.">
-<meta name="twitter:image" content="https://mattbusel.github.io/Every-Other-Token/assets/og.png">
+<meta name="twitter:image" content="https://every-other-token.vercel.app/assets/og.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -28,14 +28,14 @@
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux",
   "softwareVersion": "4.3.1",
-  "url": "https://mattbusel.github.io/Every-Other-Token/",
-  "downloadUrl": "https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe",
-  "codeRepository": "https://github.com/Mattbusel/Every-Other-Token",
+  "url": "https://every-other-token.vercel.app/",
+  "downloadUrl": "https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe",
+  "codeRepository": "https://gitlab.com/mattbusel/Every-Other-Token",
   "programmingLanguage": "Rust",
   "license": "https://opensource.org/licenses/MIT",
   "isAccessibleForFree": true,
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "author": { "@type": "Person", "name": "Matthew Busel", "url": "https://github.com/Mattbusel" }
+  "author": { "@type": "Person", "name": "Matthew Busel", "url": "https://gitlab.com/mattbusel" }
 }
 </script>
 <meta name="theme-color" content="#0c0d0b">
@@ -144,7 +144,7 @@ footer a{color:var(--dim)}
     <a href="#install">install</a>
     <a class="opt" href="https://docs.rs/every-other-token">docs.rs</a>
     <a class="opt" href="https://crates.io/crates/every-other-token">crates.io</a>
-    <a href="https://github.com/Mattbusel/Every-Other-Token">github</a>
+    <a href="https://gitlab.com/mattbusel/Every-Other-Token">github</a>
   </div>
 </nav>
 
@@ -153,7 +153,7 @@ footer a{color:var(--dim)}
   <p class="lead"><b>every-other-token</b> is a Rust CLI and web UI that sits on an OpenAI or Anthropic token stream as it arrives. It rewrites every other token (or any fraction), and it tells you how sure the model was about each one: confidence <code>exp(logprob)</code> and perplexity <code>exp(-logprob)</code>, per token, live.</p>
 
   <div class="dl">
-    <a class="win" href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
+    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
     <a class="alt" href="#install">macOS, Linux, Scoop, Homebrew, Cargo</a>
   </div>
 
@@ -195,7 +195,7 @@ footer a{color:var(--dim)}
 
 <section id="install">
   <h2><span class="n">01</span>Running in two minutes</h2>
-  <p class="sub">No Rust needed: <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-windows-x86_64.exe">Windows .exe</a> (double-click it and the web UI opens), <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-aarch64-apple-darwin.tar.gz">macOS Apple Silicon</a>, <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-apple-darwin.tar.gz">macOS Intel</a>, <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest/download/every-other-token-x86_64-unknown-linux-gnu.tar.gz">Linux x86_64</a>. Or <code>scoop install every-other-token</code> after <code>scoop bucket add mattbusel https://github.com/Mattbusel/scoop-bucket</code>, <code>brew install mattbusel/tap/every-other-token</code>, or <code>cargo install every-other-token</code> (Rust 1.81+).</p>
+  <p class="sub">No Rust needed: <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Windows .exe</a> (double-click it and the web UI opens), <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Apple Silicon</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Intel</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-linux-x86_64.tar.gz">Linux x86_64</a>. Or <code>scoop install every-other-token</code> after <code>scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket</code>, <code>brew install mattbusel/tap/every-other-token</code>, or <code>cargo install every-other-token</code> (Rust 1.81+).</p>
   <div class="cmds">
     <div class="cmd"><div class="hd"><span>install</span><button class="copy" data-copy="cargo install every-other-token">copy</button></div>
 <pre><span class="p">$ </span>cargo install every-other-token</pre></div>
@@ -239,8 +239,8 @@ every-other-token --web">copy</button></div>
 </section>
 
 <footer>
-  <span>MIT licensed. Built in Rust by <a href="https://github.com/Mattbusel">Matthew Busel</a>.</span>
-  <span><a href="https://github.com/Mattbusel/Every-Other-Token">source</a> &nbsp; <a href="https://github.com/Mattbusel/Every-Other-Token/releases/latest">releases</a> &nbsp; <a href="https://docs.rs/every-other-token">API docs</a> &nbsp; <a href="https://github.com/Mattbusel/Every-Other-Token/issues">issues</a></span>
+  <span>MIT licensed. Built in Rust by <a href="https://gitlab.com/mattbusel">Matthew Busel</a>.</span>
+  <span><a href="https://gitlab.com/mattbusel/Every-Other-Token">source</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">releases</a> &nbsp; <a href="https://docs.rs/every-other-token">API docs</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/issues">issues</a></span>
 </footer>
 </div>
 

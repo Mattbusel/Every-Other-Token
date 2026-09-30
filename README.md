@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://mattbusel.github.io/Every-Other-Token/"><img src="assets/hero.svg" width="100%" alt="every-other-token streaming a reply token by token: every other token is reversed and highlighted, with a confidence bar under each token"></a>
+  <a href="https://every-other-token.vercel.app/"><img src="assets/hero.svg" width="100%" alt="every-other-token streaming a reply token by token: every other token is reversed and highlighted, with a confidence bar under each token"></a>
 </p>
 
 <h1 align="center">every-other-token</h1>
@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe"><b>Download for Windows (.exe)</b></a> &nbsp;&middot;&nbsp;
   <a href="#install">Linux and macOS</a> &nbsp;&middot;&nbsp;
-  <a href="https://mattbusel.github.io/Every-Other-Token/">Project site</a> &nbsp;&middot;&nbsp;
+  <a href="https://every-other-token.vercel.app/">Project site</a> &nbsp;&middot;&nbsp;
   <a href="#documentation">Docs</a>
 </p>
 
@@ -107,4 +107,4 @@ MIT, see [LICENSE](LICENSE).
 
 ## Hire the author
 
-**Need this kind of engineering on your product?** I take on a small number of client builds: LLM features, iOS apps and performance work, fixed price. [Services and pricing](https://mattbusel.github.io/) · [Email](mailto:mattbusel@gmail.com) · [LinkedIn](https://www.linkedin.com/in/matthewbusel/)
+**Need this kind of engineering on your product?** I take on a small number of client builds: LLM features, iOS apps and performance work, fixed price. [Services and pricing](https://mattbusel.vercel.app/) · [Email](mailto:mattbusel@gmail.com) · [LinkedIn](https://www.linkedin.com/in/matthewbusel/)

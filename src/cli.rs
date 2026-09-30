@@ -23,7 +23,7 @@ With a real model, set OPENAI_API_KEY or ANTHROPIC_API_KEY first:
   every-other-token \"Why is the sky blue?\" --provider anthropic --visual
 
 Run with no arguments to open the web UI.
-Docs: https://mattbusel.github.io/Every-Other-Token/")]
+Docs: https://every-other-token.vercel.app/")]
 pub struct Args {
     /// Input prompt to send to the LLM (optional when using --web)
     #[arg(default_value = "")]

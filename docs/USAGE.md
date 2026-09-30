@@ -68,7 +68,7 @@ The command-line and web UI guide: every transform, flag group, mode and config 
 - For real models: an OpenAI API key (`OPENAI_API_KEY`) and/or an Anthropic API key (`ANTHROPIC_API_KEY`). The mock provider needs neither.
 
 ```bash
-git clone https://github.com/Mattbusel/Every-Other-Token
+git clone https://gitlab.com/mattbusel/Every-Other-Token
 cd Every-Other-Token
 cargo build --release
 ```
@@ -205,7 +205,7 @@ All CLI flags override config file values.
 ## Building from source
 
 ```bash
-git clone https://github.com/Mattbusel/Every-Other-Token
+git clone https://gitlab.com/mattbusel/Every-Other-Token
 cd Every-Other-Token
 cargo build --release
 cargo test --lib

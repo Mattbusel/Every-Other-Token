@@ -30,7 +30,7 @@ This project is primarily a research tool for token-level LLM analysis. Contribu
 5. New behaviour needs a test; bug fixes need a regression test.
 6. Open a PR with a clear description of what changed and why.
 
-Issues labelled [good first issue](https://github.com/Mattbusel/Every-Other-Token/labels/good%20first%20issue) are small, self-contained starting points.
+Issues labelled [good first issue](https://gitlab.com/mattbusel/Every-Other-Token/labels/good%20first%20issue) are small, self-contained starting points.
 
 ## Releases
 
@@ -40,7 +40,7 @@ Linux, macOS and Windows binaries and attaches them to the GitHub Release.
 
 ## Research ideas
 
-If you're using this for research or have ideas for new experiments, open a [Discussion](https://github.com/Mattbusel/Every-Other-Token/discussions). Good starting points:
+If you're using this for research or have ideas for new experiments, open a [Discussion](https://gitlab.com/mattbusel/Every-Other-Token/discussions). Good starting points:
 
 - What token positions are most sensitive to perturbation?
 - Do different model sizes show different fragility patterns?
@@ -48,4 +48,4 @@ If you're using this for research or have ideas for new experiments, open a [Dis
 
 ## Questions
 
-Open a [Discussion](https://github.com/Mattbusel/Every-Other-Token/discussions).
+Open a [Discussion](https://gitlab.com/mattbusel/Every-Other-Token/discussions).

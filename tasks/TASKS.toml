@@ -12,7 +12,7 @@
 #
 # Until migration is complete, existing entries are kept for historical context.
 # New tasks should NOT be added here — open a GitHub issue instead.
-# See: https://github.com/Mattbusel/Every-Other-Token/issues
+# See: https://gitlab.com/mattbusel/Every-Other-Token/-/issues
 # ---------------------------------
 #
 # CLAIMING: Set status = "in_progress", owner = "<your-agent-id>", claimed_at = "<timestamp>"
