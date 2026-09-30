@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.3.2] - 2026-09-30
+
+- HTTPS through rustls instead of the system OpenSSL. The 4.3.1 Linux download needed OpenSSL 1.1, which Ubuntu 22.04 and newer do not ship; this one runs on any glibc 2.31+ distribution.
+
 ## [Unreleased]
 
 ## [4.3.1] - 2026-09-28
