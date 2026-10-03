@@ -64,8 +64,8 @@ The command-line and web UI guide: every transform, flag group, mode and config 
 
 ### Prerequisites
 
-- Rust 1.81 or later
-- For real models: an OpenAI API key (`OPENAI_API_KEY`) and/or an Anthropic API key (`ANTHROPIC_API_KEY`). The mock provider needs neither.
+- Rust 1.89 or later
+- For real models: an API key for the provider you use (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or `GEMINI_API_KEY`). The mock provider and local models (Ollama, or anything given with `--base-url`) need none.
 
 ```bash
 git clone https://gitlab.com/mattbusel/Every-Other-Token
@@ -113,7 +113,46 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # Headless research: 20 runs, JSON aggregate stats
 ./target/release/every-other-token "Explain recursion" \
     --research --runs 20 --output results.json
+
+# Full-screen terminal view (q quits)
+./target/release/every-other-token "What is consciousness?" --tui
 ```
+
+### Providers and local models
+
+| `--provider` | Where it streams from | Key |
+|---|---|---|
+| `openai` (default) | api.openai.com | `OPENAI_API_KEY` |
+| `anthropic` | api.anthropic.com | `ANTHROPIC_API_KEY` |
+| `ollama` | your local Ollama at localhost:11434 | none |
+| `openrouter` | openrouter.ai, hundreds of hosted models | `OPENROUTER_API_KEY` |
+| `gemini` | Google Gemini's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
+| `mock` | a canned reply, in-process | none |
+
+When you do not name a model, each provider uses a sensible default (`llama3.2` for Ollama, `openai/gpt-4o-mini` for OpenRouter, `gemini-2.5-flash` for Gemini).
+
+`--base-url` sends the request somewhere else. The URL is the API base, the part before `/chat/completions` (or `/messages` for Anthropic). With `--base-url` the API key is optional, so any local server that speaks the OpenAI API works:
+
+```bash
+# llama.cpp server, vLLM or LM Studio
+every-other-token "Explain recursion" reverse my-model --base-url http://localhost:8080/v1
+
+# Ollama on another machine
+every-other-token "Explain recursion" --provider ollama --base-url http://gpu-box:11434/v1
+```
+
+Confidence and perplexity come from logprobs. OpenAI and OpenRouter send them, and so do recent versions of Ollama. When a provider sends none (Anthropic, Gemini, most local servers), confidence is estimated from how quickly each token arrived.
+
+If a request hits a rate limit (429) or a server error (500, 502, 503, or Anthropic's 529), it is retried with exponential back-off and jitter, and a `Retry-After` header from the server sets the wait. `--max-retries` is the total number of attempts (default 3).
+
+### Exporting per-token data
+
+`--export-logprobs FILE` saves one row per token. The format follows the file name:
+
+- `tokens.csv`: columns `token,logprob,rank,model,timestamp,original,transformed,confidence,perplexity`. A token with no logprob has an empty cell.
+- `tokens.jsonl` (or `.ndjson`): one JSON object per token with every field, including the top alternatives.
+
+Both load directly in pandas (`read_csv`, `read_json(lines=True)`), DuckDB, Polars or a spreadsheet.
 
 ### Shell completions
 
@@ -198,6 +237,7 @@ rate         = 0.5
 port         = 8888
 top_logprobs = 5
 system_a     = "You are a concise assistant."
+# base_url   = "http://localhost:8080/v1"   # same as --base-url
 ```
 
 All CLI flags override config file values.

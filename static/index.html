@@ -285,7 +285,7 @@ header h1 .h1-x{color:var(--xf)}
       <div id="chain-current" style="color:#5f5b50">none</div>
     </div>
   </div>
-  <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="mock">Mock (no API key)</option></select></div>
+  <div class="field"><label for="provider">Provider</label><select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama (local, no key)</option><option value="openrouter">OpenRouter</option><option value="gemini">Gemini</option><option value="mock">Mock (no API key)</option></select></div>
   <div class="field"><label for="model">Model</label><input type="text" id="model" value="" placeholder="auto" style="min-width:160px"></div>
   <label class="toggle"><input type="checkbox" id="heatmap"> Heatmap</label>
   <label class="toggle"><input type="checkbox" id="graphtoggle"> Graph</label>
@@ -665,7 +665,7 @@ function updateSigTest(tokens) {
   if (!el) return;
   const r = welchT(evenConf, oddConf);
   if (!r) {
-    el.innerHTML = '<span style="color:#5f5b50">Not enough confidence data for t-test (need OpenAI provider).</span>';
+    el.innerHTML = '<span style="color:#5f5b50">Not enough confidence data for t-test (needs a provider that returns logprobs, such as OpenAI).</span>';
     return;
   }
   const sig = r.p < 0.05;

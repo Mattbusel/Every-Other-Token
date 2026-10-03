@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // auto-launch the web UI instead of printing help and exiting immediately.
     if args.prompt.is_empty()
         && !args.web
+        && !args.tui
         && !args.research
         && !args.dry_run
         && args.record.is_none()
@@ -41,7 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "[eot] No prompt given, so opening the web UI at http://localhost:{}",
             args.port
         );
-        if std::env::var("OPENAI_API_KEY").is_err() && std::env::var("ANTHROPIC_API_KEY").is_err() {
+        if std::env::var("OPENAI_API_KEY").is_err()
+            && std::env::var("ANTHROPIC_API_KEY").is_err()
+            && args.base_url.is_none()
+        {
             eprintln!("[eot] No API key found. Pick \"Mock (no API key)\" in the provider menu to try it offline,");
             eprintln!("[eot] or set OPENAI_API_KEY or ANTHROPIC_API_KEY and start it again.");
         }
@@ -99,6 +103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.api_key.is_none() {
             args.api_key = cfg.api_key;
         }
+        if args.base_url.is_none() {
+            args.base_url = cfg.base_url;
+        }
     }
 
     // Stdin support (#17): if prompt is "-", read from stdin.
@@ -110,7 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Model validation (#18): warn early about unknown model names.
-    {
+    // Skipped for --base-url, where the server decides what models exist.
+    if args.base_url.is_none() {
         let model = every_other_token::cli::resolve_model(&args.provider, &args.model);
         every_other_token::cli::validate_model(&args.provider, &model);
     }
@@ -120,7 +128,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use every_other_token::config::EotConfig;
         let cfg = EotConfig::load();
         println!("[eot config] provider: {}", args.provider);
-        println!("[eot config] model: {}", args.model);
+        println!(
+            "[eot config] model: {}",
+            every_other_token::cli::resolve_model(&args.provider, &args.model)
+        );
+        println!(
+            "[eot config] endpoint: {}",
+            args.provider.endpoint_url(args.base_url.as_deref())
+        );
         println!("[eot config] transform: {}", args.transform);
         println!("[eot config] rate: {}", args.rate.unwrap_or(0.5));
         println!("[eot config] port: {}", args.port);
@@ -601,13 +616,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = every_other_token::cli::resolve_model(&args.provider, &args.model);
 
     let mut interceptor = {
-        let mut i = TokenInterceptor::new(
+        let mut i = TokenInterceptor::new_with_base_url(
             args.provider,
             transform,
             model,
             args.visual,
             args.heatmap,
             args.orchestrator,
+            args.base_url.clone(),
         )?
         .with_rate(args.rate.unwrap_or(0.5));
         if let Some(seed) = args.seed {
@@ -624,6 +640,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     interceptor.anthropic_max_tokens = args.anthropic_max_tokens;
     if args.timeout > 0 {
         interceptor = interceptor.with_timeout(args.timeout);
+    }
+
+    if args.tui {
+        if args.prompt.trim().is_empty() {
+            return Err("--tui needs a prompt, e.g. every-other-token \"Why is the sky blue?\" --tui".into());
+        }
+        return every_other_token::tui::run(interceptor, args.prompt.clone()).await;
     }
 
     tokio::select! {

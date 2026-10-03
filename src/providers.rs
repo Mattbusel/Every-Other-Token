@@ -11,7 +11,14 @@
 //! |---------|--------|----------|
 //! | `openai` | [`OpenAiPlugin`] | `https://api.openai.com/v1/chat/completions` |
 //! | `anthropic` | [`AnthropicPlugin`] | `https://api.anthropic.com/v1/messages` |
+//! | `ollama` | OpenAI-compatible | `http://localhost:11434/v1/chat/completions` |
+//! | `openrouter` | OpenAI-compatible | `https://openrouter.ai/api/v1/chat/completions` |
+//! | `gemini` | OpenAI-compatible | `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions` |
 //! | `mock` | (inline fixture) | n/a -- returns canned tokens for tests |
+//!
+//! Every provider except `anthropic` and `mock` speaks the OpenAI Chat
+//! Completions wire format, so any OpenAI-compatible server (llama.cpp,
+//! vLLM, LM Studio, a proxy) works through `--base-url`.
 
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
@@ -136,17 +143,113 @@ pub enum Provider {
     Openai,
     /// Anthropic Messages API (Claude family).
     Anthropic,
+    /// Local Ollama server through its OpenAI-compatible endpoint (no API key).
+    Ollama,
+    /// OpenRouter: hundreds of hosted models behind one OpenAI-compatible API.
+    Openrouter,
+    /// Google Gemini through its OpenAI-compatible endpoint.
+    Gemini,
     /// In-process mock provider for tests and dry-run mode.
     Mock,
 }
 
+impl Provider {
+    /// Every provider, in the order shown in help text and the web UI.
+    pub const ALL: [Provider; 6] = [
+        Provider::Openai,
+        Provider::Anthropic,
+        Provider::Ollama,
+        Provider::Openrouter,
+        Provider::Gemini,
+        Provider::Mock,
+    ];
+
+    /// Base URL of the provider's API, without the endpoint path.
+    ///
+    /// The endpoint path (`/chat/completions` or `/messages`) is appended by
+    /// [`Provider::endpoint_url`]. `--base-url` replaces this value.
+    pub fn default_base_url(&self) -> &'static str {
+        match self {
+            Provider::Openai => "https://api.openai.com/v1",
+            Provider::Anthropic => "https://api.anthropic.com/v1",
+            Provider::Ollama => "http://localhost:11434/v1",
+            Provider::Openrouter => "https://openrouter.ai/api/v1",
+            Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
+            Provider::Mock => "",
+        }
+    }
+
+    /// Full streaming endpoint URL, using `base_url` when given.
+    ///
+    /// A trailing slash on `base_url` is ignored, so `http://host/v1` and
+    /// `http://host/v1/` behave the same.
+    pub fn endpoint_url(&self, base_url: Option<&str>) -> String {
+        let base = base_url
+            .unwrap_or_else(|| self.default_base_url())
+            .trim_end_matches('/');
+        match self {
+            Provider::Anthropic => format!("{base}/messages"),
+            Provider::Mock => String::new(),
+            _ => format!("{base}/chat/completions"),
+        }
+    }
+
+    /// Environment variable holding the API key, or `None` when the provider
+    /// needs no key (Ollama runs locally, Mock runs in-process).
+    pub fn api_key_env(&self) -> Option<&'static str> {
+        match self {
+            Provider::Openai => Some("OPENAI_API_KEY"),
+            Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
+            Provider::Openrouter => Some("OPENROUTER_API_KEY"),
+            Provider::Gemini => Some("GEMINI_API_KEY"),
+            Provider::Ollama | Provider::Mock => None,
+        }
+    }
+
+    /// Model used when the user has not picked one.
+    pub fn default_model(&self) -> &'static str {
+        match self {
+            Provider::Openai => "gpt-3.5-turbo",
+            Provider::Anthropic => "claude-sonnet-4-6",
+            Provider::Ollama => "llama3.2",
+            Provider::Openrouter => "openai/gpt-4o-mini",
+            Provider::Gemini => "gemini-2.5-flash",
+            Provider::Mock => "mock-fixture-v1",
+        }
+    }
+
+    /// True for providers that speak the OpenAI Chat Completions wire format.
+    pub fn is_openai_compatible(&self) -> bool {
+        matches!(
+            self,
+            Provider::Openai | Provider::Ollama | Provider::Openrouter | Provider::Gemini
+        )
+    }
+
+    /// Whether to ask for `logprobs` / `top_logprobs` in the request.
+    ///
+    /// Gemini's OpenAI-compatible endpoint does not document the fields, so
+    /// they are left out there rather than risk a rejected request; its
+    /// tokens fall back to the timing-based confidence estimate.
+    pub fn requests_logprobs(&self) -> bool {
+        matches!(
+            self,
+            Provider::Openai | Provider::Ollama | Provider::Openrouter
+        )
+    }
+}
+
 impl std::fmt::Display for Provider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Provider::Openai => write!(f, "openai"),
-            Provider::Anthropic => write!(f, "anthropic"),
-            Provider::Mock => write!(f, "mock"),
-        }
+        let s = match self {
+            Provider::Openai => "openai",
+            Provider::Anthropic => "anthropic",
+            Provider::Ollama => "ollama",
+            Provider::Openrouter => "openrouter",
+            Provider::Gemini => "gemini",
+            Provider::Mock => "mock",
+        };
+        f.write_str(s)
     }
 }
 
@@ -154,15 +257,17 @@ impl std::str::FromStr for Provider {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "openai" => Ok(Provider::Openai),
-            "anthropic" => Ok(Provider::Anthropic),
-            "mock" => Ok(Provider::Mock),
-            other => Err(format!(
-                "unknown provider: '{}' (expected openai, anthropic, or mock)",
-                other
-            )),
-        }
+        let lower = s.to_lowercase();
+        Provider::ALL
+            .iter()
+            .find(|p| p.to_string() == lower)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "unknown provider: '{}' (expected openai, anthropic, ollama, openrouter, gemini, or mock)",
+                    s
+                )
+            })
     }
 }
 
@@ -189,9 +294,12 @@ pub struct OpenAIChatRequest {
     /// Sampling temperature (0.0–2.0).
     pub temperature: f32,
     /// Whether to include per-token log probabilities in the response.
-    pub logprobs: bool,
+    /// Left out of the JSON when `None` (for servers that reject the field).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<bool>,
     /// Number of top alternative tokens per position (0–20).
-    pub top_logprobs: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_logprobs: Option<u8>,
 }
 
 /// Incremental content fragment within a streaming choice delta.
@@ -543,8 +651,8 @@ mod tests {
             }],
             stream: true,
             temperature: 0.7,
-            logprobs: true,
-            top_logprobs: 5,
+            logprobs: Some(true),
+            top_logprobs: Some(5),
         };
         let json = serde_json::to_string(&req).expect("serialize");
         assert!(json.contains("\"logprobs\":true"));

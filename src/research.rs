@@ -122,21 +122,31 @@ pub fn percentile_latency(latencies: &[u64], pct: usize) -> Option<u64> {
     Some(sorted[idx.min(sorted.len() - 1)])
 }
 
+/// Sample standard deviation (n - 1 denominator); 0 for fewer than 2 values.
 fn std_dev(values: &[f64]) -> f64 {
+    use statrs::statistics::Statistics;
     if values.len() < 2 {
         return 0.0;
     }
-    let mean = values.iter().sum::<f64>() / values.len() as f64;
-    let variance =
-        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
-    variance.sqrt()
+    values.iter().std_dev()
 }
 
-// 95% CI: mean ± 1.96 * (sd / √n)
-// Ref: Casella & Berger, "Statistical Inference" 2nd ed. (2002), §9.2.
-// Note: uses Z-score approximation; valid when N ≥ 30 (CLT).
+/// 95% confidence interval for a mean: `mean ± t(0.975, n-1) * sd / sqrt(n)`.
+///
+/// Uses the Student's t quantile from `statrs`, so the interval is valid for
+/// the small run counts research mode typically uses (the default is 10).
+/// The z value 1.96 used before is only right for large n and made the
+/// interval far too narrow for a handful of runs.
 fn ci_95(mean: f64, sd: f64, n: usize) -> (f64, f64) {
-    let margin = 1.96 * sd / (n as f64).sqrt();
+    use statrs::distribution::{ContinuousCDF, StudentsT};
+    let crit = if n >= 2 {
+        StudentsT::new(0.0, 1.0, (n - 1) as f64)
+            .map(|t| t.inverse_cdf(0.975))
+            .unwrap_or(1.96)
+    } else {
+        1.96
+    };
+    let margin = crit * sd / (n as f64).sqrt();
     (mean - margin, mean + margin)
 }
 
@@ -214,13 +224,14 @@ pub async fn run_research(args: &Args) -> Result<(), Box<dyn std::error::Error>>
 
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        let mut interceptor = TokenInterceptor::new(
+        let mut interceptor = TokenInterceptor::new_with_base_url(
             provider.clone(),
             transform.clone(),
             model.clone(),
             false,
             false,
             false,
+            args.base_url.clone(),
         )?;
         interceptor.web_tx = Some(tx);
         // A/B mode: alternate system prompts on even/odd runs so --significance
@@ -725,13 +736,14 @@ async fn run_research_for_prompt(
     for i in 0..args.runs {
         eprintln!("[suite] run {}/{} for prompt {}", i + 1, args.runs, idx);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut interceptor = crate::TokenInterceptor::new(
+        let mut interceptor = crate::TokenInterceptor::new_with_base_url(
             provider.clone(),
             transform.clone(),
             model.clone(),
             false,
             false,
             false,
+            args.base_url.clone(),
         )?;
         interceptor.web_tx = Some(tx);
         if let Some(rate) = args.rate {
@@ -935,56 +947,53 @@ pub async fn run_diff_terminal(args: &crate::cli::Args) -> Result<(), Box<dyn st
     Ok(())
 }
 
-/// Simple two-sample Welch's t-test. Returns approximate p-value (two-tailed).
-/// Returns None if variance is zero or samples too small.
+/// Welch's two-sample t-test. Returns the two-tailed p-value.
+///
+/// Degrees of freedom come from the Welch-Satterthwaite equation and the
+/// p-value from the Student's t distribution in `statrs`. (The previous
+/// version used a normal approximation, which overstates significance for
+/// the small samples research mode produces: for 5 runs a side it could
+/// report p=0.058 where the exact value is 0.108.)
+///
+/// Returns `None` if either sample has fewer than 2 values or both have
+/// zero variance.
 fn two_sample_t_test(a: &[f64], b: &[f64]) -> Option<f64> {
+    use statrs::distribution::{ContinuousCDF, StudentsT};
+    use statrs::statistics::Statistics;
     if a.len() < 2 || b.len() < 2 {
         return None;
     }
-    let mean_a = a.iter().sum::<f64>() / a.len() as f64;
-    let mean_b = b.iter().sum::<f64>() / b.len() as f64;
-    let var_a = a.iter().map(|v| (v - mean_a).powi(2)).sum::<f64>() / (a.len() - 1) as f64;
-    let var_b = b.iter().map(|v| (v - mean_b).powi(2)).sum::<f64>() / (b.len() - 1) as f64;
-    let se = ((var_a / a.len() as f64) + (var_b / b.len() as f64)).sqrt();
-    if se == 0.0 {
+    let (na, nb) = (a.len() as f64, b.len() as f64);
+    let se_a = a.iter().variance() / na;
+    let se_b = b.iter().variance() / nb;
+    let se = (se_a + se_b).sqrt();
+    if se == 0.0 || !se.is_finite() {
         return None;
     }
-    let t = (mean_a - mean_b).abs() / se;
-    // Approximate p-value via normal distribution (large-sample approximation)
-    let p = 2.0 * (1.0 - normal_cdf(t));
-    Some(p)
-}
-
-/// Approximation of the standard normal CDF using Abramowitz & Stegun formula.
-fn normal_cdf(z: f64) -> f64 {
-    let t = 1.0 / (1.0 + 0.2316419 * z.abs());
-    let poly = t
-        * (0.319381530
-            + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
-    let pdf = (-z * z / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt();
-    let p = 1.0 - pdf * poly;
-    if z >= 0.0 {
-        p
-    } else {
-        1.0 - p
-    }
+    let t = (a.iter().mean() - b.iter().mean()).abs() / se;
+    let df = (se_a + se_b).powi(2) / (se_a.powi(2) / (na - 1.0) + se_b.powi(2) / (nb - 1.0));
+    let dist = StudentsT::new(0.0, 1.0, df).ok()?;
+    Some((2.0 * dist.sf(t)).min(1.0))
 }
 
 /// Write per-run timeseries data to a CSV file.
 /// Columns: run,token_index,confidence,perplexity
 pub fn write_timeseries_csv(path: &str, runs: &[ResearchRun]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut f = std::fs::File::create(path)?;
-    writeln!(f, "run,token_index,confidence,perplexity")?;
+    let mut w = csv::Writer::from_path(path)?;
+    w.write_record(["run", "token_index", "confidence", "perplexity"])?;
     for run in runs {
-        let n = run.token_count;
-        for i in 0..n {
-            let conf = run.avg_confidence.map(|v| format!("{:.6}", v)).unwrap_or_default();
-            let perp = run.avg_perplexity.map(|v| format!("{:.6}", v)).unwrap_or_default();
-            writeln!(f, "{},{},{},{}", run.run_index, i, conf, perp)?;
+        let conf = run.avg_confidence.map(|v| format!("{:.6}", v)).unwrap_or_default();
+        let perp = run.avg_perplexity.map(|v| format!("{:.6}", v)).unwrap_or_default();
+        for i in 0..run.token_count {
+            w.write_record([
+                run.run_index.to_string(),
+                i.to_string(),
+                conf.clone(),
+                perp.clone(),
+            ])?;
         }
     }
-    Ok(())
+    w.flush()
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,13 +1118,14 @@ pub async fn run_batch(
             };
 
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            let mut interceptor = match crate::TokenInterceptor::new(
+            let mut interceptor = match crate::TokenInterceptor::new_with_base_url(
                 provider.clone(),
                 transform,
                 model.clone(),
                 false,
                 false,
                 false,
+                args.base_url.clone(),
             ) {
                 Ok(i) => i,
                 Err(e) => {
@@ -1191,40 +1201,102 @@ pub async fn run_batch(
 // Token logprob CSV export (--export-logprobs <file.csv>)
 // ---------------------------------------------------------------------------
 
+/// One row of the `--export-logprobs` table.
+///
+/// The first five columns are the original CSV layout; `original`,
+/// `transformed`, `confidence` and `perplexity` were added after them so
+/// existing readers that index columns by position keep working.
+#[derive(serde::Serialize)]
+struct LogprobRow<'a> {
+    /// Token as shown (after any transform).
+    token: &'a str,
+    /// Natural log of the token's probability; empty when unavailable.
+    logprob: Option<f64>,
+    /// Zero-based position in the response.
+    rank: usize,
+    model: &'a str,
+    /// Unix seconds when the export was written.
+    timestamp: u64,
+    /// Token as the model produced it, before any transform.
+    original: &'a str,
+    transformed: bool,
+    confidence: Option<f32>,
+    perplexity: Option<f32>,
+}
+
+/// One line of the JSON-lines variant: the full token event plus run fields.
+#[derive(serde::Serialize)]
+struct LogprobJsonLine<'a> {
+    #[serde(flatten)]
+    event: &'a crate::TokenEvent,
+    logprob: Option<f64>,
+    model: &'a str,
+    timestamp: u64,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn event_logprob(event: &crate::TokenEvent) -> Option<f64> {
+    // confidence = exp(logprob), so logprob = ln(confidence).
+    event.confidence.map(|c| (c as f64).max(1e-10).ln())
+}
+
 /// Write per-token logprob data to a CSV file from a list of token events.
-/// Columns: token,logprob,rank,model,timestamp
+///
+/// Columns: `token,logprob,rank,model,timestamp,original,transformed,confidence,perplexity`.
+/// Quoting is handled by the `csv` crate, so tokens with commas, quotes or
+/// newlines round-trip. A missing logprob is an empty cell (it used to be
+/// the string `-inf`, which most data tools refuse to parse as a number).
 pub fn write_logprob_csv(
     path: &str,
     events: &[crate::TokenEvent],
     model: &str,
 ) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let mut f = std::fs::File::create(path)?;
-    writeln!(f, "token,logprob,rank,model,timestamp")?;
-
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
+    let ts = unix_now();
+    let mut w = csv::Writer::from_path(path)?;
     for (rank, event) in events.iter().enumerate() {
-        // logprob: derive from confidence (confidence = exp(logprob))
-        let logprob = event
-            .confidence
-            .map(|c| (c as f64).max(1e-10).ln())
-            .unwrap_or(f64::NEG_INFINITY);
-
-        // Escape commas in token text
-        let token_escaped = event.text.replace('"', "\"\"");
-        writeln!(
-            f,
-            "\"{}\",{:.6},{},{},{}",
-            token_escaped, logprob, rank, model, ts
-        )?;
+        w.serialize(LogprobRow {
+            token: &event.text,
+            logprob: event_logprob(event),
+            rank,
+            model,
+            timestamp: ts,
+            original: &event.original,
+            transformed: event.transformed,
+            confidence: event.confidence,
+            perplexity: event.perplexity,
+        })
+        .map_err(std::io::Error::other)?;
     }
-    Ok(())
+    w.flush()
+}
+
+/// Write per-token data as JSON lines: every `TokenEvent` field (including
+/// the top alternatives) plus `logprob`, `model` and `timestamp`.
+pub fn write_logprob_jsonl(
+    path: &str,
+    events: &[crate::TokenEvent],
+    model: &str,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let ts = unix_now();
+    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    for event in events {
+        let line = LogprobJsonLine {
+            event,
+            logprob: event_logprob(event),
+            model,
+            timestamp: ts,
+        };
+        serde_json::to_writer(&mut f, &line)?;
+        f.write_all(b"\n")?;
+    }
+    f.flush()
 }
 
 /// Run a single stream and export logprobs to CSV (used by --export-logprobs).
@@ -1238,13 +1310,14 @@ pub async fn run_with_logprob_export(
         .map_err(|e| format!("Invalid transform: {e}"))?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut interceptor = crate::TokenInterceptor::new(
+    let mut interceptor = crate::TokenInterceptor::new_with_base_url(
         provider,
         transform,
         model.clone(),
         args.visual,
         args.heatmap,
         args.orchestrator,
+        args.base_url.clone(),
     )?;
     interceptor.web_tx = Some(tx);
     interceptor.top_logprobs = args.top_logprobs;
@@ -1260,8 +1333,14 @@ pub async fn run_with_logprob_export(
         events.push(e);
     }
 
-    write_logprob_csv(export_path, &events, &model)?;
-    eprintln!("[eot] logprob CSV written to {} ({} tokens)", export_path, events.len());
+    let lower = export_path.to_ascii_lowercase();
+    if lower.ends_with(".jsonl") || lower.ends_with(".ndjson") {
+        write_logprob_jsonl(export_path, &events, &model)?;
+        eprintln!("[eot] logprob JSONL written to {} ({} tokens)", export_path, events.len());
+    } else {
+        write_logprob_csv(export_path, &events, &model)?;
+        eprintln!("[eot] logprob CSV written to {} ({} tokens)", export_path, events.len());
+    }
     Ok(())
 }
 
@@ -1312,13 +1391,14 @@ pub async fn run_multi_model_compare(
 
     for model in &models {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut interceptor = crate::TokenInterceptor::new(
+        let mut interceptor = crate::TokenInterceptor::new_with_base_url(
             provider.clone(),
             transform.clone(),
             model.clone(),
             false,
             false,
             false,
+            args.base_url.clone(),
         )?;
         interceptor.web_tx = Some(tx);
         interceptor.top_logprobs = args.top_logprobs;
@@ -1614,6 +1694,25 @@ mod tests {
     }
 
     #[test]
+    fn test_two_sample_t_test_matches_reference_welch() {
+        // Reference: scipy.stats.ttest_ind(a, b, equal_var=False)
+        // gives t=-1.8974, df=5.882, p=0.107531.
+        let a = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let b = [2.0, 4.0, 6.0, 8.0, 10.0];
+        let p = two_sample_t_test(&a, &b).expect("p-value");
+        assert!((p - 0.107531).abs() < 1e-4, "p={p}");
+    }
+
+    #[test]
+    fn test_ci_95_uses_t_quantile() {
+        // t(0.975, df=9) = 2.262157 (scipy.stats.t.ppf), not 1.96.
+        let (low, high) = ci_95(0.0, 1.0, 10);
+        let expected = 2.262157 / 10f64.sqrt();
+        assert!((high - expected).abs() < 1e-5, "high={high}");
+        assert!((low + expected).abs() < 1e-5, "low={low}");
+    }
+
+    #[test]
     fn test_two_sample_t_test_too_few_samples_returns_none() {
         assert!(two_sample_t_test(&[0.5], &[0.6]).is_none());
         assert!(two_sample_t_test(&[], &[0.5, 0.6]).is_none());
@@ -1738,6 +1837,80 @@ mod tests {
         let msg = "[eot] Note: cost estimates may be outdated — verify current pricing at your provider's documentation.";
         assert!(msg.contains("outdated"), "disclaimer should mention 'outdated'");
         assert!(msg.contains("cost estimates"), "disclaimer should mention 'cost estimates'");
+    }
+
+    fn export_event(text: &str, original: &str, confidence: Option<f32>) -> crate::TokenEvent {
+        crate::TokenEvent {
+            text: text.into(),
+            original: original.into(),
+            index: 0,
+            transformed: text != original,
+            importance: 0.5,
+            chaos_label: None,
+            provider: None,
+            confidence,
+            perplexity: confidence.map(|c| 1.0 / c),
+            alternatives: vec![crate::TokenAlternative { token: "alt".into(), probability: 0.1 }],
+            is_error: false,
+            arrival_ms: Some(5),
+        }
+    }
+
+    #[test]
+    fn test_write_logprob_csv_quotes_and_empty_logprob() {
+        let path = std::env::temp_dir().join("eot_logprob_export_test.csv");
+        let events = vec![
+            export_event("a,\"b\"", "a,\"b\"", Some(0.5)),
+            export_event(" OLLEH", " hello", None),
+        ];
+        write_logprob_csv(path.to_str().unwrap(), &events, "org/model,v2").expect("write");
+        let mut rdr = csv::Reader::from_path(&path).expect("open");
+        let headers = rdr.headers().expect("headers").clone();
+        assert_eq!(
+            headers.iter().collect::<Vec<_>>(),
+            ["token", "logprob", "rank", "model", "timestamp", "original", "transformed", "confidence", "perplexity"]
+        );
+        let rows: Vec<csv::StringRecord> = rdr.records().map(|r| r.expect("row")).collect();
+        assert_eq!(&rows[0][0], "a,\"b\"");
+        assert!((rows[0][1].parse::<f64>().unwrap() - 0.5f64.ln()).abs() < 1e-6);
+        assert_eq!(&rows[0][3], "org/model,v2");
+        assert_eq!(&rows[1][1], "", "missing logprob is an empty cell, not -inf");
+        assert_eq!(&rows[1][5], " hello");
+        assert_eq!(&rows[1][6], "true");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_write_logprob_jsonl_has_full_events() {
+        let path = std::env::temp_dir().join("eot_logprob_export_test.jsonl");
+        let events = vec![export_event("x", "x", Some(0.25)), export_event("y", "y", None)];
+        write_logprob_jsonl(path.to_str().unwrap(), &events, "gpt-4o").expect("write");
+        let text = std::fs::read_to_string(&path).expect("read");
+        let lines: Vec<serde_json::Value> =
+            text.lines().map(|l| serde_json::from_str(l).expect("json line")).collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["model"], "gpt-4o");
+        assert_eq!(lines[0]["text"], "x");
+        assert_eq!(lines[0]["alternatives"][0]["token"], "alt");
+        assert!((lines[0]["logprob"].as_f64().unwrap() - 0.25f64.ln()).abs() < 1e-6);
+        assert!(lines[1]["logprob"].is_null());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn test_run_with_logprob_export_mock_end_to_end() {
+        use clap::Parser;
+        for ext in ["csv", "jsonl"] {
+            let path = std::env::temp_dir().join(format!("eot_export_e2e.{ext}"));
+            let p = path.to_str().unwrap().to_string();
+            let args = crate::cli::Args::parse_from([
+                "eot", "Why is the sky blue?", "--provider", "mock", "--export-logprobs", &p,
+            ]);
+            run_with_logprob_export(&args, &p).await.expect("export");
+            let text = std::fs::read_to_string(&path).expect("read");
+            assert!(text.contains("quick"), "{ext}: {text}");
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     // -- Item 12: write_timeseries_csv creates file --

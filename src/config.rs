@@ -23,7 +23,7 @@ use std::path::PathBuf;
 /// merges `~/.eot.toml` (lower priority) with `./.eot.toml` (higher priority).
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct EotConfig {
-    /// LLM provider: `"openai"`, `"anthropic"`, or `"mock"`.
+    /// LLM provider: `"openai"`, `"anthropic"`, `"ollama"`, `"openrouter"`, `"gemini"`, or `"mock"`.
     pub provider: Option<String>,
     /// Model name passed to the provider API (e.g. `"gpt-4o-mini"`).
     pub model: Option<String>,
@@ -42,6 +42,9 @@ pub struct EotConfig {
     pub anthropic_max_tokens: Option<u32>,
     /// Optional bearer token required for /api/ web UI endpoints.
     pub api_key: Option<String>,
+    /// API base URL override, same as `--base-url`
+    /// (e.g. `"http://localhost:8080/v1"` for a local OpenAI-compatible server).
+    pub base_url: Option<String>,
 }
 
 impl EotConfig {
@@ -86,6 +89,9 @@ impl EotConfig {
         }
         if other.api_key.is_some() {
             self.api_key = other.api_key;
+        }
+        if other.base_url.is_some() {
+            self.base_url = other.base_url;
         }
     }
 }
@@ -239,8 +245,10 @@ mod tests {
             system_a: Some("Be concise.".to_string()),
             anthropic_max_tokens: None,
             api_key: None,
+            base_url: Some("http://localhost:8080/v1".to_string()),
         };
         base.merge(other);
+        assert_eq!(base.base_url.as_deref(), Some("http://localhost:8080/v1"));
         assert_eq!(base.provider.as_deref(), Some("openai"));
         assert_eq!(base.model.as_deref(), Some("gpt-4"));
         assert_eq!(base.transform.as_deref(), Some("uppercase"));

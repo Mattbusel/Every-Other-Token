@@ -142,27 +142,43 @@ impl AttributionExporter {
     ///
     /// Missing alternatives are represented as empty cells.
     pub fn to_csv(&self, seq: &SequenceAttribution) -> String {
-        let mut out = String::from(
-            "position,token,confidence,perplexity,attribution_score,\
-             alt_1,alt_1_prob,alt_2,alt_2_prob,alt_3,alt_3_prob,\
-             alt_4,alt_4_prob,alt_5,alt_5_prob\n",
-        );
+        let mut w = csv::Writer::from_writer(Vec::new());
+        let mut header: Vec<String> = ["position", "token", "confidence", "perplexity", "attribution_score"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        for i in 1..=5 {
+            header.push(format!("alt_{i}"));
+            header.push(format!("alt_{i}_prob"));
+        }
+        // Writing to a Vec<u8> cannot fail with an I/O error.
+        let _ = w.write_record(&header);
         for t in &seq.tokens {
-            let token_escaped = csv_escape(&t.token);
-            out.push_str(&format!(
-                "{},{},{:.6},{:.6},{:.6}",
-                t.position, token_escaped, t.confidence, t.perplexity, t.attribution_score,
-            ));
+            let mut row = vec![
+                t.position.to_string(),
+                t.token.clone(),
+                format!("{:.6}", t.confidence),
+                format!("{:.6}", t.perplexity),
+                format!("{:.6}", t.attribution_score),
+            ];
             for i in 0..5 {
-                if let Some((alt_tok, alt_prob)) = t.top_alternatives.get(i) {
-                    out.push_str(&format!(",{},{:.6}", csv_escape(alt_tok), alt_prob));
-                } else {
-                    out.push_str(",,");
+                match t.top_alternatives.get(i) {
+                    Some((alt_tok, alt_prob)) => {
+                        row.push(alt_tok.clone());
+                        row.push(format!("{:.6}", alt_prob));
+                    }
+                    None => {
+                        row.push(String::new());
+                        row.push(String::new());
+                    }
                 }
             }
-            out.push('\n');
+            let _ = w.write_record(&row);
         }
-        out
+        w.into_inner()
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_default()
     }
 
     // ── HTML heatmap ───────────────────────────────────────────────────────
@@ -359,16 +375,6 @@ fn confidence_to_hue(confidence: f32) -> u32 {
     (confidence.clamp(0.0, 1.0) * 120.0).round() as u32
 }
 
-/// Escape a string for embedding as a CSV field.
-/// Wraps the value in double-quotes if it contains a comma, double-quote, or newline.
-fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
 /// Escape characters that have special meaning in HTML.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -544,8 +550,15 @@ mod tests {
     }
 
     #[test]
-    fn csv_escape_handles_embedded_quotes() {
-        assert_eq!(csv_escape("say \"hello\""), "\"say \"\"hello\"\"\"");
+    fn to_csv_round_trips_quotes_and_newlines() {
+        let exporter = AttributionExporter::new();
+        let mut seq = make_seq();
+        seq.tokens[0].token = "say \"hi\",\nthen\r\nleave".to_string();
+        let out = exporter.to_csv(&seq);
+        let mut rdr = csv::Reader::from_reader(out.as_bytes());
+        let first = rdr.records().next().expect("row").expect("valid csv");
+        assert_eq!(&first[1], "say \"hi\",\nthen\r\nleave");
+        assert_eq!(rdr.headers().expect("headers").len(), 15);
     }
 }
 

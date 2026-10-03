@@ -1,10 +1,10 @@
 [package]
 name = "every-other-token"
-version = "4.3.2"
+version = "4.4.0"
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.89"
 authors = ["Matthew Busel"]
-description = "Watch an LLM answer token by token: a CLI and web UI that intercepts the OpenAI or Anthropic stream, shows per-token confidence and perplexity from logprobs, and rewrites every other token live. Mock provider needs no API key."
+description = "Watch an LLM answer token by token: a CLI, terminal UI and web UI that intercepts the OpenAI, Anthropic, Gemini, OpenRouter or local (Ollama, OpenAI-compatible) stream, shows per-token confidence and perplexity from logprobs, and rewrites every other token live. Mock provider needs no API key."
 license = "MIT"
 readme = "README.md"
 repository = "https://gitlab.com/mattbusel/Every-Other-Token"
@@ -16,6 +16,14 @@ categories = ["command-line-utilities", "science", "development-tools"]
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = "0.1"
+# eventsource-stream: spec-compliant SSE parser for the provider streams
+eventsource-stream = "0.2"
+# statrs: Student's t distribution for the research-mode t-test and confidence intervals
+statrs = { version = "0.19", default-features = false }
+# backon: retry with exponential back-off, jitter and Retry-After support
+backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep"] }
+# csv: RFC 4180 CSV writing for the logprob, timeseries and attribution exports
+csv = "1.4"
 subtle = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "charset", "http2"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -59,6 +67,10 @@ redis-backing = ["self-modify", "dep:redis"]
 # redis: synchronous client for write-through persistence of agent memory and snapshots
 version = "0.26"
 optional = true
+
+# ratatui: the --tui full-screen view (crossterm backend; not built for wasm)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }

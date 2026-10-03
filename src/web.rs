@@ -74,9 +74,6 @@ fn cors_origin() -> String {
 
 // Default model names used when the query string omits a model parameter.
 // Centralised here so web.rs, cli.rs, and lib.rs all stay in sync.
-const DEFAULT_OPENAI_MODEL: &str = "gpt-3.5-turbo";
-const DEFAULT_ANTHROPIC_MODEL: &str = "claude-sonnet-4-6";
-const DEFAULT_MOCK_MODEL: &str = "mock-fixture-v1";
 
 /// Wraps a `TokenEvent` with a provider-side label for diff streaming.
 #[derive(Debug, Serialize)]
@@ -272,6 +269,7 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     }
 
     let default_provider = default_args.provider.clone();
+    let default_base_url = default_args.base_url.clone();
     let orchestrator = default_args.orchestrator;
     let api_key: Option<String> = default_args.api_key.clone();
     let sse_buffer_size = default_args.sse_buffer_size;
@@ -339,22 +337,39 @@ pub async fn serve(port: u16, default_args: &Args) -> Result<(), Box<dyn std::er
     loop {
         let (stream, addr) = listener.accept().await?;
         let provider = default_provider.clone();
+        let conn_base_url = default_base_url.clone();
         let store = room_store.clone();
         let conn_api_key = api_key.clone();
         let limiter = rate_limiter.clone();
         let peer_ip = addr.ip();
         let buf_sz = sse_buffer_size;
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, provider, orchestrator, store, conn_api_key, limiter, peer_ip, buf_sz).await {
+            if let Err(e) = handle_connection(stream, provider, conn_base_url, orchestrator, store, conn_api_key, limiter, peer_ip, buf_sz).await {
                 eprintln!("  connection error: {}", e);
             }
         });
     }
 }
 
+/// `--base-url` applies only to the provider the server was started with;
+/// picking another provider in the UI uses that provider's own API.
+fn base_url_for(
+    chosen: &Provider,
+    default_provider: &Provider,
+    default_base_url: &Option<String>,
+) -> Option<String> {
+    if chosen == default_provider {
+        default_base_url.clone()
+    } else {
+        None
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     default_provider: Provider,
+    default_base_url: Option<String>,
     orchestrator: bool,
     store: RoomStore,
     api_key: Option<String>,
@@ -497,18 +512,10 @@ async fn handle_connection(
             let model_input = sp.model;
             let heatmap = sp.heatmap;
 
-            let provider = match provider_str.as_str() {
-                "anthropic" => Provider::Anthropic,
-                "mock" => Provider::Mock,
-                _ => Provider::Openai,
-            };
+            let provider = provider_str.parse::<Provider>().unwrap_or(Provider::Openai);
 
             let model = if model_input.is_empty() {
-                match provider {
-                    Provider::Openai => DEFAULT_OPENAI_MODEL.to_string(),
-                    Provider::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
-                    Provider::Mock => DEFAULT_MOCK_MODEL.to_string(),
-                }
+                provider.default_model().to_string()
             } else {
                 model_input
             };
@@ -526,13 +533,15 @@ async fn handle_connection(
             // Create channel for token events.
             let (tx, mut rx) = mpsc::unbounded_channel::<TokenEvent>();
 
-            let interceptor_result = TokenInterceptor::new(
+            let base_url = base_url_for(&provider, &default_provider, &default_base_url);
+            let interceptor_result = TokenInterceptor::new_with_base_url(
                 provider,
                 transform,
                 model,
                 visual,
                 heatmap,
                 orchestrator,
+                base_url,
             );
 
             // Convert result early — stringify the error before any await
@@ -637,12 +646,12 @@ async fn handle_connection(
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
 
             let openai_model = if model_input.is_empty() {
-                DEFAULT_OPENAI_MODEL.to_string()
+                Provider::Openai.default_model().to_string()
             } else {
                 model_input.clone()
             };
             let anthropic_model = if model_input.is_empty() {
-                DEFAULT_ANTHROPIC_MODEL.to_string()
+                Provider::Anthropic.default_model().to_string()
             } else {
                 model_input.clone()
             };
@@ -749,18 +758,11 @@ async fn handle_connection(
                 .cloned()
                 .unwrap_or_else(|| "You are a technical writer. Be precise.".to_string());
 
-            let ab_provider = match provider_str.as_str() {
-                "anthropic" => Provider::Anthropic,
-                "mock" => Provider::Mock,
-                _ => Provider::Openai,
-            };
+            let ab_provider = provider_str.parse::<Provider>().unwrap_or(Provider::Openai);
+            let ab_base_url = base_url_for(&ab_provider, &default_provider, &default_base_url);
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
             let model = if model_input.is_empty() {
-                match ab_provider {
-                    Provider::Openai => DEFAULT_OPENAI_MODEL.to_string(),
-                    Provider::Anthropic => DEFAULT_ANTHROPIC_MODEL.to_string(),
-                    Provider::Mock => DEFAULT_MOCK_MODEL.to_string(),
-                }
+                ab_provider.default_model().to_string()
             } else {
                 model_input
             };
@@ -775,13 +777,14 @@ async fn handle_connection(
                 mpsc::unbounded_channel::<(&'static str, TokenEvent)>();
 
             // Side A
-            let a_result = TokenInterceptor::new(
+            let a_result = TokenInterceptor::new_with_base_url(
                 ab_provider.clone(),
                 transform.clone(),
                 model.clone(),
                 true,
                 false,
                 orchestrator,
+                ab_base_url.clone(),
             )
             .map_err(|e| e.to_string());
             if let Ok(mut side_a) = a_result {
@@ -1002,7 +1005,7 @@ async fn handle_connection(
             let transform = Transform::from_str_loose(&transform_str).unwrap_or(Transform::Reverse);
             let rate = req.rate.clamp(0.0, 1.0);
             let model = if req.model.is_empty() {
-                DEFAULT_MOCK_MODEL.to_string()
+                Provider::Mock.default_model().to_string()
             } else {
                 req.model
             };

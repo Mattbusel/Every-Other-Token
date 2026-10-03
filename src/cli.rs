@@ -17,10 +17,15 @@ use clap::Parser;
   every-other-token \"Why is the sky blue?\" --provider mock
   every-other-token \"Why is the sky blue?\" uppercase --provider mock --json-stream
   every-other-token --web --provider mock
+  every-other-token \"Why is the sky blue?\" --provider mock --tui
 
 With a real model, set OPENAI_API_KEY or ANTHROPIC_API_KEY first:
   every-other-token \"Why is the sky blue?\" --visual
   every-other-token \"Why is the sky blue?\" --provider anthropic --visual
+
+Local models, no key (Ollama, or any OpenAI-compatible server):
+  every-other-token \"Why is the sky blue?\" --provider ollama
+  every-other-token \"Why is the sky blue?\" reverse my-model --base-url http://localhost:8080/v1
 
 Run with no arguments to open the web UI.
 Docs: https://every-other-token.vercel.app/")]
@@ -38,9 +43,17 @@ pub struct Args {
     #[arg(default_value = "gpt-3.5-turbo")]
     pub model: String,
 
-    /// LLM provider: openai, anthropic, or mock (no API key needed)
+    /// LLM provider: openai, anthropic, ollama (local), openrouter, gemini,
+    /// or mock (no API key needed)
     #[arg(long, value_enum, default_value = "openai")]
     pub provider: Provider,
+
+    /// Send requests to this API base URL instead of the provider's default.
+    /// Use it with --provider openai for any OpenAI-compatible server
+    /// (llama.cpp, vLLM, LM Studio, a proxy), e.g. http://localhost:8080/v1.
+    /// The API key is optional when this is set.
+    #[arg(long, value_name = "URL")]
+    pub base_url: Option<String>,
 
     /// Enable visual mode with color-coded tokens
     #[arg(long, short)]
@@ -154,6 +167,12 @@ pub struct Args {
     #[arg(long)]
     pub json_stream: bool,
 
+    /// Full-screen terminal view: the reply colored by confidence, live stats,
+    /// a confidence sparkline and the top alternatives for the latest token.
+    /// Press q to quit; the reply stays printed afterwards.
+    #[arg(long, conflicts_with_all = ["web", "json_stream", "research"])]
+    pub tui: bool,
+
     /// Generate shell completions for the given shell and exit
     #[arg(long, value_name = "SHELL")]
     pub completions: Option<clap_complete::Shell>,
@@ -260,8 +279,10 @@ pub struct Args {
     #[arg(long)]
     pub batch: Option<String>,
 
-    /// Export per-token logprob data to a CSV file during a session.
-    /// Columns: token,logprob,rank,model,timestamp
+    /// Export per-token logprob data during a session. A path ending in
+    /// .jsonl or .ndjson writes JSON lines with every token field (including
+    /// top alternatives); anything else writes CSV with columns
+    /// token,logprob,rank,model,timestamp,original,transformed,confidence,perplexity
     #[arg(long)]
     pub export_logprobs: Option<String>,
 
@@ -328,8 +349,10 @@ pub struct Args {
 /// hasn't explicitly chosen one (i.e. the model is still the OpenAI default).
 pub fn resolve_model(provider: &Provider, model: &str) -> String {
     match provider {
-        Provider::Anthropic if model == "gpt-3.5-turbo" => "claude-sonnet-4-6".to_string(),
-        Provider::Mock => "mock-fixture-v1".to_string(),
+        Provider::Mock => provider.default_model().to_string(),
+        Provider::Openai => model.to_string(),
+        // "gpt-3.5-turbo" is the CLI default, so the user did not pick a model.
+        _ if model == "gpt-3.5-turbo" || model.is_empty() => provider.default_model().to_string(),
         _ => model.to_string(),
     }
 }
@@ -370,7 +393,8 @@ pub fn validate_model(provider: &Provider, model: &str) {
     let known: &[&str] = match provider {
         Provider::Openai => KNOWN_OPENAI_MODELS,
         Provider::Anthropic => KNOWN_ANTHROPIC_MODELS,
-        Provider::Mock => return,
+        // Ollama, OpenRouter and Gemini host too many models to list.
+        Provider::Ollama | Provider::Openrouter | Provider::Gemini | Provider::Mock => return,
     };
     if !known.contains(&model) {
         eprintln!(

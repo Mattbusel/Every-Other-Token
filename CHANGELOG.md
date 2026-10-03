@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.4.0] - 2026-10-02
+
+This release swaps several hand-written parts for well-known open-source crates and adds what they made easy.
+
+### Added
+- **More providers.** `--provider ollama` streams from a local Ollama with no API key. `--provider openrouter` (`OPENROUTER_API_KEY`) and `--provider gemini` (`GEMINI_API_KEY`) reach hosted models. All three are also in the web UI's provider menu.
+- **Any OpenAI-compatible server.** `--base-url URL` (or `base_url` in `.eot.toml`) points a provider at another server, such as llama.cpp, vLLM or LM Studio. With it the API key is optional. `--validate-config` now prints the endpoint it will call.
+- **Full-screen terminal view.** `--tui` shows the reply colored by confidence, rewritten tokens underlined, running stats, a confidence sparkline and the latest token's top alternatives. Built on [ratatui](https://ratatui.rs).
+- **JSON-lines export.** `--export-logprobs tokens.jsonl` writes one JSON object per token, with every field.
+- For library users: `TokenInterceptor::new_with_base_url`, `with_base_url`, `with_api_key`, `endpoint_url`, and `Provider::{default_base_url, endpoint_url, api_key_env, default_model}`.
+
+### Fixed
+- **Streams no longer lose text.** The stream reader decoded each network chunk on its own, so an accented letter or emoji split across two chunks made the whole chunk get skipped. SSE is now parsed by [eventsource-stream](https://crates.io/crates/eventsource-stream), which also accepts `data:` without a space and CRLF line endings.
+- **Errors inside a stream are reported.** An error event in the middle of a reply (for example Anthropic's "overloaded") used to be ignored, ending the run with a partial answer and no message. It now fails the run with the server's message. HTTP errors also show the status code.
+- **Research-mode statistics are correct for small samples.** The A/B t-test used a normal approximation and the 95% confidence intervals used 1.96, both only right for large samples (the default is 10 runs). For five runs a side the old p-value could read 0.058 where the exact value is 0.108. Both now use Student's t distribution from [statrs](https://crates.io/crates/statrs).
+- **Retries wait the right amount.** Retries now use [backon](https://crates.io/crates/backon): exponential back-off with jitter, and a `Retry-After` header from the server sets the wait. Anthropic's 529 "overloaded" status is retried too.
+- **CSV exports quote properly.** The logprob, timeseries and attribution CSV files are written with the [csv](https://crates.io/crates/csv) crate.
+
+### Changed
+- `--export-logprobs` CSV: a missing logprob is now an empty cell instead of `-inf`, and four columns are added at the end (`original`, `transformed`, `confidence`, `perplexity`). The first five columns are unchanged.
+- Providers without logprobs other than Anthropic (Gemini, most local servers) get the same token-timing confidence estimate Anthropic already used.
+- `--max-retries 0` used to skip the request entirely; it now makes one attempt.
+- Minimum Rust version is now 1.89 (the previous 1.81 was already out of date: the locked dependencies needed 1.85). The prebuilt downloads are not affected.
+- HTTPS is still rustls only; none of the new crates bring in OpenSSL.
+
 ## [4.3.2] - 2026-09-30
 
 - HTTPS through rustls instead of the system OpenSSL. The 4.3.1 Linux download needed OpenSSL 1.1, which Ubuntu 22.04 and newer do not ship; this one runs on any glibc 2.31+ distribution.

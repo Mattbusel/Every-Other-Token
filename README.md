@@ -20,7 +20,7 @@
 
 **Try it in your browser, no install and no API key:** [every-other-token.vercel.app/play](https://every-other-token.vercel.app/play/). Type a prompt and watch every other token come out reversed.
 
-`every-other-token` is a free LLM token stream viewer and interceptor for the command line and the browser. It sits on the live OpenAI or Anthropic stream, shows the confidence and perplexity of each token from the logprobs, and can rewrite every other token (or any fraction) as it arrives. A built-in mock provider lets you try all of it with no API key.
+`every-other-token` is a free LLM token stream viewer and interceptor for the command line and the browser. It sits on the live stream from OpenAI, Anthropic, Gemini, OpenRouter or a model on your own machine (Ollama, llama.cpp, vLLM, LM Studio), shows the confidence and perplexity of each token from the logprobs, and can rewrite every other token (or any fraction) as it arrives. A built-in mock provider lets you try all of it with no API key.
 
 **Who it's for:** anyone curious how language models pick their words, plus people doing LLM interpretability research, red-teaming and prompt engineering.
 
@@ -31,7 +31,7 @@
 1. **Intercept.** It opens the model's streaming connection (SSE) itself, so it sees each chunk the moment it arrives.
 2. **Score.** Each token gets `confidence = exp(logprob)` and `perplexity = exp(-logprob)`, plus the top alternatives the model considered.
 3. **Mutate.** The chosen tokens (every other one by default, or only the ones the model was unsure about) go through a transform: reverse, uppercase, noise, delete, synonym and more.
-4. **Output.** You watch it in the terminal or the web UI, or save it as JSON lines, CSV or an HTML heatmap.
+4. **Output.** You watch it in the terminal (plain, or a full-screen view with `--tui`) or the web UI, or save it as JSON lines, CSV or an HTML heatmap.
 
 ## Install
 
@@ -79,7 +79,11 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 ...
 ```
 
-**4. Watch it in the browser** with `every-other-token --web --provider mock` (or just double-click the .exe). Split view: the original stream on the left, the rewritten one on the right, each token underlined by its confidence.
+**4. Watch it full-screen in the terminal** with `every-other-token "Why is the sky blue?" --provider mock --tui`. The reply streams in colored by confidence (green sure, yellow unsure, red guessing), rewritten tokens are underlined, and side panels show running stats, a confidence sparkline and the other words the model considered for the latest token. Press `q` to quit; the reply stays in your terminal.
+
+**5. Run it on a model on your own machine.** With [Ollama](https://ollama.com) running, `every-other-token "Why is the sky blue?" --provider ollama` streams from `llama3.2` with no API key. Any other server that speaks the OpenAI API works too: `every-other-token "Why is the sky blue?" reverse my-model --base-url http://localhost:8080/v1`.
+
+**6. Watch it in the browser** with `every-other-token --web --provider mock` (or just double-click the .exe). Split view: the original stream on the left, the rewritten one on the right, each token underlined by its confidence.
 
 <img src="assets/web-ui.png" width="100%" alt="every-other-token web UI in split view: original token stream on the left, transformed stream on the right, each token underlined by its confidence">
 
@@ -87,7 +91,7 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 
 1. **Get it.** Use the Linux one-liner or the Windows .exe above (or `cargo install`).
 2. **Try it offline.** Run `every-other-token "Why is the sky blue?" --provider mock`, or double-click the .exe and pick **Mock (no API key)** in the provider menu.
-3. **Point it at a real model.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, then run `every-other-token "Why is the sky blue?" --visual` (terminal, colored by confidence) or `every-other-token --web` (browser). Real confidence numbers come from OpenAI logprobs; Anthropic's stream has none, so there the tool uses its own importance score.
+3. **Point it at a real model.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY`, `GEMINI_API_KEY`), then run `every-other-token "Why is the sky blue?" --visual` (terminal, colored by confidence), add `--tui` for the full-screen view, or run `every-other-token --web` (browser). Pick the provider with `--provider openai|anthropic|ollama|openrouter|gemini`. Real confidence numbers come from logprobs (OpenAI, OpenRouter, recent Ollama); providers that send none, like Anthropic and Gemini, get an estimate from how quickly each token arrived.
 
 Run `every-other-token --help` for every flag, with examples at the bottom.
 

@@ -270,9 +270,7 @@ pub fn welch_t_test(
         1.0
     };
 
-    // Approximate two-tailed p-value using a simple t-distribution approximation.
-    // For df > 30, the t-distribution is close to normal; we use a rational
-    // approximation of the normal CDF for simplicity.
+    // Exact two-tailed p-value from the Student's t distribution.
     let p_value = approx_two_tailed_p(t_stat.abs(), df);
     let significant = p_value < (1.0 - significance);
 
@@ -293,37 +291,15 @@ pub fn welch_t_test(
     })
 }
 
-/// Approximate two-tailed p-value for a given |t| and degrees of freedom.
-/// Uses a rational approximation sufficient for decision-making.
+/// Two-tailed p-value for a given |t| and degrees of freedom, from the
+/// Student's t distribution in `statrs`. (Kept under its old name; it is no
+/// longer an approximation.)
 fn approx_two_tailed_p(t_abs: f64, df: f64) -> f64 {
-    // For large df, use normal approximation
-    let z = if df > 100.0 {
-        t_abs
-    } else {
-        // Scale t toward normal using a simple correction
-        t_abs * (1.0 - 0.25 / df.max(1.0))
-    };
-    // Rational approximation of erfc for the normal distribution
-    let p_one_tail = standard_normal_upper_tail(z);
-    (2.0 * p_one_tail).min(1.0)
-}
-
-/// Upper tail probability of the standard normal distribution (z > x).
-/// Hart's rational approximation — accurate to ~1e-5.
-fn standard_normal_upper_tail(x: f64) -> f64 {
-    if x < 0.0 {
-        return 1.0 - standard_normal_upper_tail(-x);
+    use statrs::distribution::{ContinuousCDF, StudentsT};
+    match StudentsT::new(0.0, 1.0, df.max(f64::MIN_POSITIVE)) {
+        Ok(dist) => (2.0 * dist.sf(t_abs.abs())).min(1.0),
+        Err(_) => 1.0,
     }
-    if x > 8.0 {
-        return 0.0;
-    }
-    // Abramowitz & Stegun 26.2.17 approximation
-    let t = 1.0 / (1.0 + 0.2316419 * x);
-    let poly = t
-        * (0.319381530
-            + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
-    let pdf = (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt();
-    pdf * poly
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,25 +1025,15 @@ mod tests {
     // ===== Statistical helper =====
 
     #[test]
-    fn test_standard_normal_upper_tail_at_zero_is_half() {
-        let p = standard_normal_upper_tail(0.0);
-        assert!(
-            (p - 0.5).abs() < 0.01,
-            "upper tail at 0 should be ~0.5, got {}",
-            p
-        );
+    fn test_two_tailed_p_matches_student_t_reference() {
+        // scipy.stats.t.sf(2.5, 4) * 2 = 0.066767
+        let p = approx_two_tailed_p(2.5, 4.0);
+        assert!((p - 0.066767).abs() < 1e-5, "p={}", p);
     }
 
     #[test]
-    fn test_standard_normal_upper_tail_large_x_near_zero() {
-        let p = standard_normal_upper_tail(8.0);
-        assert!(p < 0.001, "upper tail at 8 should be near 0, got {}", p);
-    }
-
-    #[test]
-    fn test_standard_normal_upper_tail_negative_x() {
-        let p = standard_normal_upper_tail(-2.0);
-        assert!(p > 0.9, "upper tail at -2 should be >0.9, got {}", p);
+    fn test_two_tailed_p_is_symmetric_in_t() {
+        assert!((approx_two_tailed_p(-1.3, 7.0) - approx_two_tailed_p(1.3, 7.0)).abs() < 1e-12);
     }
 
     #[test]

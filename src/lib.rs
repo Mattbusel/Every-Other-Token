@@ -98,6 +98,9 @@ pub mod sensitivity;
 pub mod experiments;
 pub mod token_dictionary;
 pub mod transforms;
+/// Full-screen terminal view (`--tui`).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod tui;
 pub mod web;
 pub mod patching;
 pub mod logit_lens;
@@ -207,6 +210,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, Write};
 use tokio::sync::mpsc;
+use eventsource_stream::Eventsource;
 use tokio_stream::StreamExt;
 
 use providers::*;
@@ -356,6 +360,8 @@ pub struct TokenInterceptor {
     /// It is prepended to the next token's `text` and `original` so consumers
     /// that concatenate events get the spaces back (issue #3).
     pending_ws: String,
+    /// API base URL override (`--base-url`). `None` uses the provider default.
+    pub base_url: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -440,69 +446,186 @@ fn circuit_record_failure() {
     }
 }
 
-/// Execute a pre-built `reqwest::Request`, retrying up to `max_attempts`
-/// times on 429 / 5xx responses and network errors with exponential back-off.
+/// Why one attempt failed, kept so the retry policy can look at it.
+enum AttemptError {
+    /// The server answered with a retryable status (429, 500, 502, 503, 529).
+    Status(reqwest::Response),
+    /// The request never got an answer (connection refused, reset, timeout).
+    Network(reqwest::Error),
+    /// The request body could not be copied for another attempt.
+    Uncloneable,
+}
+
+/// Statuses worth retrying: rate limits and transient server failures.
+/// 529 is Anthropic's "overloaded" status.
+fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 529)
+}
+
+/// Delay the server asked for, from `retry-after-ms` (OpenAI, Azure) or
+/// `retry-after` in seconds. Capped at 60 s so a bad header cannot stall a
+/// run; HTTP-date values are ignored and the normal back-off applies.
+fn retry_after(resp: &reqwest::Response) -> Option<std::time::Duration> {
+    let headers = resp.headers();
+    let ms = headers
+        .get("retry-after-ms")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .map(|ms| ms / 1000.0);
+    let secs = ms.or_else(|| {
+        headers
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<f64>().ok())
+    })?;
+    if !secs.is_finite() || secs < 0.0 {
+        return None;
+    }
+    Some(std::time::Duration::from_secs_f64(secs.min(60.0)))
+}
+
+/// Execute a pre-built `reqwest::Request`, making up to `max_attempts`
+/// attempts in total on 429 / 5xx responses and network errors.
+///
+/// Back-off comes from the `backon` crate: exponential from 800 ms, doubling,
+/// capped at 30 s, with jitter so parallel runs (diff mode, research mode) do
+/// not retry in lockstep. A `Retry-After` header on the response overrides
+/// the computed delay.
 ///
 /// Integrates with a process-wide circuit breaker: after `CB_TRIP_THRESHOLD`
 /// consecutive failures the breaker opens for `CB_RECOVERY_MS` ms, rejecting
 /// all requests immediately.  A single successful response resets the counter.
+/// Rate limits (429) do not count as failures.
 ///
-/// Returns the first successful (or non-retryable) response.
+/// When every attempt got a retryable status, the last response is returned
+/// so the caller can report its status and body.
 async fn execute_with_retry(
     client: &reqwest::Client,
     req: reqwest::Request,
     max_attempts: u32,
 ) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
+    use backon::{ExponentialBuilder, Retryable};
+
     if circuit_is_open() {
-        return Err("circuit breaker open — provider unavailable, try again shortly".into());
+        return Err("circuit breaker open, provider unavailable, try again shortly".into());
+    }
+    if req.try_clone().is_none() {
+        // Body is a stream, so it cannot be replayed; execute once.
+        return client.execute(req).await.map_err(|e| e.into());
     }
 
-    let mut last_err: Option<String> = None;
-    for attempt in 0..max_attempts {
-        if attempt > 0 {
-            let delay_ms = 400u64 * (1u64 << attempt.min(4));
-            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            tracing::warn!(attempt, "retrying API request after transient error");
-        }
-        let to_send = match req.try_clone() {
-            Some(r) => r,
-            None => {
-                // Body is a stream — cannot retry; just execute once.
-                return client.execute(req).await.map_err(|e| e.into());
-            }
+    let policy = ExponentialBuilder::default()
+        .with_min_delay(std::time::Duration::from_millis(800))
+        .with_factor(2.0)
+        .with_max_delay(std::time::Duration::from_secs(30))
+        .with_max_times(max_attempts.max(1) as usize - 1)
+        .with_jitter();
+
+    let attempt = || async {
+        // try_clone succeeded once above and the body is in memory, so it
+        // keeps succeeding; the error arm only guards against a future change.
+        let Some(to_send) = req.try_clone() else {
+            return Err(AttemptError::Uncloneable);
         };
         match client.execute(to_send).await {
-            Ok(resp) => {
-                let status = resp.status().as_u16();
-                if attempt + 1 < max_attempts
-                    && (status == 429 || status == 500 || status == 502 || status == 503)
-                {
-                    tracing::warn!(status, attempt, "got retryable HTTP status");
-                    last_err = Some(format!("HTTP {status}"));
-                    // HTTP 429 is a rate-limit — do NOT trip the circuit breaker.
-                    // Only 5xx server errors count as service failures.
-                    if status != 429 {
-                        circuit_record_failure();
-                    }
-                    continue;
+            Ok(resp) if is_retryable_status(resp.status().as_u16()) => {
+                // HTTP 429 is a rate limit: do NOT trip the circuit breaker.
+                if resp.status().as_u16() != 429 {
+                    circuit_record_failure();
                 }
+                Err(AttemptError::Status(resp))
+            }
+            Ok(resp) => {
                 circuit_record_success();
-                return Ok(resp);
+                Ok(resp)
             }
             Err(e) => {
                 circuit_record_failure();
-                if attempt + 1 < max_attempts {
-                    tracing::warn!(error = %e, attempt, "network error, will retry");
-                    last_err = Some(e.to_string());
-                } else {
-                    return Err(Box::new(e));
-                }
+                Err(AttemptError::Network(e))
             }
         }
+    };
+
+    let result = attempt
+        .retry(policy)
+        .sleep(tokio::time::sleep)
+        .adjust(|err, backoff_delay| match (err, backoff_delay) {
+            // None means the attempts are used up; keep it that way.
+            (_, None) => None,
+            (AttemptError::Status(resp), Some(d)) => Some(retry_after(resp).unwrap_or(d)),
+            (AttemptError::Network(_), d) => d,
+            (AttemptError::Uncloneable, _) => None,
+        })
+        .notify(|err, delay| match err {
+            AttemptError::Status(resp) => tracing::warn!(
+                status = resp.status().as_u16(),
+                delay_ms = delay.as_millis() as u64,
+                "retryable HTTP status, retrying"
+            ),
+            AttemptError::Network(e) => tracing::warn!(
+                error = %e,
+                delay_ms = delay.as_millis() as u64,
+                "network error, retrying"
+            ),
+            AttemptError::Uncloneable => {}
+        })
+        .await;
+
+    match result {
+        Ok(resp) => Ok(resp),
+        // Out of attempts on a retryable status: hand back the response.
+        Err(AttemptError::Status(resp)) => Ok(resp),
+        Err(AttemptError::Network(e)) => Err(Box::new(e)),
+        Err(AttemptError::Uncloneable) => Err("request body cannot be retried".into()),
     }
-    Err(last_err
-        .unwrap_or_else(|| "max retries exceeded".to_string())
-        .into())
+}
+
+/// Display name used in error messages.
+fn provider_label(p: &Provider) -> &'static str {
+    match p {
+        Provider::Openai => "OpenAI",
+        Provider::Anthropic => "Anthropic",
+        Provider::Ollama => "Ollama",
+        Provider::Openrouter => "OpenRouter",
+        Provider::Gemini => "Gemini",
+        Provider::Mock => "Mock",
+    }
+}
+
+/// Unwrap one item from an `eventsource-stream` event stream.
+///
+/// Returns the event's `data` field, `None` for events with no data, or an
+/// error for a transport failure. The SSE framing itself (CRLF or LF line
+/// endings, `data:` with or without a space, multi-line data, comments, and
+/// multi-byte UTF-8 characters split across network chunks) is parsed by the
+/// `eventsource-stream` crate.
+fn sse_data<E: std::fmt::Display>(
+    item: Result<eventsource_stream::Event, eventsource_stream::EventStreamError<E>>,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    match item {
+        Ok(ev) if ev.data.is_empty() => Ok(None),
+        Ok(ev) => Ok(Some(ev.data)),
+        Err(e) => Err(format!("stream interrupted: {e}").into()),
+    }
+}
+
+/// Pull a human-readable message out of an `{"error": ...}` SSE payload.
+///
+/// Handles both `{"error":{"message":"..."}}` (OpenAI, OpenRouter, Anthropic)
+/// and `{"error":"..."}` (some local servers).
+fn stream_error_message(data: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(data).ok()?;
+    let err = v.get("error")?;
+    match err {
+        serde_json::Value::String(s) => Some(s.clone()),
+        other => Some(
+            other
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| other.to_string()),
+        ),
+    }
 }
 
 impl TokenInterceptor {
@@ -521,28 +644,59 @@ impl TokenInterceptor {
         heatmap_mode: bool,
         orchestrator: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let api_key = match provider {
-            Provider::Openai => {
-                let key = env::var("OPENAI_API_KEY")
-                    .map_err(|_| "OPENAI_API_KEY not set. Export it or pass via environment.")?;
-                // Basic format validation (#9): OpenAI keys start with "sk-"
-                if !key.starts_with("sk-") {
-                    eprintln!(
-                        "[warn] OPENAI_API_KEY does not start with 'sk-' — verify it is correct"
-                    );
+        Self::new_with_base_url(
+            provider,
+            transform,
+            model,
+            visual_mode,
+            heatmap_mode,
+            orchestrator,
+            None,
+        )
+    }
+
+    /// Like [`TokenInterceptor::new`], but sends requests to `base_url`
+    /// instead of the provider's default API (for example
+    /// `http://localhost:8080/v1` for a llama.cpp or vLLM server).
+    ///
+    /// With a custom `base_url` the API key becomes optional: local
+    /// OpenAI-compatible servers usually do not check one. When the key's
+    /// environment variable is set it is still sent.
+    ///
+    /// # Errors
+    /// Returns an error if the provider needs an API key, no `base_url` is
+    /// given, and the key's environment variable is not set.
+    pub fn new_with_base_url(
+        provider: Provider,
+        transform: Transform,
+        model: String,
+        visual_mode: bool,
+        heatmap_mode: bool,
+        orchestrator: bool,
+        base_url: Option<String>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let base_url = base_url.filter(|u| !u.trim().is_empty());
+        let api_key = match provider.api_key_env() {
+            None => String::new(),
+            Some(var) => match env::var(var) {
+                Ok(key) => {
+                    // Basic format validation (#9).
+                    if provider == Provider::Openai && base_url.is_none() && !key.starts_with("sk-") {
+                        eprintln!("[warn] OPENAI_API_KEY does not start with 'sk-', verify it is correct");
+                    }
+                    if provider == Provider::Anthropic && !key.starts_with("sk-ant-") {
+                        eprintln!("[warn] ANTHROPIC_API_KEY does not start with 'sk-ant-', verify it is correct");
+                    }
+                    key
                 }
-                key
-            }
-            Provider::Anthropic => {
-                let key = env::var("ANTHROPIC_API_KEY")
-                    .map_err(|_| "ANTHROPIC_API_KEY not set. Export it or pass via environment.")?;
-                // Anthropic keys start with "sk-ant-"
-                if !key.starts_with("sk-ant-") {
-                    eprintln!("[warn] ANTHROPIC_API_KEY does not start with 'sk-ant-' — verify it is correct");
+                Err(_) if base_url.is_some() => String::new(),
+                Err(_) => {
+                    return Err(format!(
+                        "{var} not set. Export it or pass via environment."
+                    )
+                    .into())
                 }
-                key
-            }
-            Provider::Mock => String::new(),
+            },
         };
 
         Ok(TokenInterceptor {
@@ -577,7 +731,26 @@ impl TokenInterceptor {
             stream_start_instant: None,
             timeout_secs: None,
             pending_ws: String::new(),
+            base_url,
         })
+    }
+
+    /// Send requests to `url` instead of the provider's default API base.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        let url = url.into();
+        self.base_url = if url.trim().is_empty() { None } else { Some(url) };
+        self
+    }
+
+    /// Use this API key instead of the one read from the environment.
+    pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = key.into();
+        self
+    }
+
+    /// The streaming endpoint this interceptor will call.
+    pub fn endpoint_url(&self) -> String {
+        self.provider.endpoint_url(self.base_url.as_deref())
     }
 
     /// Set the intercept rate (0.0–1.0).  Clamped to [0.0, 1.0].
@@ -822,9 +995,11 @@ impl TokenInterceptor {
         };
 
         match self.provider {
-            Provider::Openai => self.stream_openai(&effective_prompt).await?,
             Provider::Anthropic => self.stream_anthropic(&effective_prompt).await?,
             Provider::Mock => self.stream_mock(&effective_prompt).await?,
+            Provider::Openai | Provider::Ollama | Provider::Openrouter | Provider::Gemini => {
+                self.stream_openai(&effective_prompt).await?
+            }
         }
 
         if self.web_tx.is_none() && !self.json_stream {
@@ -849,22 +1024,32 @@ impl TokenInterceptor {
             role: "user".to_string(),
             content: prompt.to_string(),
         });
+        let wants_logprobs = self.provider.requests_logprobs();
         let request = OpenAIChatRequest {
             model: self.model.clone(),
             messages,
             stream: true,
             temperature: 0.7,
-            logprobs: true,
-            top_logprobs: self.top_logprobs,
+            logprobs: wants_logprobs.then_some(true),
+            top_logprobs: wants_logprobs.then_some(self.top_logprobs),
         };
 
-        let req = self
+        let label = provider_label(&self.provider);
+        let mut builder = self
             .client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .post(self.endpoint_url())
             .header("Content-Type", "application/json")
-            .json(&request)
-            .build()?;
+            .header("Accept", "text/event-stream");
+        if !self.api_key.is_empty() {
+            builder = builder.header("Authorization", format!("Bearer {}", self.api_key));
+        }
+        if self.provider == Provider::Openrouter {
+            // Optional attribution headers OpenRouter shows on its dashboard.
+            builder = builder
+                .header("HTTP-Referer", "https://every-other-token.vercel.app/")
+                .header("X-Title", "every-other-token");
+        }
+        let req = builder.json(&request).build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
         let response = execute_with_retry(&self.client, req, self.max_retries)
@@ -872,69 +1057,69 @@ impl TokenInterceptor {
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("OpenAI API error: {}", error_text).into());
+            return Err(format!("{label} API error ({status}): {error_text}").into());
         }
 
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
+        let mut events = response.bytes_stream().eventsource();
         let mut dropped_chunks: usize = 0;
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            // Reject invalid UTF-8 rather than silently replacing bytes (#4).
-            let chunk_str = match std::str::from_utf8(&chunk) {
-                Ok(s) => s.to_string(),
-                Err(e) => {
-                    tracing::warn!(error = %e, "invalid UTF-8 in OpenAI stream chunk — skipping");
-                    continue;
-                }
+        while let Some(event) = events.next().await {
+            let data = match sse_data(event)? {
+                Some(d) => d,
+                None => continue,
             };
-            buffer.push_str(&chunk_str);
-
-            while let Some(line_end) = buffer.find('\n') {
-                let line = buffer[..line_end].trim().to_string();
-                buffer.drain(..=line_end);
-
-                if line.starts_with("data: ") && line != "data: [DONE]" {
-                    let json_str = line.strip_prefix("data: ").unwrap_or(&line);
-                    match serde_json::from_str::<OpenAIChunk>(json_str) {
-                        Ok(parsed) => {
-                            if let Some(choice) = parsed.choices.first() {
-                                if let Some(content) = &choice.delta.content {
-                                    // Extract logprob data from the first API token in this chunk
-                                    let (log_prob, top_alts) = choice
-                                        .logprobs
-                                        .as_ref()
-                                        .and_then(|lp| lp.content.first())
-                                        .map(|lc| {
-                                            let alts = lc
-                                                .top_logprobs
-                                                .iter()
-                                                .map(|t| TokenAlternative {
-                                                    token: t.token.clone(),
-                                                    probability: t.logprob.exp().clamp(0.0, 1.0),
-                                                })
-                                                .collect::<Vec<_>>();
-                                            (Some(lc.logprob), alts)
-                                        })
-                                        .unwrap_or((None, vec![]));
-                                    self.process_content_logprob(content, log_prob, top_alts);
-                                    if self.pending_delay_ms > 0 {
-                                        tokio::time::sleep(std::time::Duration::from_millis(
-                                            self.pending_delay_ms,
-                                        ))
-                                        .await;
-                                        self.pending_delay_ms = 0;
-                                    }
-                                }
+            if data == "[DONE]" {
+                break;
+            }
+            match serde_json::from_str::<OpenAIChunk>(&data) {
+                Ok(parsed) => {
+                    if let Some(choice) = parsed.choices.first() {
+                        if let Some(content) = &choice.delta.content {
+                            if content.is_empty() {
+                                continue;
                             }
-                        }
-                        Err(_) => {
-                            tracing::warn!(line = %json_str, "failed to parse SSE chunk; skipping");
-                            dropped_chunks += 1;
+                            // Extract logprob data from the first API token in this chunk
+                            let (log_prob, top_alts) = choice
+                                .logprobs
+                                .as_ref()
+                                .and_then(|lp| lp.content.first())
+                                .map(|lc| {
+                                    let alts = lc
+                                        .top_logprobs
+                                        .iter()
+                                        .map(|t| TokenAlternative {
+                                            token: t.token.clone(),
+                                            probability: t.logprob.exp().clamp(0.0, 1.0),
+                                        })
+                                        .collect::<Vec<_>>();
+                                    (Some(lc.logprob), alts)
+                                })
+                                .unwrap_or((None, vec![]));
+                            // Servers that send no logprobs (Gemini, most local
+                            // servers) fall back to the inter-token timing
+                            // estimate, the same proxy the Anthropic stream uses.
+                            let log_prob = match log_prob {
+                                Some(lp) => Some(lp),
+                                None if self.provider != Provider::Openai => {
+                                    self.timing_logprob()
+                                }
+                                None => None,
+                            };
+                            self.process_content_logprob(content, log_prob, top_alts);
+                            self.flush_pending_delay().await;
                         }
                     }
+                }
+                Err(_) => {
+                    // OpenAI-compatible servers report mid-stream failures as
+                    // a data line holding an "error" object. Surface it.
+                    if let Some(msg) = stream_error_message(&data) {
+                        return Err(format!("{label} stream error: {msg}").into());
+                    }
+                    tracing::warn!(line = %data, "failed to parse SSE chunk; skipping");
+                    dropped_chunks += 1;
                 }
             }
         }
@@ -946,20 +1131,41 @@ impl TokenInterceptor {
         Ok(())
     }
 
+    /// Confidence proxy from inter-token latency, for streams with no logprobs.
+    ///
+    /// Tokens arriving under 50 ms after the previous one map to about 0.9,
+    /// over 500 ms to 0.1. Returned in log space so it feeds the same path as
+    /// a real logprob. The first token has no gap to measure and gets `None`.
+    fn timing_logprob(&mut self) -> Option<f32> {
+        let now = std::time::Instant::now();
+        let timing_confidence = self.last_token_instant.map(|last| {
+            let delta_ms = now.duration_since(last).as_millis() as f64;
+            ((1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1) as f32
+        });
+        self.last_token_instant = Some(now);
+        timing_confidence.map(|c| c.ln().max(-10.0))
+    }
+
+    /// Await the delay requested by a `delay:N` transform, if any.
+    async fn flush_pending_delay(&mut self) {
+        if self.pending_delay_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(self.pending_delay_ms)).await;
+            self.pending_delay_ms = 0;
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Anthropic streaming
     // -----------------------------------------------------------------------
 
     async fn stream_anthropic(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Anthropic's streaming API does not expose logprobs (#8).
-        // confidence/perplexity fields will be None for every token in this
-        // stream. Cross-provider perplexity comparisons require normalisation
+        // Confidence comes from the inter-token timing proxy instead.
+        // Cross-provider perplexity comparisons require normalisation
         // because the models operate over different vocabulary sizes (#20).
-        tracing::debug!(
-            "Anthropic stream: logprobs unavailable; confidence/perplexity will be None"
-        );
+        tracing::debug!("Anthropic stream: logprobs unavailable; using timing proxy");
         if self.web_tx.is_none() {
-            eprintln!("[info] Anthropic does not provide logprobs — confidence metrics will be unavailable for this run");
+            eprintln!("[info] Anthropic does not provide logprobs, so confidence is estimated from token timing for this run");
         }
 
         let request = AnthropicRequest {
@@ -974,14 +1180,16 @@ impl TokenInterceptor {
             system: self.system_prompt.clone(),
         };
 
-        let req = self
+        let mut builder = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
+            .post(self.endpoint_url())
             .header("anthropic-version", providers::ANTHROPIC_API_VERSION)
             .header("Content-Type", "application/json")
-            .json(&request)
-            .build()?;
+            .header("Accept", "text/event-stream");
+        if !self.api_key.is_empty() {
+            builder = builder.header("x-api-key", &self.api_key);
+        }
+        let req = builder.json(&request).build()?;
 
         // Retry on 429 / 5xx with exponential back-off (#5).
         let response = execute_with_retry(&self.client, req, self.max_retries)
@@ -989,71 +1197,39 @@ impl TokenInterceptor {
             .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await?;
-            return Err(format!("Anthropic API error: {}", error_text).into());
+            return Err(format!("Anthropic API error ({status}): {error_text}").into());
         }
 
-        let mut stream = response.bytes_stream();
-        let mut buffer = String::new();
+        let mut events = response.bytes_stream().eventsource();
         let mut dropped_chunks: usize = 0;
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            // Reject invalid UTF-8 rather than silently replacing bytes (#4).
-            let chunk_str = match std::str::from_utf8(&chunk) {
-                Ok(s) => s.to_string(),
-                Err(e) => {
-                    tracing::warn!(error = %e, "invalid UTF-8 in Anthropic stream chunk — skipping");
-                    continue;
-                }
+        while let Some(event) = events.next().await {
+            let data = match sse_data(event)? {
+                Some(d) => d,
+                None => continue,
             };
-            buffer.push_str(&chunk_str);
-
-            while let Some(line_end) = buffer.find('\n') {
-                let line = buffer[..line_end].trim().to_string();
-                buffer.drain(..=line_end);
-
-                if line.starts_with("data: ") {
-                    let json_str = line.strip_prefix("data: ").unwrap_or(&line);
-                    match serde_json::from_str::<AnthropicStreamEvent>(json_str) {
-                        Ok(event) => {
-                            if event.event_type == "content_block_delta" {
-                                if let Some(delta) = &event.delta {
-                                    if let Some(text) = &delta.text {
-                                        // Estimate confidence from inter-token latency for Anthropic
-                                        // Fast tokens (< 50ms) → high confidence proxy; slow tokens → lower
-                                        let now = std::time::Instant::now();
-                                        let timing_confidence = if let Some(last) =
-                                            self.last_token_instant
-                                        {
-                                            let delta_ms = now.duration_since(last).as_millis() as f64;
-                                            // Normalize: tokens arriving in < 50ms get confidence ~0.9, > 500ms → ~0.1
-                                            let conf = (1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1;
-                                            Some(conf as f32)
-                                        } else {
-                                            None
-                                        };
-                                        self.last_token_instant = Some(now);
-                                        // Convert timing_confidence to a log_prob approximation if available
-                                        let timing_logprob =
-                                            timing_confidence.map(|c| c.ln().max(-10.0));
-                                        self.process_content_logprob(text, timing_logprob, vec![]);
-                                        if self.pending_delay_ms > 0 {
-                                            tokio::time::sleep(std::time::Duration::from_millis(
-                                                self.pending_delay_ms,
-                                            ))
-                                            .await;
-                                            self.pending_delay_ms = 0;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            tracing::warn!(line = %json_str, "failed to parse SSE chunk; skipping");
-                            dropped_chunks += 1;
+            match serde_json::from_str::<AnthropicStreamEvent>(&data) {
+                Ok(event) => match event.event_type.as_str() {
+                    "content_block_delta" => {
+                        if let Some(text) = event.delta.as_ref().and_then(|d| d.text.as_ref()) {
+                            let timing_logprob = self.timing_logprob();
+                            self.process_content_logprob(text, timing_logprob, vec![]);
+                            self.flush_pending_delay().await;
                         }
                     }
+                    "message_stop" => break,
+                    "error" => {
+                        let msg = stream_error_message(&data)
+                            .unwrap_or_else(|| "unknown error".to_string());
+                        return Err(format!("Anthropic stream error: {msg}").into());
+                    }
+                    _ => {}
+                },
+                Err(_) => {
+                    tracing::warn!(line = %data, "failed to parse SSE chunk; skipping");
+                    dropped_chunks += 1;
                 }
             }
         }
@@ -1686,6 +1862,7 @@ mod tests {
             stream_start_instant: None,
             timeout_secs: None,
             pending_ws: String::new(),
+            base_url: None,
         }
     }
 
@@ -2692,6 +2869,7 @@ mod research_tests {
             stream_start_instant: None,
             timeout_secs: None,
             pending_ws: String::new(),
+            base_url: None,
         }
     }
 
@@ -3038,29 +3216,37 @@ mod research_tests {
         assert_eq!(with_timeout.timeout_secs, Some(120));
     }
 
-    // -- Item 2: dropped SSE chunk counter --
-    fn count_dropped_sse_chunks_test(lines: &[&str]) -> usize {
-        lines.iter().filter(|line| {
-            if line.starts_with("data: ") && **line != "data: [DONE]" {
-                let json_str = line.strip_prefix("data: ").unwrap_or(line);
-                serde_json::from_str::<serde_json::Value>(json_str).is_err()
-            } else {
-                false
-            }
-        }).count()
+    // -- SSE helpers (framing itself is parsed by eventsource-stream) --
+    #[test]
+    fn test_stream_error_message_object_form() {
+        let msg = stream_error_message(r#"{"error":{"type":"overloaded_error","message":"Overloaded"}}"#);
+        assert_eq!(msg.as_deref(), Some("Overloaded"));
     }
 
     #[test]
-    fn test_dropped_chunk_counter_increments() {
-        let lines = vec![
-            "data: {\"valid\": true}",
-            "data: not-valid-json",
-            "data: also-bad",
-            "data: {\"ok\": 1}",
-            "data: [DONE]",
+    fn test_stream_error_message_string_form() {
+        assert_eq!(stream_error_message(r#"{"error":"model not found"}"#).as_deref(), Some("model not found"));
+    }
+
+    #[test]
+    fn test_stream_error_message_ignores_normal_chunks() {
+        assert!(stream_error_message(r#"{"choices":[]}"#).is_none());
+        assert!(stream_error_message("not json").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_eventsource_stream_handles_split_utf8_and_crlf() {
+        use eventsource_stream::Eventsource;
+        // "é" is 0xC3 0xA9; split it across two chunks, with CRLF framing.
+        let chunks: Vec<Result<Vec<u8>, std::io::Error>> = vec![
+            Ok(b"data: caf\xC3".to_vec()),
+            Ok(b"\xA9\r\n\r\ndata:[DONE]\r\n\r\n".to_vec()),
         ];
-        let dropped = count_dropped_sse_chunks_test(&lines);
-        assert_eq!(dropped, 2);
+        let mut events = futures_util::stream::iter(chunks).eventsource();
+        let first = sse_data(events.next().await.unwrap()).unwrap();
+        let second = sse_data(events.next().await.unwrap()).unwrap();
+        assert_eq!(first.as_deref(), Some("café"));
+        assert_eq!(second.as_deref(), Some("[DONE]"));
     }
 
     // -- Item 3 & 19: circuit breaker helpers --
