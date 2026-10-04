@@ -638,6 +638,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     interceptor.max_retries = args.max_retries;
     interceptor.min_confidence = args.min_confidence;
     interceptor.anthropic_max_tokens = args.anthropic_max_tokens;
+    interceptor.local_max_tokens = args.local_max_tokens;
+    if args.attribute && interceptor.provider != every_other_token::providers::Provider::Local {
+        return Err("--attribute needs --provider local: hosted APIs cannot re-score a fixed reply".into());
+    }
+    interceptor.attribute = args.attribute;
     if args.timeout > 0 {
         interceptor = interceptor.with_timeout(args.timeout);
     }

@@ -1,6 +1,6 @@
 [package]
 name = "every-other-token"
-version = "4.4.0"
+version = "5.0.0"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Matthew Busel"]
@@ -47,6 +47,11 @@ toml = "0.8"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 httparse = "1.8"
 
+[package.metadata.docs.rs]
+# Document the in-process model API (`local_model`) with its feature badge.
+features = ["local"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = []
 sqlite-log = []
@@ -60,6 +65,10 @@ evolution    = ["self-tune", "intelligence"]
 self-improving = ["self-tune", "self-modify", "intelligence", "evolution"]
 # HelixRouter HTTP bridge — polls /api/stats and pushes /api/config patches
 helix-bridge = ["self-tune"]
+# --provider local: run a small model (default SmolLM2-135M-Instruct, 269 MB,
+# downloaded once) in-process with candle for exact per-token logprobs and
+# --attribute (occlusion attribution). Not available on wasm.
+local = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:tokenizers"]
 # Redis-backed persistence for agent memory and snapshot registry
 redis-backing = ["self-modify", "dep:redis"]
 
@@ -71,6 +80,12 @@ optional = true
 # ratatui: the --tui full-screen view (crossterm backend; not built for wasm)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ratatui = { version = "0.30", features = ["unstable-rendered-line-info"] }
+# local: a model running in-process (candle), for exact logprobs and real
+# occlusion attribution with no API key. Llama-architecture checkpoints.
+candle-core = { version = "0.11", optional = true }
+candle-nn = { version = "0.11", optional = true }
+candle-transformers = { version = "0.11", optional = true }
+tokenizers = { version = "0.23", default-features = false, features = ["onig", "esaxx_fast"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }

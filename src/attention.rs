@@ -4,6 +4,12 @@
 //! computing a logit-attribution score: the difference in log-probability
 //! between a full-context forward pass and a masked-context forward pass.
 //!
+//! This module does the arithmetic on log-probabilities you supply; it does
+//! not call a model. To get those log-probabilities for real (one masked
+//! forward pass per context word, scoring the same reply), use
+//! `local_model::LocalModel::occlusion` (feature `local`), or
+//! `every-other-token --provider local --attribute` on the command line.
+//!
 //! ## Method
 //!
 //! For each generated token `g` at position `i`:
@@ -257,11 +263,16 @@ impl CausalAttentionTracer {
         matrix
     }
 
-    /// Approximate attribution using only logprob differences from a single
-    /// forward pass (no masking required).  Less accurate but zero-overhead.
+    /// Spread each generated token's surprise (`|logprob|`) over the context
+    /// positions with a fixed recency weighting.
     ///
-    /// Assigns attribution proportional to the absolute logprob of each
-    /// generated token, distributed evenly across context positions.
+    /// This does **not** measure attribution: the weights depend only on
+    /// position, never on what the context says, so every context gets the
+    /// same pattern. Kept for compatibility.
+    #[deprecated(
+        since = "5.0.0",
+        note = "position-only weighting, not attribution; use local_model::LocalModel::occlusion (feature `local`) for real masked-pass attribution"
+    )]
     pub fn approximate_from_logprobs(
         &self,
         context_tokens: Vec<String>,
@@ -304,6 +315,7 @@ impl CausalAttentionTracer {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

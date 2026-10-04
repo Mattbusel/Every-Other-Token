@@ -18,6 +18,8 @@ fn test_args(port: u16) -> Args {
     args.model = "mock-fixture-v1".to_string();
     args.provider = Provider::Mock;
     args.web = true;
+    // Never open a browser from a test run: serve() opens one by default.
+    args.no_open = true;
     args.port = port;
     args.top_logprobs = 0;
     args

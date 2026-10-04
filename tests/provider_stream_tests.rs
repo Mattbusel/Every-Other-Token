@@ -208,7 +208,7 @@ async fn openai_stream_with_system_prompt_sends_system_message() {
 }
 
 #[tokio::test]
-async fn ollama_needs_no_key_and_falls_back_to_timing_confidence() {
+async fn ollama_needs_no_key_and_shows_no_confidence_without_logprobs() {
     let parts = vec![
         format!("data: {}\n\n", openai_chunk("one", None)).into_bytes(),
         format!("data: {}\n\n", openai_chunk(" two", None)).into_bytes(),
@@ -220,8 +220,9 @@ async fn ollama_needs_no_key_and_falls_back_to_timing_confidence() {
     i.intercept_stream("count").await.expect("stream ok");
     let events = drain(&mut rx);
     assert_eq!(joined_original(&events), "one two three");
-    // First token has no previous gap to time; later ones get the estimate.
-    assert!(events.last().unwrap().confidence.is_some());
+    // The server sent no logprobs, so no confidence is invented (it used to
+    // be estimated from network timing, which says nothing about the model).
+    assert!(events.iter().all(|e| e.confidence.is_none()));
 
     let req = seen.lock().unwrap()[0].clone();
     assert_eq!(header(&req, "authorization"), None, "Ollama gets no auth header");

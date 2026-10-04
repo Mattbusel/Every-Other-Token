@@ -87,6 +87,35 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 
 <img src="assets/web-ui.png" width="100%" alt="every-other-token web UI in split view: original token stream on the left, transformed stream on the right, each token underlined by its confidence">
 
+## Exact probabilities with no API key: `--provider local`
+
+Hosted APIs either send no token probabilities (Anthropic, Gemini) or cannot tell you which words of your prompt mattered. A model running inside the tool can do both. Build with the `local` feature and it downloads SmolLM2-135M-Instruct once (269 MB, to your cache folder) and runs it on the CPU with [candle](https://github.com/huggingface/candle):
+
+```sh
+cargo install every-other-token --features local
+every-other-token "Reply with only the city name. Capital of France?" --provider local --attribute
+```
+
+Real output:
+
+```text
+The latipac of ecnarF is siraP.
+How much the reply depended on each prompt word (drop in total log-probability when the word is removed):
+    Reply   +1.432  #########
+     with   +1.108  #######
+     only   +1.875  ############
+      the   +0.357  ##
+     city   +3.499  ######################
+    name.   +0.932  ######
+  Capital   +3.229  #####################
+       of   +0.857  #####
+  France?   +4.689  ##############################
+```
+
+Every token carries its exact log-probability and the model's real top-5 alternatives, in the terminal, `--tui`, the web UI and every export. `--attribute` removes each prompt word, re-scores the same reply, and reports how much its probability fell (occlusion attribution). `--model` takes another Llama-architecture model from the Hugging Face Hub, `--seed N` samples instead of greedy decoding.
+
+Providers that return no probabilities (Anthropic, Gemini, many local servers) show no confidence rather than a made-up one.
+
 ## Use it in 3 steps
 
 1. **Get it.** Use the Linux one-liner or the Windows .exe above (or `cargo install`).

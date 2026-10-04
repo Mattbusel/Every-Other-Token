@@ -43,8 +43,9 @@ pub struct Args {
     #[arg(default_value = "gpt-3.5-turbo")]
     pub model: String,
 
-    /// LLM provider: openai, anthropic, ollama (local), openrouter, gemini,
-    /// or mock (no API key needed)
+    /// LLM provider: openai, anthropic, ollama (local server), openrouter,
+    /// gemini, mock (no API key needed), or local (a model running inside
+    /// this program, exact probabilities; needs the `local` feature)
     #[arg(long, value_enum, default_value = "openai")]
     pub provider: Provider,
 
@@ -259,6 +260,16 @@ pub struct Args {
     #[arg(long)]
     pub json_schema: bool,
 
+    /// With --provider local: after the reply, show how much it depended on
+    /// each prompt word, measured by removing the word and re-scoring the
+    /// same reply with the model (occlusion attribution).
+    #[arg(long)]
+    pub attribute: bool,
+
+    /// Longest reply --provider local generates, in tokens.
+    #[arg(long, default_value_t = 256)]
+    pub local_max_tokens: usize,
+
     /// List known models for a provider: "openai", "anthropic", or "all".
     #[arg(long)]
     pub list_models: Option<String>,
@@ -394,7 +405,7 @@ pub fn validate_model(provider: &Provider, model: &str) {
         Provider::Openai => KNOWN_OPENAI_MODELS,
         Provider::Anthropic => KNOWN_ANTHROPIC_MODELS,
         // Ollama, OpenRouter and Gemini host too many models to list.
-        Provider::Ollama | Provider::Openrouter | Provider::Gemini | Provider::Mock => return,
+        Provider::Ollama | Provider::Openrouter | Provider::Gemini | Provider::Mock | Provider::Local => return,
     };
     if !known.contains(&model) {
         eprintln!(

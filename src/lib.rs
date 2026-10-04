@@ -43,7 +43,8 @@
 //!
 //! | Module | Description |
 //! |--------|-------------|
-//! | [`attention`] | Causal attention tracer — attribution matrix showing which context tokens caused each generated token |
+//! | [`attention`] | Attribution matrix arithmetic over full and masked-context logprobs (feed it from `local_model`) |
+//! | `local_model` | Feature `local`: a model running in-process (candle, SmolLM2 by default) with exact per-token logprobs and real occlusion attribution |
 //! | [`entropy`] | Prompt entropy analyzer — Shannon entropy, perplexity estimation, repetition detection, multi-turn timeline |
 //! | [`fingerprint`] | Model fingerprinting — statistical signatures for blind A/B testing and model identification |
 //! | [`hallucination`] | Hallucination detector — identifies perplexity spikes and confident-but-fragile token positions |
@@ -70,6 +71,8 @@
 //! cargo run -- "Explain recursion" --research --runs 20 --output results.json
 //! ```
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod adaptive;
 pub mod attribution;
 pub mod batch;
@@ -91,6 +94,10 @@ pub mod research;
 pub mod semantic_heatmap;
 pub mod store;
 pub mod attention;
+/// A model running in-process (candle): exact logprobs and real occlusion attribution.
+#[cfg(all(feature = "local", not(target_arch = "wasm32")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "local")))]
+pub mod local_model;
 pub mod entropy;
 pub mod fingerprint;
 pub mod hallucination;
@@ -336,6 +343,14 @@ pub struct TokenInterceptor {
     /// Per-session RNG used for Noise/Chaos transforms.  Seeded from entropy
     /// unless a fixed seed is provided via `with_seed()`.
     rng: StdRng,
+    /// Seed from `with_seed()`. `--provider local` decodes greedily without
+    /// one, and samples reproducibly (temperature 0.8) with one.
+    pub local_seed: Option<u64>,
+    /// Longest reply `--provider local` generates, in model tokens.
+    pub local_max_tokens: usize,
+    /// After a `--provider local` reply, print occlusion attribution: how
+    /// much the reply depended on each prompt word (`--attribute`).
+    pub attribute: bool,
     /// Optional replay recorder — records each emitted TokenEvent.
     pub recorder: Option<crate::replay::Recorder>,
     /// When true, print one JSON line per token instead of colored text.
@@ -345,8 +360,6 @@ pub struct TokenInterceptor {
     /// Minimum confidence threshold for transform gating. When set, only tokens
     /// with confidence at or below this value are transformed.
     pub min_confidence: Option<f64>,
-    /// Timestamp of the last received token, used for timing-based confidence proxy.
-    last_token_instant: Option<std::time::Instant>,
     /// Maximum retry attempts for API calls on 429/5xx (configurable via --max-retries).
     pub max_retries: u32,
     /// Maximum tokens in the Anthropic response (configurable via --anthropic-max-tokens).
@@ -589,6 +602,7 @@ fn provider_label(p: &Provider) -> &'static str {
         Provider::Openrouter => "OpenRouter",
         Provider::Gemini => "Gemini",
         Provider::Mock => "Mock",
+        Provider::Local => "Local model",
     }
 }
 
@@ -721,11 +735,13 @@ impl TokenInterceptor {
             rate: 0.5,
             top_logprobs: 5,
             rng: StdRng::from_entropy(),
+            local_seed: None,
+            local_max_tokens: 256,
+            attribute: false,
             recorder: None,
             json_stream: false,
             pending_delay_ms: 0,
             min_confidence: None,
-            last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
             stream_start_instant: None,
@@ -763,6 +779,7 @@ impl TokenInterceptor {
     /// Seed the internal RNG for reproducible Noise/Chaos output.
     pub fn with_seed(mut self, seed: u64) -> Self {
         self.rng = StdRng::seed_from_u64(seed);
+        self.local_seed = Some(seed);
         self
     }
 
@@ -997,7 +1014,11 @@ impl TokenInterceptor {
         match self.provider {
             Provider::Anthropic => self.stream_anthropic(&effective_prompt).await?,
             Provider::Mock => self.stream_mock(&effective_prompt).await?,
+            Provider::Local => self.stream_local(&effective_prompt).await?,
             Provider::Openai | Provider::Ollama | Provider::Openrouter | Provider::Gemini => {
+                if self.provider == Provider::Gemini && self.web_tx.is_none() && !self.json_stream {
+                    eprintln!("[info] Gemini's OpenAI-compatible API does not return token probabilities, so no confidence is shown. For real per-token probabilities use --provider openai, or --provider local (no API key).");
+                }
                 self.stream_openai(&effective_prompt).await?
             }
         }
@@ -1098,15 +1119,9 @@ impl TokenInterceptor {
                                 })
                                 .unwrap_or((None, vec![]));
                             // Servers that send no logprobs (Gemini, most local
-                            // servers) fall back to the inter-token timing
-                            // estimate, the same proxy the Anthropic stream uses.
-                            let log_prob = match log_prob {
-                                Some(lp) => Some(lp),
-                                None if self.provider != Provider::Openai => {
-                                    self.timing_logprob()
-                                }
-                                None => None,
-                            };
+                            // servers) get no confidence: an estimate from
+                            // network timing says nothing about the model and
+                            // would pollute exports and research statistics.
                             self.process_content_logprob(content, log_prob, top_alts);
                             self.flush_pending_delay().await;
                         }
@@ -1131,21 +1146,6 @@ impl TokenInterceptor {
         Ok(())
     }
 
-    /// Confidence proxy from inter-token latency, for streams with no logprobs.
-    ///
-    /// Tokens arriving under 50 ms after the previous one map to about 0.9,
-    /// over 500 ms to 0.1. Returned in log space so it feeds the same path as
-    /// a real logprob. The first token has no gap to measure and gets `None`.
-    fn timing_logprob(&mut self) -> Option<f32> {
-        let now = std::time::Instant::now();
-        let timing_confidence = self.last_token_instant.map(|last| {
-            let delta_ms = now.duration_since(last).as_millis() as f64;
-            ((1.0 - (delta_ms / 500.0).min(1.0)) * 0.8 + 0.1) as f32
-        });
-        self.last_token_instant = Some(now);
-        timing_confidence.map(|c| c.ln().max(-10.0))
-    }
-
     /// Await the delay requested by a `delay:N` transform, if any.
     async fn flush_pending_delay(&mut self) {
         if self.pending_delay_ms > 0 {
@@ -1159,13 +1159,13 @@ impl TokenInterceptor {
     // -----------------------------------------------------------------------
 
     async fn stream_anthropic(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // Anthropic's streaming API does not expose logprobs (#8).
-        // Confidence comes from the inter-token timing proxy instead.
+        // Anthropic's streaming API does not expose logprobs (#8), so tokens
+        // carry no confidence.
         // Cross-provider perplexity comparisons require normalisation
         // because the models operate over different vocabulary sizes (#20).
-        tracing::debug!("Anthropic stream: logprobs unavailable; using timing proxy");
-        if self.web_tx.is_none() {
-            eprintln!("[info] Anthropic does not provide logprobs, so confidence is estimated from token timing for this run");
+        tracing::debug!("Anthropic stream: logprobs unavailable");
+        if self.web_tx.is_none() && !self.json_stream {
+            eprintln!("[info] Anthropic does not return token probabilities, so no confidence is shown. For real per-token probabilities use --provider openai, or --provider local (no API key).");
         }
 
         let request = AnthropicRequest {
@@ -1214,8 +1214,8 @@ impl TokenInterceptor {
                 Ok(event) => match event.event_type.as_str() {
                     "content_block_delta" => {
                         if let Some(text) = event.delta.as_ref().and_then(|d| d.text.as_ref()) {
-                            let timing_logprob = self.timing_logprob();
-                            self.process_content_logprob(text, timing_logprob, vec![]);
+                            // Anthropic sends no token probabilities.
+                            self.process_content_logprob(text, None, vec![]);
                             self.flush_pending_delay().await;
                         }
                     }
@@ -1244,6 +1244,53 @@ impl TokenInterceptor {
     // -----------------------------------------------------------------------
     // Mock streaming (no network call — replays a canned fixture)
     // -----------------------------------------------------------------------
+
+    /// `--provider local`: generate with the in-process model and feed each
+    /// token, with its exact log-probability and the model's real top
+    /// alternatives, through the same path as the API providers.
+    #[cfg(all(feature = "local", not(target_arch = "wasm32")))]
+    async fn stream_local(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let model = cached_local_model(&self.model).await?;
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (temperature, seed) = match self.local_seed {
+            Some(seed) => (0.8, seed),
+            None => (0.0, 0),
+        };
+        let max_tokens = self.local_max_tokens;
+        let generator = std::sync::Arc::clone(&model);
+        let owned_prompt = prompt.to_string();
+        let handle = tokio::task::spawn_blocking(move || {
+            generator.generate(&owned_prompt, max_tokens, temperature, seed, |t| {
+                let _ = tx.send(t.clone());
+            })
+        });
+        while let Some(token) = rx.recv().await {
+            let alternatives = token
+                .alternatives
+                .iter()
+                .map(|(text, probability)| TokenAlternative {
+                    token: text.clone(),
+                    probability: *probability,
+                })
+                .collect();
+            self.process_content_logprob(&token.text, Some(token.logprob), alternatives);
+        }
+        let reply = handle.await??;
+        if self.attribute {
+            let owned_prompt = prompt.to_string();
+            let occlusion = tokio::task::spawn_blocking(move || model.occlusion(&owned_prompt, &reply)).await??;
+            print_attribution(&occlusion);
+        }
+        Ok(())
+    }
+
+    /// Without the `local` feature: explain how to get it.
+    #[cfg(not(all(feature = "local", not(target_arch = "wasm32"))))]
+    async fn stream_local(&mut self, _prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Err("--provider local needs a build with the `local` feature: \
+             cargo install every-other-token --features local"
+            .into())
+    }
 
     async fn stream_mock(&mut self, prompt: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Canned fixture: realistic token stream with logprob data.
@@ -1824,6 +1871,45 @@ pub async fn run_research_headless(
     })
 }
 
+/// Loaded local models by repository, so the web UI and repeated runs do not
+/// reload the weights for every request.
+#[cfg(all(feature = "local", not(target_arch = "wasm32")))]
+static LOCAL_MODELS: once_cell::sync::Lazy<
+    tokio::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<local_model::LocalModel>>>,
+> = once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(all(feature = "local", not(target_arch = "wasm32")))]
+async fn cached_local_model(
+    repo: &str,
+) -> Result<std::sync::Arc<local_model::LocalModel>, local_model::LocalModelError> {
+    let mut models = LOCAL_MODELS.lock().await;
+    if let Some(model) = models.get(repo) {
+        return Ok(std::sync::Arc::clone(model));
+    }
+    let model = std::sync::Arc::new(local_model::LocalModel::load(repo).await?);
+    models.insert(repo.to_string(), std::sync::Arc::clone(&model));
+    Ok(model)
+}
+
+/// Print `--attribute` output: each prompt word with how many nats the whole
+/// reply's log-probability fell when that word was removed, as a bar.
+#[cfg(all(feature = "local", not(target_arch = "wasm32")))]
+fn print_attribution(occlusion: &local_model::Occlusion) {
+    let totals = occlusion.word_totals();
+    let max = totals.iter().cloned().fold(0.0_f32, f32::max).max(1e-6);
+    let width = occlusion.words.iter().map(|w| w.chars().count()).max().unwrap_or(4);
+    println!();
+    println!("How much the reply depended on each prompt word (drop in total log-probability when the word is removed):");
+    for (word, total) in occlusion.words.iter().zip(&totals) {
+        let bar = if *total > 0.0 {
+            "#".repeat(((total / max) * 30.0).round() as usize)
+        } else {
+            String::new()
+        };
+        println!("  {word:>width$}  {total:+7.3}  {bar}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1851,12 +1937,17 @@ mod tests {
             dedup: None,
             rate: 0.5,
             rng: StdRng::seed_from_u64(42),
+
+            local_seed: None,
+
+            local_max_tokens: 256,
+
+            attribute: false,
             top_logprobs: 5,
             recorder: None,
             json_stream: false,
             pending_delay_ms: 0,
             min_confidence: None,
-            last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
             stream_start_instant: None,
@@ -2858,12 +2949,17 @@ mod research_tests {
             dedup: None,
             rate: 0.5,
             rng: StdRng::seed_from_u64(42),
+
+            local_seed: None,
+
+            local_max_tokens: 256,
+
+            attribute: false,
             top_logprobs: 5,
             recorder: None,
             json_stream: false,
             pending_delay_ms: 0,
             min_confidence: None,
-            last_token_instant: None,
             max_retries: 3,
             anthropic_max_tokens: 4096,
             stream_start_instant: None,

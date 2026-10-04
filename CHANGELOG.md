@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.0.0] - 2026-10-04
+
+4.4.0 was tagged in git but never published to crates.io; its changes ship in this release too.
+
+### Added
+- **A model running inside the program: `--provider local`.** Build with `--features local` and the tool downloads a small open model once (SmolLM2-135M-Instruct, 269 MB, into your cache directory) and runs it on the CPU with [candle](https://github.com/huggingface/candle). Every token comes with its exact log-probability and the model's real top-5 alternatives, with no API key and no server. `--model` takes another Llama-architecture model from the Hugging Face Hub; `--seed N` samples reproducibly instead of greedy decoding; `--local-max-tokens` caps the reply.
+- **What did the answer depend on? `--attribute`.** With `--provider local`, after the reply the tool removes each prompt word in turn, re-scores the same reply with the model, and shows how much the reply's probability fell (occlusion attribution). For "Reply with only the city name. Capital of France?" it ranks France (+4.69 nats), city (+3.50) and Capital (+3.23) far above "the" (+0.36). Library: `local_model::LocalModel::{generate, score, occlusion}`.
+- Tests against the real model (`tests/local_model_tests.rs`, ignored by default because of the download), including one that checks re-scoring the model's own answer reproduces exactly the log-probabilities it reported while generating.
+
+### Changed (breaking)
+- **No invented confidence.** Providers that return no token probabilities (Anthropic, Gemini, local servers without logprobs) used to get a "confidence" made up from the time between network chunks, shown and exported exactly like a real probability. Those tokens now have no confidence, and the terminal says why and how to get real numbers (`--provider openai` or `--provider local`).
+- `Provider` has a `Local` variant and is `#[non_exhaustive]`.
+- `attention::AttentionTracer::approximate_from_logprobs` is deprecated: its weights depend only on position, so it never measured attribution. The module docs now say it does arithmetic on log-probabilities you supply and point to `LocalModel::occlusion` for the real thing.
+
+### Fixed
+- Running the test suite opened a browser tab: the web server test did not pass `--no-open`.
+
 ## [4.4.0] - 2026-10-02
 
 This release swaps several hand-written parts for well-known open-source crates and adds what they made easy.
@@ -27,7 +44,7 @@ This release swaps several hand-written parts for well-known open-source crates 
 
 ### Changed
 - `--export-logprobs` CSV: a missing logprob is now an empty cell instead of `-inf`, and four columns are added at the end (`original`, `transformed`, `confidence`, `perplexity`). The first five columns are unchanged.
-- Providers without logprobs other than Anthropic (Gemini, most local servers) get the same token-timing confidence estimate Anthropic already used.
+- Providers without logprobs other than Anthropic (Gemini, most local servers) get the same token-timing confidence estimate Anthropic already used. (Removed again in 5.0.0: that estimate does not reflect the model.)
 - `--max-retries 0` used to skip the request entirely; it now makes one attempt.
 - Minimum Rust version is now 1.89 (the previous 1.81 was already out of date: the locked dependencies needed 1.85). The prebuilt downloads are not affected.
 - HTTPS is still rustls only; none of the new crates bring in OpenSSL.

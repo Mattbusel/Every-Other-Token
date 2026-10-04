@@ -76,8 +76,15 @@ test:
   variables:
     CARGO_HOME: "${CI_PROJECT_DIR}/.cargo-home"
     CARGO_TARGET_DIR: "${CI_PROJECT_DIR}/target"
+    # No debug info or incremental files: keeps the job inside the runner's disk.
+    CARGO_PROFILE_DEV_DEBUG: "0"
+    CARGO_PROFILE_TEST_DEBUG: "0"
+    CARGO_INCREMENTAL: "0"
   cache:
     key: cargo-test
     paths: [target/, .cargo-home/]
   script:
     - cargo test --locked
+    # The in-process model: compile it and run its unit tests. The tests
+    # against the real model are #[ignore]d (269 MB download).
+    - cargo test --locked --features local --lib local_model

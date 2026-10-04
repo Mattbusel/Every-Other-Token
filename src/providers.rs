@@ -138,6 +138,7 @@ pub struct OpenAIChunkLogprobs {
 /// Used as a CLI argument (`--provider`) and throughout the codebase to branch
 /// on provider-specific behaviour.
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[non_exhaustive]
 pub enum Provider {
     /// OpenAI Chat Completions API (GPT-3.5, GPT-4, etc.).
     Openai,
@@ -151,17 +152,25 @@ pub enum Provider {
     Gemini,
     /// In-process mock provider for tests and dry-run mode.
     Mock,
+    /// A small model running in-process (feature `local`): exact per-token
+    /// log-probabilities with no API key or server, and `--attribute`.
+    Local,
 }
+
+/// The Hugging Face model `--provider local` runs unless `--model` names
+/// another Llama-architecture checkpoint.
+pub const DEFAULT_LOCAL_MODEL: &str = "HuggingFaceTB/SmolLM2-135M-Instruct";
 
 impl Provider {
     /// Every provider, in the order shown in help text and the web UI.
-    pub const ALL: [Provider; 6] = [
+    pub const ALL: [Provider; 7] = [
         Provider::Openai,
         Provider::Anthropic,
         Provider::Ollama,
         Provider::Openrouter,
         Provider::Gemini,
         Provider::Mock,
+        Provider::Local,
     ];
 
     /// Base URL of the provider's API, without the endpoint path.
@@ -175,7 +184,7 @@ impl Provider {
             Provider::Ollama => "http://localhost:11434/v1",
             Provider::Openrouter => "https://openrouter.ai/api/v1",
             Provider::Gemini => "https://generativelanguage.googleapis.com/v1beta/openai",
-            Provider::Mock => "",
+            Provider::Mock | Provider::Local => "",
         }
     }
 
@@ -189,20 +198,20 @@ impl Provider {
             .trim_end_matches('/');
         match self {
             Provider::Anthropic => format!("{base}/messages"),
-            Provider::Mock => String::new(),
+            Provider::Mock | Provider::Local => String::new(),
             _ => format!("{base}/chat/completions"),
         }
     }
 
     /// Environment variable holding the API key, or `None` when the provider
-    /// needs no key (Ollama runs locally, Mock runs in-process).
+    /// needs no key (Ollama runs locally, Mock and Local run in-process).
     pub fn api_key_env(&self) -> Option<&'static str> {
         match self {
             Provider::Openai => Some("OPENAI_API_KEY"),
             Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
             Provider::Openrouter => Some("OPENROUTER_API_KEY"),
             Provider::Gemini => Some("GEMINI_API_KEY"),
-            Provider::Ollama | Provider::Mock => None,
+            Provider::Ollama | Provider::Mock | Provider::Local => None,
         }
     }
 
@@ -215,6 +224,7 @@ impl Provider {
             Provider::Openrouter => "openai/gpt-4o-mini",
             Provider::Gemini => "gemini-2.5-flash",
             Provider::Mock => "mock-fixture-v1",
+            Provider::Local => DEFAULT_LOCAL_MODEL,
         }
     }
 
@@ -230,7 +240,7 @@ impl Provider {
     ///
     /// Gemini's OpenAI-compatible endpoint does not document the fields, so
     /// they are left out there rather than risk a rejected request; its
-    /// tokens fall back to the timing-based confidence estimate.
+    /// tokens carry no confidence.
     pub fn requests_logprobs(&self) -> bool {
         matches!(
             self,
@@ -248,6 +258,7 @@ impl std::fmt::Display for Provider {
             Provider::Openrouter => "openrouter",
             Provider::Gemini => "gemini",
             Provider::Mock => "mock",
+            Provider::Local => "local",
         };
         f.write_str(s)
     }
@@ -264,7 +275,7 @@ impl std::str::FromStr for Provider {
             .cloned()
             .ok_or_else(|| {
                 format!(
-                    "unknown provider: '{}' (expected openai, anthropic, ollama, openrouter, gemini, or mock)",
+                    "unknown provider: '{}' (expected openai, anthropic, ollama, openrouter, gemini, mock, or local)",
                     s
                 )
             })
