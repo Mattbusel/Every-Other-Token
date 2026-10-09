@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>every-other-token playground</title>
-<meta name="description" content="Type a prompt and watch every other word of the reply come out reversed, uppercased, scrambled or deleted as it streams. Runs in your browser, no API key needed.">
-<link rel="canonical" href="https://every-other-token.vercel.app/play/">
+<title>every-other-token 플레이그라운드: LLM 토큰과 신뢰도를 브라우저에서 무료로 확인</title>
+<meta name="description" content="프롬프트를 입력하면 LLM 답변이 스트리밍되는 동안 한 단어 걸러 하나씩 뒤집히고, 대문자로 바뀌고, 섞이고, 지워지는 모습을 볼 수 있습니다. 브라우저에서 실행되며 API 키가 필요 없습니다.">
+<link rel="canonical" href="https://every-other-token.vercel.app/ko/play/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="every-other-token">
-<meta property="og:url" content="https://every-other-token.vercel.app/play/">
-<meta property="og:title" content="every-other-token playground: every other word, reversed">
-<meta property="og:description" content="Type a prompt, watch every other token of the reply get rewritten live, with a confidence bar under each one. No API key needed.">
+<meta property="og:url" content="https://every-other-token.vercel.app/ko/play/">
+<meta property="og:title" content="every-other-token 플레이그라운드: 한 단어 걸러 하나씩 거꾸로">
+<meta property="og:description" content="프롬프트를 입력하면 답변의 토큰이 한 개 걸러 하나씩 실시간으로 바뀌고, 각 토큰 아래에 신뢰도 막대가 표시됩니다. API 키가 필요 없습니다.">
 <meta property="og:image" content="https://every-other-token.vercel.app/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://every-other-token.vercel.app/assets/og.png">
@@ -83,7 +83,7 @@ input[type=range]{accent-color:var(--xf);width:160px;max-width:100%}
 .fine{font-size:12.5px;color:var(--faint);max-width:90ch}
 .fine b{color:var(--dim);font-weight:500}
 .stage{padding:22px 18px 18px;min-height:220px;line-height:1;display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:12px 0}
-.stage:empty::before{content:"Press run to stream a reply.";color:var(--faint);font-size:14px}
+.stage:empty::before{content:"실행을 누르면 답변이 스트리밍됩니다.";color:var(--faint);font-size:14px}
 .tk{display:inline-flex;flex-direction:column;align-items:stretch;gap:5px;animation:tin .16s ease-out both;cursor:default}
 .tk .t{font-size:clamp(16px,2vw,20px);line-height:1.25;padding:3px 5px;border-radius:5px;white-space:pre;border:1px solid transparent}
 .tk.x .t{color:var(--xf);font-weight:700;background:var(--xfbg);border-color:color-mix(in srgb,var(--xf) 35%,transparent)}
@@ -140,91 +140,91 @@ footer a{color:var(--dim)}
 <link rel="alternate" hreflang="ja" href="https://every-other-token.vercel.app/ja/play/">
 <link rel="alternate" hreflang="ko" href="https://every-other-token.vercel.app/ko/play/">
 <link rel="alternate" hreflang="x-default" href="https://every-other-token.vercel.app/play/">
-<meta property="og:locale" content="en_US">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
 <meta property="og:locale:alternate" content="zh_CN">
 <meta property="og:locale:alternate" content="ja_JP">
-<meta property="og:locale:alternate" content="ko_KR">
 <style>.i18n-switch{display:block!important;position:relative;z-index:40;box-sizing:border-box;max-width:1200px;margin:0 auto!important;padding:6px 16px 0!important;border:0!important;background:none!important;text-align:right!important;font:13px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif!important;letter-spacing:normal!important;text-transform:none!important;opacity:.8}.i18n-switch a,.i18n-switch span{display:inline!important;margin:0!important;padding:0!important;font:inherit!important;color:inherit!important;background:none!important;border:0!important}.i18n-switch a{text-decoration:underline!important;text-underline-offset:2px}.i18n-switch [aria-current]{font-weight:600!important}</style>
 <!-- /i18n -->
 </head>
 <body>
-<div class="i18n-switch" role="navigation" aria-label="Language"><span aria-current="true">English</span> | <a href="../zh/play/" hreflang="zh-CN" lang="zh-CN">简体中文</a> | <a href="../ja/play/" hreflang="ja" lang="ja">日本語</a> | <a href="../ko/play/" hreflang="ko" lang="ko">한국어</a></div>
+<div class="i18n-switch" role="navigation" aria-label="언어"><a href="../../play/" hreflang="en" lang="en">English</a> | <a href="../../zh/play/" hreflang="zh-CN" lang="zh-CN">简体中文</a> | <a href="../../ja/play/" hreflang="ja" lang="ja">日本語</a> | <span aria-current="true">한국어</span></div>
 <div class="wrap">
 <nav>
   <a class="logo" href="../">every-<span class="x">other</span>-token</a>
   <div class="links">
-    <a href="../">about</a>
-    <a class="opt" href="#real">install</a>
+    <a href="../">소개</a>
+    <a class="opt" href="#real">설치</a>
     <a href="https://gitlab.com/mattbusel/Every-Other-Token">gitlab</a>
-    <button class="theme" id="theme" type="button" aria-label="Switch light or dark theme">theme</button>
+    <button class="theme" id="theme" type="button" aria-label="라이트 또는 다크 테마 전환">테마</button>
   </div>
 </nav>
 
 <header>
-  <h1>Every other word,<br><span class="x">sdrawkcab</span>.</h1>
-  <p class="lead">Type a prompt. A reply streams in token by token, and <b>every other token</b> gets rewritten on the way: reversed, uppercased, scrambled, deleted. The bar under each token is how sure the model was about it. Runs entirely in your browser; no API key needed.</p>
+  <h1>한 단어 걸러 하나씩,<br><span class="x">로꾸거</span>.</h1>
+  <p class="lead">프롬프트를 입력하세요. 답변이 토큰 단위로 스트리밍되면서 <b>한 토큰 걸러 하나씩</b> 다시 쓰입니다. 뒤집기, 대문자화, 섞기, 삭제. 각 토큰 아래 막대는 모델이 그 토큰을 얼마나 확신했는지를 나타냅니다. 모든 것이 브라우저 안에서 실행되며 API 키가 필요 없습니다.</p>
 </header>
 
 <div class="panel" id="panel">
   <div class="ctl">
-    <label class="sr" for="prompt">Prompt</label>
-    <textarea id="prompt" maxlength="500" spellcheck="true" placeholder="Ask it anything">Why is the sky blue?</textarea>
+    <label class="sr" for="prompt">프롬프트</label>
+    <textarea id="prompt" maxlength="500" spellcheck="true" placeholder="무엇이든 물어보세요">Why is the sky blue?</textarea>
 
-    <div class="row" role="group" aria-label="Transform">
-      <span class="lbl">transform</span>
+    <div class="row" role="group" aria-label="변환">
+      <span class="lbl">변환</span>
       <span id="tabs" class="row"></span>
     </div>
 
     <div class="row">
-      <span class="lbl">then</span>
-      <label class="sr" for="chain">Chain a second transform</label>
-      <select id="chain"><option value="">nothing (single transform)</option></select>
-      <span class="lbl" style="min-width:auto;width:auto;margin-left:10px">rate</span>
-      <label class="sr" for="rate">Fraction of tokens rewritten</label>
+      <span class="lbl">그다음</span>
+      <label class="sr" for="chain">두 번째 변환 연결</label>
+      <select id="chain"><option value="">없음(변환 하나만)</option></select>
+      <span class="lbl" style="min-width:auto;width:auto;margin-left:10px">비율</span>
+      <label class="sr" for="rate">다시 쓸 토큰 비율</label>
       <input type="range" id="rate" min="0" max="1" step="0.05" value="0.5">
       <span class="rateval" id="rateval">0.50</span>
     </div>
 
     <div class="row">
-      <span class="lbl">source</span>
-      <span class="seg" role="group" aria-label="Source">
-        <button type="button" data-src="mock" aria-pressed="true">mock model</button>
-        <button type="button" data-src="live" aria-pressed="false">my OpenAI key</button>
+      <span class="lbl">소스</span>
+      <span class="seg" role="group" aria-label="소스">
+        <button type="button" data-src="mock" aria-pressed="true">mock 모델</button>
+        <button type="button" data-src="live" aria-pressed="false">내 OpenAI 키</button>
       </span>
-      <label class="sr" for="reply">Mock reply style</label>
-      <select id="reply" title="Mock reply">
-        <option value="varied">varied replies</option>
-        <option value="fixture">CLI fixture (same as --provider mock)</option>
+      <label class="sr" for="reply">mock 답변 스타일</label>
+      <select id="reply" title="mock 답변">
+        <option value="varied">다양한 답변</option>
+        <option value="fixture">CLI 고정 응답(--provider mock과 동일)</option>
       </select>
     </div>
 
     <div class="live" id="live">
       <div class="row">
-        <label class="lbl" for="key">API key</label>
+        <label class="lbl" for="key">API 키</label>
         <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="sk-...">
       </div>
       <div class="row">
-        <label class="lbl" for="base">base URL</label>
+        <label class="lbl" for="base">기본 URL</label>
         <input type="url" id="base" spellcheck="false" value="https://api.openai.com/v1">
       </div>
       <div class="row">
-        <label class="lbl" for="model">model</label>
+        <label class="lbl" for="model">모델</label>
         <input type="text" id="model" spellcheck="false" value="gpt-4o-mini">
       </div>
       <div class="row">
-        <label style="font-size:13px;color:var(--dim);display:flex;gap:8px;align-items:center"><input type="checkbox" id="remember"> remember the key on this device</label>
-        <button class="btn" type="button" id="forget">forget key</button>
+        <label style="font-size:13px;color:var(--dim);display:flex;gap:8px;align-items:center"><input type="checkbox" id="remember"> 이 기기에 키 저장</label>
+        <button class="btn" type="button" id="forget">키 삭제</button>
       </div>
-      <p class="fine"><b>Your key stays in this browser.</b> The page calls the provider directly from your browser; there is no server of ours in between. It is only saved if you tick "remember" (browser storage on this device). Any OpenAI-compatible endpoint works if it streams <code>/chat/completions</code> with <code>logprobs</code> and allows browser (CORS) requests; if it does not, the request is blocked and this page will tell you.</p>
+      <p class="fine"><b>키는 이 브라우저 안에만 머뭅니다.</b> 이 페이지는 브라우저에서 프로바이더를 직접 호출하며, 중간에 저희 서버는 없습니다. "저장"에 체크했을 때만 저장됩니다(이 기기의 브라우저 저장소). <code>logprobs</code>와 함께 <code>/chat/completions</code>를 스트리밍하고 브라우저(CORS) 요청을 허용하는 엔드포인트라면 OpenAI 호환 엔드포인트 어디든 쓸 수 있습니다. 허용하지 않으면 요청이 차단되고 이 페이지가 알려 줍니다.</p>
     </div>
 
     <div class="row">
-      <button class="go" id="run" type="button">run</button>
-      <button class="btn" id="stop" type="button" disabled>stop</button>
-      <button class="btn" id="reroll" type="button" title="Different random choices for noise, chaos and scramble, and a different mock reply">reroll</button>
+      <button class="go" id="run" type="button">실행</button>
+      <button class="btn" id="stop" type="button" disabled>중지</button>
+      <button class="btn" id="reroll" type="button" title="noise, chaos, scramble의 무작위 선택과 mock 답변을 바꿉니다">다시 뽑기</button>
       <span class="push"></span>
-      <button class="btn" id="copytext" type="button">copy text</button>
-      <button class="btn" id="copylink" type="button">copy link</button>
+      <button class="btn" id="copytext" type="button">텍스트 복사</button>
+      <button class="btn" id="copylink" type="button">링크 복사</button>
     </div>
   </div>
 
@@ -232,31 +232,31 @@ footer a{color:var(--dim)}
   <div class="plain" id="plain"></div>
   <div class="status" id="status" role="status"></div>
   <div class="pfoot">
-    <span><b id="n">0</b> tokens</span>
-    <span><b id="nx">0</b> rewritten</span>
-    <span>mean confidence <b id="mc">-</b></span>
-    <span id="conftag">confidence: simulated</span>
-    <span class="legend"><span><i class="sw" style="background:var(--hi)"></i>sure &ge;70%</span><span><i class="sw" style="background:var(--mid)"></i>unsure</span><span><i class="sw" style="background:var(--lo)"></i>guessing &lt;40%</span></span>
+    <span>토큰 <b id="n">0</b>개</span>
+    <span>다시 쓴 토큰 <b id="nx">0</b>개</span>
+    <span>평균 신뢰도 <b id="mc">-</b></span>
+    <span id="conftag">신뢰도: 시뮬레이션</span>
+    <span class="legend"><span><i class="sw" style="background:var(--hi)"></i>확신 &ge;70%</span><span><i class="sw" style="background:var(--mid)"></i>불확실</span><span><i class="sw" style="background:var(--lo)"></i>추측 &lt;40%</span></span>
   </div>
 </div>
-<p class="note" id="mocknote">The mock model is a small script in this page, not a real model: it picks a canned reply and makes up plausible confidence numbers, so the bars are <b>simulated</b>. The token rules are the real ones: same tokenizer, same transforms, and the same rate rule as the Rust tool (token <i>i</i> is rewritten when <code>floor((i+1)*rate) &gt; floor(i*rate)</code>, so 0.5 means every other token). Hover a token for its numbers; click or tap a rewritten one to flip it back to the original. With your own key, the tokens and the confidence are the model's own.</p>
+<p class="note" id="mocknote">mock 모델은 실제 모델이 아니라 이 페이지 안의 작은 스크립트입니다. 미리 준비된 답변을 고르고 그럴듯한 신뢰도 수치를 만들어 내므로 막대는 <b>시뮬레이션</b>입니다. 하지만 토큰 규칙은 진짜입니다. Rust 도구와 똑같은 토크나이저, 똑같은 변환, 똑같은 rate 규칙을 씁니다(<code>floor((i+1)*rate) &gt; floor(i*rate)</code>일 때 토큰 <i>i</i>를 다시 쓰므로 0.5는 한 토큰 걸러 하나). 토큰에 마우스를 올리면 수치를 볼 수 있고, 다시 쓴 토큰을 클릭하거나 탭하면 원래 토큰으로 되돌릴 수 있습니다. 내 키를 쓰면 토큰과 신뢰도는 모두 모델 자신의 것입니다.</p>
 
 <section class="real" id="real">
-  <h2>Get the real tool</h2>
-  <p><b>every-other-token</b> does this to a live OpenAI or Anthropic stream in your terminal or its own web UI, with perplexity, top alternatives, confidence gating, provider diffs, JSON and CSV export. Free and open source (MIT), written in Rust.</p>
-  <div class="cmd"><div class="hd"><span>install</span><button class="btn" type="button" id="copyinstall" data-copy="cargo install --locked every-other-token">copy</button></div>
+  <h2>정식 도구 받기</h2>
+  <p><b>every-other-token</b>은 이 작업을 실제 OpenAI나 Anthropic 스트림에 대해 터미널이나 자체 웹 UI에서 수행하며, 퍼플렉서티, 상위 후보, 신뢰도 기반 게이팅, 프로바이더 비교, JSON 및 CSV 내보내기를 제공합니다. Rust로 작성된 무료 오픈소스(MIT)입니다.</p>
+  <div class="cmd"><div class="hd"><span>설치</span><button class="btn" type="button" id="copyinstall" data-copy="cargo install --locked every-other-token">복사</button></div>
 <pre><span class="p">$ </span>cargo install --locked every-other-token
 <span class="p">$ </span>every-other-token "Why is the sky blue?" --provider mock</pre></div>
   <div class="dl">
-    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
-    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token">Source on GitLab</a>
-    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">All releases</a>
+    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Windows용 다운로드 (.exe)</a>
+    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token">GitLab 소스 코드</a>
+    <a class="alt" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">모든 릴리스</a>
   </div>
 </section>
 
 <footer>
-  <span>every-other-token playground &middot; MIT &middot; by <a href="https://gitlab.com/mattbusel">Matthew Busel</a></span>
-  <span><a href="../">project site</a> &middot; <a href="https://gitlab.com/mattbusel/Every-Other-Token">gitlab.com/mattbusel/Every-Other-Token</a></span>
+  <span>every-other-token 플레이그라운드 &middot; MIT &middot; 만든 사람 <a href="https://gitlab.com/mattbusel">Matthew Busel</a></span>
+  <span><a href="../">프로젝트 사이트</a> &middot; <a href="https://gitlab.com/mattbusel/Every-Other-Token">gitlab.com/mattbusel/Every-Other-Token</a></span>
 </footer>
 </div>
 
@@ -454,7 +454,7 @@ function syncUi() {
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === state.t)));
   $('#chain').value = state.chain;
   $('#rate').value = String(state.rate);
-  $('#rateval').textContent = state.rate.toFixed(2) + (state.rate === 0.5 ? ' (every other)' : '');
+  $('#rateval').textContent = state.rate.toFixed(2) + (state.rate === 0.5 ? ' (한 개 걸러)' : '');
   document.querySelectorAll('[data-src]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.src === state.src)));
   $('#live').classList.toggle('on', state.src === 'live');
   $('#reply').style.display = state.src === 'mock' ? '' : 'none';
@@ -480,10 +480,10 @@ function makeChip(ev) {
   lab.textContent = ev.conf != null ? Math.round(ev.conf * 100) + '%' : '';
   el.append(t, bar, lab);
   let tip = '#' + ev.index + '  "' + ev.original + '"';
-  if (ev.transformed) tip += ev.deleted ? '  deleted' : '  -> "' + ev.text + '" (' + ev.label + ')';
-  if (ev.conf != null) tip += '\nconfidence ' + (ev.conf * 100).toFixed(1) + '%, perplexity ' + ev.ppl.toFixed(2);
-  else tip += '\nno confidence for this token';
-  if (ev.top && ev.top.length) tip += '\nalternatives: ' + ev.top.map(a => JSON.stringify(a.token) + ' ' + Math.round(a.p * 100) + '%').join(', ');
+  if (ev.transformed) tip += ev.deleted ? '  삭제됨' : '  -> "' + ev.text + '" (' + ev.label + ')';
+  if (ev.conf != null) tip += '\n신뢰도 ' + (ev.conf * 100).toFixed(1) + '%, 퍼플렉서티 ' + ev.ppl.toFixed(2);
+  else tip += '\n이 토큰에는 신뢰도 정보가 없습니다';
+  if (ev.top && ev.top.length) tip += '\n후보: ' + ev.top.map(a => JSON.stringify(a.token) + ' ' + Math.round(a.p * 100) + '%').join(', ');
   el.title = tip;
   el.tabIndex = 0;
   if (ev.transformed && !ev.deleted) {
@@ -503,7 +503,7 @@ function start() {
   plainText = '';
   let n = 0, nx = 0, sum = 0, nc = 0;
   $('#n').textContent = '0'; $('#nx').textContent = '0'; $('#mc').textContent = '-';
-  $('#conftag').textContent = state.src === 'mock' ? 'confidence: simulated' : 'confidence: from the model';
+  $('#conftag').textContent = state.src === 'mock' ? '신뢰도: 시뮬레이션' : '신뢰도: 모델 제공';
   const caret = document.createElement('span'); caret.className = 'caret'; caret.setAttribute('aria-hidden', 'true');
   stage.appendChild(caret);
   const rng = mulberry32(fnv(prompt + '|' + transformLabel() + '|' + state.rate + '|' + state.seed));
@@ -554,7 +554,7 @@ async function runLive(prompt, ic, my, done) {
   const key = $('#key').value.trim();
   const base = ($('#base').value.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = $('#model').value.trim() || 'gpt-4o-mini';
-  if (!key) { done('Paste an API key first, or switch back to the mock model.', true); return; }
+  if (!key) { done('먼저 API 키를 붙여 넣거나 mock 모델로 돌아가세요.', true); return; }
   if ($('#remember').checked) { store.set('eot.key', key); store.set('eot.base', base); store.set('eot.model', model); }
   const ctrl = new AbortController(); my.abort = ctrl;
   let res;
@@ -566,12 +566,12 @@ async function runLive(prompt, ic, my, done) {
     });
   } catch (e) {
     if (my.cancelled) return;
-    done('The request did not go through. The most likely reason is that ' + base + ' does not allow calls from a web page (CORS), or the URL is wrong. The real tool has no such limit: it calls the API from your machine.', true);
+    done('요청이 전달되지 않았습니다. ' + base + '에서 웹 페이지의 호출을 허용하지 않거나(CORS) URL이 잘못되었을 가능성이 가장 큽니다. 정식 도구에는 이런 제한이 없습니다. 내 컴퓨터에서 API를 호출하기 때문입니다.', true);
     return;
   }
   if (!res.ok) {
     let body = ''; try { body = (await res.text()).slice(0, 300); } catch (_) { }
-    let msg = 'The provider answered ' + res.status + '.';
+    let msg = '프로바이더가 ' + res.status + ' 응답을 보냈습니다.';
     try { const j = JSON.parse(body); if (j.error && j.error.message) msg += ' ' + j.error.message; } catch (_) { if (body) msg += ' ' + body; }
     done(msg, true); return;
   }
@@ -596,10 +596,10 @@ async function runLive(prompt, ic, my, done) {
     }
   } catch (e) {
     if (my.cancelled) return;
-    done('The stream broke off: ' + (e && e.message ? e.message : e), true); return;
+    done('스트림이 끊겼습니다: ' + (e && e.message ? e.message : e), true); return;
   }
   if (my.cancelled) return;
-  done(sawLogprobs ? '' : 'This endpoint did not send logprobs, so there is no confidence to show. The transforms still ran.');
+  done(sawLogprobs ? '' : '이 엔드포인트가 logprobs를 보내지 않아 표시할 신뢰도가 없습니다. 변환은 그대로 실행되었습니다.');
 }
 
 // Share link: prompt, transform, rate, reply style and seed live in the URL hash.
@@ -632,12 +632,12 @@ async function copy(btn, text, label) {
   try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {
     try { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (_) { }
   }
-  btn.textContent = ok ? 'copied' : 'copy failed'; btn.classList.toggle('ok', ok);
+  btn.textContent = ok ? '복사됨' : '복사 실패'; btn.classList.toggle('ok', ok);
   setTimeout(() => { btn.textContent = label; btn.classList.remove('ok'); }, 1400);
 }
 
 $('#run').addEventListener('click', start);
-$('#stop').addEventListener('click', () => { if (run) { run.cancelled = true; if (run.abort) run.abort.abort(); run.done && run.done('Stopped.'); } });
+$('#stop').addEventListener('click', () => { if (run) { run.cancelled = true; if (run.abort) run.abort.abort(); run.done && run.done('중지했습니다.'); } });
 $('#reroll').addEventListener('click', () => { state.seed = 1 + Math.floor(Math.random() * 99999); start(); });
 $('#chain').addEventListener('change', e => { state.chain = e.target.value; syncUi(); start(); });
 $('#rate').addEventListener('input', e => { state.rate = parseFloat(e.target.value); syncUi(); });
@@ -645,11 +645,11 @@ $('#rate').addEventListener('change', () => start());
 $('#reply').addEventListener('change', e => { state.reply = e.target.value; start(); });
 document.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => { state.src = b.dataset.src; syncUi(); if (state.src === 'mock') start(); else { $('#key').focus(); setStatus(''); } }));
 $('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); } });
-$('#copylink').addEventListener('click', e => { const u = linkFor(); history.replaceState(null, '', u); copy(e.currentTarget, u, 'copy link'); });
-$('#copytext').addEventListener('click', e => copy(e.currentTarget, plainText.trim(), 'copy text'));
-$('#copyinstall').addEventListener('click', e => copy(e.currentTarget, e.currentTarget.dataset.copy, 'copy'));
+$('#copylink').addEventListener('click', e => { const u = linkFor(); history.replaceState(null, '', u); copy(e.currentTarget, u, '링크 복사'); });
+$('#copytext').addEventListener('click', e => copy(e.currentTarget, plainText.trim(), '텍스트 복사'));
+$('#copyinstall').addEventListener('click', e => copy(e.currentTarget, e.currentTarget.dataset.copy, '복사'));
 $('#remember').addEventListener('change', e => { if (!e.target.checked) store.del('eot.key'); });
-$('#forget').addEventListener('click', () => { store.del('eot.key'); $('#key').value = ''; $('#remember').checked = false; setStatus('Key removed from this page and this device.'); });
+$('#forget').addEventListener('click', () => { store.del('eot.key'); $('#key').value = ''; $('#remember').checked = false; setStatus('이 페이지와 이 기기에서 키를 삭제했습니다.'); });
 $('#theme').addEventListener('click', () => {
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   const next = cur === 'light' ? 'dark' : 'light';

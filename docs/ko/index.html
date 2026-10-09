@@ -1,23 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>every-other-token: LLM token stream viewer and interceptor</title>
-<meta name="description" content="Free CLI and web UI that shows per-token confidence and perplexity of an OpenAI or Anthropic stream and rewrites tokens live. Windows .exe, no API key to try.">
-<link rel="canonical" href="https://every-other-token.vercel.app/">
+<title>every-other-token: LLM 토큰 확률과 신뢰도를 보여 주는 무료 오픈소스 도구</title>
+<meta name="description" content="OpenAI나 Anthropic LLM 스트림의 토큰별 신뢰도와 퍼플렉서티(logprobs 확률)를 보여 주고 토큰을 실시간으로 바꿔 쓰는 무료 CLI 및 웹 UI. Windows .exe 제공, API 키 없이 체험 가능.">
+<link rel="canonical" href="https://every-other-token.vercel.app/ko/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="every-other-token">
-<meta property="og:url" content="https://every-other-token.vercel.app/">
-<meta property="og:title" content="every-other-token: watch an LLM stream token by token">
-<meta property="og:description" content="See how sure the model was about every token, and rewrite every other token as it streams. OpenAI, Anthropic, or a mock with no API key.">
+<meta property="og:url" content="https://every-other-token.vercel.app/ko/">
+<meta property="og:title" content="every-other-token: LLM 출력을 토큰 단위로 지켜보기">
+<meta property="og:description" content="모델이 각 토큰을 얼마나 확신했는지 보고, 스트리밍 중에 한 토큰 걸러 하나씩 바꿔 씁니다. OpenAI, Anthropic, 또는 API 키가 필요 없는 mock 모드 지원.">
 <meta property="og:image" content="https://every-other-token.vercel.app/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="every-other-token output: every other token reversed, with a confidence bar and percentage under each token">
+<meta property="og:image:alt" content="every-other-token 출력: 한 토큰 걸러 하나씩 뒤집혀 있고, 각 토큰 아래에 신뢰도 막대와 백분율이 표시됨">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="every-other-token: watch an LLM stream token by token">
-<meta name="twitter:description" content="Per-token confidence and perplexity for OpenAI and Anthropic streams, with live token rewriting. Free, open source, Windows .exe.">
+<meta name="twitter:title" content="every-other-token: LLM 출력을 토큰 단위로 지켜보기">
+<meta name="twitter:description" content="OpenAI와 Anthropic 스트림의 토큰별 신뢰도와 퍼플렉서티를 보여 주고 토큰을 실시간으로 바꿔 씁니다. 무료 오픈소스, Windows .exe 제공.">
 <meta name="twitter:image" content="https://every-other-token.vercel.app/assets/og.png">
 <script type="application/ld+json">
 {
@@ -144,21 +144,21 @@ footer a{color:var(--dim)}
 <link rel="alternate" hreflang="ja" href="https://every-other-token.vercel.app/ja/">
 <link rel="alternate" hreflang="ko" href="https://every-other-token.vercel.app/ko/">
 <link rel="alternate" hreflang="x-default" href="https://every-other-token.vercel.app/">
-<meta property="og:locale" content="en_US">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:locale:alternate" content="en_US">
 <meta property="og:locale:alternate" content="zh_CN">
 <meta property="og:locale:alternate" content="ja_JP">
-<meta property="og:locale:alternate" content="ko_KR">
 <style>.i18n-switch{display:block!important;position:relative;z-index:40;box-sizing:border-box;max-width:1200px;margin:0 auto!important;padding:6px 16px 0!important;border:0!important;background:none!important;text-align:right!important;font:13px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif!important;letter-spacing:normal!important;text-transform:none!important;opacity:.8}.i18n-switch a,.i18n-switch span{display:inline!important;margin:0!important;padding:0!important;font:inherit!important;color:inherit!important;background:none!important;border:0!important}.i18n-switch a{text-decoration:underline!important;text-underline-offset:2px}.i18n-switch [aria-current]{font-weight:600!important}</style>
 <!-- /i18n -->
 </head>
 <body>
-<div class="i18n-switch" role="navigation" aria-label="Language"><span aria-current="true">English</span> | <a href="zh/" hreflang="zh-CN" lang="zh-CN">简体中文</a> | <a href="ja/" hreflang="ja" lang="ja">日本語</a> | <a href="ko/" hreflang="ko" lang="ko">한국어</a></div>
+<div class="i18n-switch" role="navigation" aria-label="언어"><a href="../" hreflang="en" lang="en">English</a> | <a href="../zh/" hreflang="zh-CN" lang="zh-CN">简体中文</a> | <a href="../ja/" hreflang="ja" lang="ja">日本語</a> | <span aria-current="true">한국어</span></div>
 <div class="wrap">
 <nav>
   <a class="logo" href="./">every-<span class="x">other</span>-token</a>
   <div class="links">
-    <a href="play/">playground</a>
-    <a href="#install">install</a>
+    <a href="play/">플레이그라운드</a>
+    <a href="#install">설치</a>
     <a class="opt" href="https://docs.rs/every-other-token">docs.rs</a>
     <a class="opt" href="https://crates.io/crates/every-other-token">crates.io</a>
     <a href="https://gitlab.com/mattbusel/Every-Other-Token">github</a>
@@ -166,99 +166,99 @@ footer a{color:var(--dim)}
 </nav>
 
 <header class="hero">
-  <h1>Read the stream,<br>not the <span class="x">answer</span>.</h1>
-  <p class="lead"><b>every-other-token</b> is a Rust CLI and web UI that sits on an OpenAI or Anthropic token stream as it arrives. It rewrites every other token (or any fraction), and it tells you how sure the model was about each one: confidence <code>exp(logprob)</code> and perplexity <code>exp(-logprob)</code>, per token, live.</p>
+  <h1><span class="x">답</span>이 아니라<br>스트림을 읽으세요.</h1>
+  <p class="lead"><b>every-other-token</b>은 OpenAI나 Anthropic의 토큰 스트림이 도착하는 대로 그 위에 올라타는 Rust CLI 겸 웹 UI입니다. 한 토큰 걸러 하나씩(또는 원하는 비율만큼) 다시 쓰고, 모델이 각 토큰을 얼마나 확신했는지 알려 줍니다. 신뢰도 <code>exp(logprob)</code>와 퍼플렉서티 <code>exp(-logprob)</code>를 토큰마다 실시간으로 보여 줍니다.</p>
 
   <div class="dl">
-    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Download for Windows (.exe)</a>
-    <a class="play" href="play/">Try it in your browser: type a prompt, no key</a>
+    <a class="win" href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Windows용 다운로드 (.exe)</a>
+    <a class="play" href="play/">브라우저에서 바로 체험: 프롬프트만 입력, 키 불필요</a>
     <a class="alt" href="#install">macOS, Linux, Scoop, Homebrew, Cargo</a>
   </div>
 
   <div class="player" id="player">
-    <div class="pbar" role="group" aria-label="Transform">
-      <span class="lbl">transform</span>
+    <div class="pbar" role="group" aria-label="변환">
+      <span class="lbl">변환</span>
       <button class="tab" data-t="reverse" aria-pressed="true">reverse</button>
       <button class="tab" data-t="uppercase" aria-pressed="false">uppercase</button>
       <button class="tab" data-t="mock" aria-pressed="false">mock</button>
       <button class="tab" data-t="noise" aria-pressed="false">noise</button>
       <button class="tab" data-t="delete" aria-pressed="false">delete</button>
-      <button class="replay" id="replay">replay</button>
+      <button class="replay" id="replay">다시 재생</button>
     </div>
     <div class="stage">
-      <div class="lane"><h3>what the model sent</h3><span id="orig"></span></div>
-      <div class="lane"><h3>what you see</h3><span id="shown"></span></div>
+      <div class="lane"><h3>모델이 보낸 것</h3><span id="orig"></span></div>
+      <div class="lane"><h3>내가 보는 것</h3><span id="shown"></span></div>
     </div>
     <div class="pfoot">
-      <span><b id="n">0</b> tokens</span>
-      <span><b id="nx">0</b> rewritten</span>
-      <span>mean confidence <b id="mc">-</b></span>
-      <span class="legend"><span><i class="sw" style="background:var(--hi)"></i>sure &ge;70%</span><span><i class="sw" style="background:var(--mid)"></i>unsure</span><span><i class="sw" style="background:var(--lo)"></i>guessing &lt;40%</span></span>
+      <span>토큰 <b id="n">0</b>개</span>
+      <span>다시 쓴 토큰 <b id="nx">0</b>개</span>
+      <span>평균 신뢰도 <b id="mc">-</b></span>
+      <span class="legend"><span><i class="sw" style="background:var(--hi)"></i>확신 &ge;70%</span><span><i class="sw" style="background:var(--mid)"></i>불확실</span><span><i class="sw" style="background:var(--lo)"></i>추측 &lt;40%</span></span>
     </div>
   </div>
-  <p class="note">Recorded from the real <code>/stream</code> endpoint of <code>every-other-token --web --provider mock</code>. The mock provider replays a fixed reply with fixed logprobs through the same interception pipeline a real model goes through, so it runs with no API key. Point it at OpenAI or Anthropic and the tokens and numbers are the model's own.</p>
+  <p class="note"><code>every-other-token --web --provider mock</code>의 실제 <code>/stream</code> 엔드포인트에서 녹화한 것입니다. mock 프로바이더는 고정된 답변과 고정된 logprobs를 실제 모델과 똑같은 가로채기 파이프라인에 통과시켜 재생하므로 API 키 없이 실행됩니다. OpenAI나 Anthropic에 연결하면 토큰과 수치는 모두 모델 자신의 것입니다.</p>
 </header>
 
 <section class="how" id="how-it-works">
-  <h2><span class="n">00</span>How it works</h2>
-  <p class="sub">Four stages, shown on a real run of the mock provider with the reverse transform at rate 0.5.</p>
-  <img src="img/how-it-works.svg" width="1000" height="640" alt="Diagram: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON" loading="lazy">
+  <h2><span class="n">00</span>작동 방식</h2>
+  <p class="sub">네 단계를 mock 프로바이더에 reverse 변환(rate 0.5)을 적용한 실제 실행으로 보여 줍니다.</p>
+  <img src="../img/how-it-works.svg" width="1000" height="640" alt="다이어그램: 1 Intercept가 실시간 스트림을 읽고, 2 Score가 각 토큰에 신뢰도 exp(logprob)와 퍼플렉서티 exp(-logprob)를 매기고, 3 Mutate가 홀수 번째 토큰을 뒤집고, 4 Output이 터미널, 웹 UI 또는 JSON에 'The kciuq brown xof jumps revo the yzal dog'를 표시함" loading="lazy">
   <ol>
-    <li><b>Intercept.</b> It opens the model's streaming (SSE) connection itself, so it sees each chunk the moment it arrives.</li>
-    <li><b>Score.</b> Each token gets confidence <code>exp(logprob)</code>, perplexity <code>exp(-logprob)</code> and the top alternatives.</li>
-    <li><b>Mutate.</b> Every other token by default (<code>--rate</code>), or only the ones below <code>--min-confidence</code>, goes through a transform.</li>
-    <li><b>Output.</b> Terminal, web UI, JSON lines, CSV or an HTML heatmap.</li>
+    <li><b>가로채기(Intercept).</b> 모델과의 스트리밍 연결(SSE)을 직접 열기 때문에 각 청크가 도착하는 순간 바로 볼 수 있습니다.</li>
+    <li><b>점수 매기기(Score).</b> 각 토큰에 신뢰도 <code>exp(logprob)</code>, 퍼플렉서티 <code>exp(-logprob)</code>, 상위 후보들이 붙습니다.</li>
+    <li><b>변형(Mutate).</b> 기본적으로 한 토큰 걸러 하나(<code>--rate</code>), 또는 <code>--min-confidence</code>보다 낮은 토큰에만 변환을 적용합니다.</li>
+    <li><b>출력(Output).</b> 터미널, 웹 UI, JSON Lines, CSV 또는 HTML 히트맵.</li>
   </ol>
 </section>
 
 <section id="install">
-  <h2><span class="n">01</span>Running in two minutes</h2>
-  <p class="sub">No Rust needed: <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Windows .exe</a> (double-click it and the web UI opens), <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Apple Silicon</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Intel</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-linux-x86_64.tar.gz">Linux x86_64</a>. Or <code>scoop install every-other-token</code> after <code>scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket</code>, <code>brew install mattbusel/tap/every-other-token</code>, or <code>cargo install every-other-token</code> (Rust 1.81+).</p>
+  <h2><span class="n">01</span>2분 만에 실행하기</h2>
+  <p class="sub">Rust가 없어도 됩니다: <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe">Windows .exe</a>(더블클릭하면 웹 UI가 열림), <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Apple Silicon</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">macOS Intel</a>, <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-linux-x86_64.tar.gz">Linux x86_64</a>. 또는 <code>scoop bucket add mattbusel https://gitlab.com/mattbusel/scoop-bucket</code> 후 <code>scoop install every-other-token</code>, <code>brew install mattbusel/tap/every-other-token</code>, <code>cargo install every-other-token</code>(Rust 1.81+)로도 설치할 수 있습니다.</p>
   <div class="cmds">
-    <div class="cmd"><div class="hd"><span>install</span><button class="copy" data-copy="cargo install every-other-token">copy</button></div>
+    <div class="cmd"><div class="hd"><span>설치</span><button class="copy" data-copy="cargo install every-other-token">복사</button></div>
 <pre><span class="p">$ </span>cargo install every-other-token</pre></div>
-    <div class="cmd"><div class="hd"><span>try it, no API key</span><button class="copy" data-copy="every-other-token &quot;What is consciousness?&quot; --provider mock --visual">copy</button></div>
+    <div class="cmd"><div class="hd"><span>API 키 없이 체험</span><button class="copy" data-copy="every-other-token &quot;What is consciousness?&quot; --provider mock --visual">복사</button></div>
 <pre><span class="p">$ </span>every-other-token "What is consciousness?" --provider mock --visual</pre></div>
-    <div class="cmd"><div class="hd"><span>a real model, in the browser</span><button class="copy" data-copy="export OPENAI_API_KEY=sk-...
-every-other-token --web">copy</button></div>
+    <div class="cmd"><div class="hd"><span>실제 모델을 브라우저에서</span><button class="copy" data-copy="export OPENAI_API_KEY=sk-...
+every-other-token --web">복사</button></div>
 <pre><span class="p">$ </span>export OPENAI_API_KEY=sk-...   <span class="c"># or ANTHROPIC_API_KEY with --provider anthropic</span>
 <span class="p">$ </span>every-other-token --web        <span class="c"># http://localhost:8888</span></pre></div>
   </div>
 </section>
 
 <section>
-  <h2><span class="n">02</span>In the terminal</h2>
-  <p class="sub">The stream prints as it arrives. With <code>--visual</code>, rewritten tokens are highlighted; <code>--heatmap</code> colors each token by importance instead.</p>
-  <figure class="shot"><div class="scroll"><img src="assets/terminal-visual.svg" width="957" height="438" alt="Terminal: every-other-token with the mock provider, every other word reversed and highlighted, 22 tokens streamed, 11 transformed" loading="lazy"></div><figcaption>Real output of the command above.</figcaption></figure>
+  <h2><span class="n">02</span>터미널에서</h2>
+  <p class="sub">스트림은 도착하는 대로 출력됩니다. <code>--visual</code>을 붙이면 다시 쓴 토큰이 강조되고, <code>--heatmap</code>을 쓰면 대신 각 토큰을 중요도에 따라 색칠합니다.</p>
+  <figure class="shot"><div class="scroll"><img src="../assets/terminal-visual.svg" width="957" height="438" alt="터미널: mock 프로바이더로 every-other-token 실행, 한 단어 걸러 하나씩 뒤집혀 강조됨, 22개 토큰 스트리밍, 11개 변환" loading="lazy"></div><figcaption>위 명령의 실제 출력입니다.</figcaption></figure>
 </section>
 
 <section>
-  <h2><span class="n">03</span>Every token carries its numbers</h2>
-  <p class="sub">Each intercepted token is an event with the original text, what was shown, its index, whether it was rewritten, confidence, perplexity and the top alternatives. Consume them from the library, as JSON lines with <code>--json-stream</code>, or export them to CSV, JSONL or a self-contained HTML heatmap.</p>
-  <figure class="shot"><div class="scroll"><img src="assets/terminal-table.svg" width="1060" height="772" alt="Per-token table from cargo run --example mock_stream: index, original token, shown token, confidence, perplexity" loading="lazy"></div><figcaption><code>cargo run --example mock_stream</code>, from a clone of the repo.</figcaption></figure>
+  <h2><span class="n">03</span>모든 토큰에 수치가 붙습니다</h2>
+  <p class="sub">가로챈 토큰 하나하나가 원문, 실제로 보인 텍스트, 인덱스, 다시 썼는지 여부, 신뢰도, 퍼플렉서티, 상위 후보를 담은 이벤트입니다. 라이브러리에서 바로 쓰거나, <code>--json-stream</code>으로 JSON Lines로 받거나, CSV, JSONL 또는 단독 실행되는 HTML 히트맵으로 내보낼 수 있습니다.</p>
+  <figure class="shot"><div class="scroll"><img src="../assets/terminal-table.svg" width="1060" height="772" alt="cargo run --example mock_stream의 토큰별 표: 인덱스, 원래 토큰, 표시된 토큰, 신뢰도, 퍼플렉서티" loading="lazy"></div><figcaption>저장소를 클론한 뒤 <code>cargo run --example mock_stream</code> 실행.</figcaption></figure>
 </section>
 
 <section>
-  <h2><span class="n">04</span>The web UI</h2>
-  <p class="sub"><code>--web</code> serves a single page with no build step and no external scripts. Single, split, quad (four transforms at once), OpenAI vs Anthropic diff, A/B system prompts, a research dashboard, JSON and CSV export, and collaborative rooms where several people edit tokens mid-stream.</p>
-  <figure class="shot"><div class="scroll"><img src="assets/web-ui.png" width="1280" height="600" alt="The web UI in split view: original stream on the left, transformed on the right, each token underlined by confidence, with perplexity and confidence sparklines below" loading="lazy"></div><figcaption>Split view, mock provider. The underline under each token is its confidence.</figcaption></figure>
+  <h2><span class="n">04</span>웹 UI</h2>
+  <p class="sub"><code>--web</code>은 빌드 단계도 외부 스크립트도 없는 단일 페이지를 띄웁니다. 단일, 분할, 쿼드(변환 네 개 동시 실행), OpenAI 대 Anthropic 비교, A/B 시스템 프롬프트, 연구용 대시보드, JSON 및 CSV 내보내기, 그리고 여러 사람이 스트리밍 도중 토큰을 함께 편집하는 협업 룸을 지원합니다.</p>
+  <figure class="shot"><div class="scroll"><img src="../assets/web-ui.png" width="1280" height="600" alt="분할 보기의 웹 UI: 왼쪽은 원래 스트림, 오른쪽은 변환된 스트림, 각 토큰에 신뢰도에 따른 밑줄이 있고 아래에 퍼플렉서티와 신뢰도 스파크라인이 표시됨" loading="lazy"></div><figcaption>분할 보기, mock 프로바이더. 각 토큰 아래 밑줄이 그 토큰의 신뢰도입니다.</figcaption></figure>
 </section>
 
 <section>
-  <h2><span class="n">05</span>What else is in the box</h2>
+  <h2><span class="n">05</span>그 밖의 기능</h2>
   <div class="grid">
-    <div class="cell"><h3>9 transforms, chainable</h3><p><span class="k">reverse</span>, uppercase, mock, noise, chaos, scramble, delete, synonym, <span class="k">delay:N</span>, or a chain like <code>reverse,uppercase</code>.</p></div>
-    <div class="cell"><h3>Rate, seed, gating</h3><p><code>--rate 0.3</code> spreads rewrites evenly at any fraction. <code>--seed</code> makes random transforms reproducible. <code>--min-confidence</code> only touches tokens the model was unsure of.</p></div>
-    <div class="cell"><h3>Provider diff</h3><p><code>--diff-terminal</code> streams OpenAI and Anthropic side by side and compares their confidence structure.</p></div>
-    <div class="cell"><h3>A/B system prompts</h3><p>Run two system prompts against the same user prompt, many times, and test the confidence shift with Welch's t-test (<code>--significance</code>).</p></div>
-    <div class="cell"><h3>Research mode</h3><p><code>--research --runs 20</code> runs headless and writes aggregate perplexity, confidence and vocabulary stats to JSON.</p></div>
-    <div class="cell"><h3>Record and replay</h3><p>Record any session to JSON and replay it later, for example to spot behavior changes after a model update.</p></div>
+    <div class="cell"><h3>9가지 변환, 연결 가능</h3><p><span class="k">reverse</span>, uppercase, mock, noise, chaos, scramble, delete, synonym, <span class="k">delay:N</span>, 또는 <code>reverse,uppercase</code> 같은 체인.</p></div>
+    <div class="cell"><h3>비율, 시드, 게이팅</h3><p><code>--rate 0.3</code>은 원하는 비율로 다시 쓰기를 고르게 분산합니다. <code>--seed</code>는 무작위 변환을 재현 가능하게 만듭니다. <code>--min-confidence</code>는 모델이 확신하지 못한 토큰만 건드립니다.</p></div>
+    <div class="cell"><h3>프로바이더 비교</h3><p><code>--diff-terminal</code>은 OpenAI와 Anthropic을 나란히 스트리밍하고 신뢰도 구조를 비교합니다.</p></div>
+    <div class="cell"><h3>A/B 시스템 프롬프트</h3><p>같은 사용자 프롬프트에 두 가지 시스템 프롬프트를 여러 번 실행하고, 신뢰도 변화를 Welch t-검정(<code>--significance</code>)으로 검증합니다.</p></div>
+    <div class="cell"><h3>연구 모드</h3><p><code>--research --runs 20</code>은 헤드리스로 실행되어 퍼플렉서티, 신뢰도, 어휘 통계를 집계해 JSON으로 저장합니다.</p></div>
+    <div class="cell"><h3>녹화와 재생</h3><p>어떤 세션이든 JSON으로 녹화해 두었다가 나중에 다시 재생할 수 있습니다. 예를 들어 모델 업데이트 후 동작 변화를 찾아낼 때 유용합니다.</p></div>
   </div>
 </section>
 
 <footer>
-  <span>MIT licensed. Built in Rust by <a href="https://gitlab.com/mattbusel">Matthew Busel</a>.</span>
-  <span><a href="https://gitlab.com/mattbusel/Every-Other-Token">source</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">releases</a> &nbsp; <a href="https://docs.rs/every-other-token">API docs</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/issues">issues</a></span>
+  <span>MIT 라이선스. <a href="https://gitlab.com/mattbusel">Matthew Busel</a>이 Rust로 만들었습니다.</span>
+  <span><a href="https://gitlab.com/mattbusel/Every-Other-Token">소스 코드</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases">릴리스</a> &nbsp; <a href="https://docs.rs/every-other-token">API 문서</a> &nbsp; <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/issues">이슈</a></span>
 </footer>
 </div>
 
@@ -285,12 +285,12 @@ function play(t) {
   const rows = REC[t]; let i = 0, sum = 0, nx = 0;
   const step = () => {
     const [orig, shown, x, conf, ppl] = rows[i];
-    const title = 'confidence ' + Math.round(conf * 100) + '%, perplexity ' + ppl.toFixed(2);
+    const title = '신뢰도 ' + Math.round(conf * 100) + '%, 퍼플렉서티 ' + ppl.toFixed(2);
     const so = span(orig, band(conf), title);
     if (so.dataset.ws) { o.appendChild(document.createTextNode(so.dataset.ws)); delete so.dataset.ws; }
     o.appendChild(so);
     const deleted = x && shown.trim() === '';
-    const sv = span(deleted ? orig : shown, band(conf) + (x ? (deleted ? ' del' : ' x') : ''), title + (x ? (deleted ? ', deleted' : ', rewritten') : ''));
+    const sv = span(deleted ? orig : shown, band(conf) + (x ? (deleted ? ' del' : ' x') : ''), title + (x ? (deleted ? ', 삭제됨' : ', 다시 씀') : ''));
     if (sv.dataset.ws) { v.insertBefore(document.createTextNode(sv.dataset.ws), caret); delete sv.dataset.ws; }
     v.insertBefore(sv, caret);
     sum += conf; nx += x; i++;
@@ -303,9 +303,9 @@ function play(t) {
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => play(b.dataset.t)));
 $('#replay').addEventListener('click', () => play(cur));
 document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'copied'; b.classList.add('ok'); }
-  catch (_) { b.textContent = 'select + copy'; }
-  setTimeout(() => { b.textContent = 'copy'; b.classList.remove('ok'); }, 1400);
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '복사됨'; b.classList.add('ok'); }
+  catch (_) { b.textContent = '직접 선택해 복사하세요'; }
+  setTimeout(() => { b.textContent = '복사'; b.classList.remove('ok'); }, 1400);
 }));
 const io = new IntersectionObserver(es => { if (es[0].isIntersecting) { play('reverse'); io.disconnect(); } });
 io.observe($('#player'));
