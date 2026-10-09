@@ -6,6 +6,8 @@
 
 <p align="center"><b>See how sure an AI model is about every single word it writes, and change its words while it is still writing.</b></p>
 
+<p align="center">English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a></p>
+
 <p align="center">
   <a href="https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe"><b>Download for Windows (.exe)</b></a> &nbsp;&middot;&nbsp;
   <a href="#install">Linux and macOS</a> &nbsp;&middot;&nbsp;
