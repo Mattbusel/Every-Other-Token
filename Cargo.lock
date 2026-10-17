@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "every-other-token"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "backon",
  "base64 0.22.1",

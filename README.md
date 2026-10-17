@@ -18,6 +18,8 @@
 <p align="center">
   <a href="https://crates.io/crates/every-other-token"><img src="https://img.shields.io/crates/v/every-other-token.svg?color=ff6a2b&labelColor=0c0d0b" alt="crates.io version"></a>
   <a href="https://docs.rs/every-other-token"><img src="https://img.shields.io/docsrs/every-other-token?labelColor=0c0d0b" alt="docs.rs"></a>
+  <a href="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml"><img src="https://github.com/Mattbusel/Every-Other-Token/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/MSRV-1.89-blue.svg?labelColor=0c0d0b" alt="MSRV 1.89">
 </p>
 
 **Try it in your browser, no install and no API key:** [every-other-token.vercel.app/play](https://every-other-token.vercel.app/play/). Type a prompt and watch every other token come out reversed.
@@ -141,6 +143,8 @@ Run `every-other-token --help` for every flag, with examples at the bottom.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+Source, issues and stars: [GitHub](https://github.com/Mattbusel/Every-Other-Token). Mirror and release downloads: [GitLab](https://gitlab.com/mattbusel/Every-Other-Token). More open-source Rust from the same author: [tensorust.com/open-source](https://tensorust.com/open-source/).
 
 ## Hire the author
 

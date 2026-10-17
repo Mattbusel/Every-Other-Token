@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.0.1] - 2026-10-17
+
+### Changed
+- `repository` now points at GitHub (GitLab stays as the mirror and hosts the release downloads); crates.io keywords now include `tui`. README: CI and MSRV badges. No code changes.
+
 ## [5.0.0] - 2026-10-04
 
 4.4.0 was tagged in git but never published to crates.io; its changes ship in this release too.
