@@ -1,3 +1,11 @@
+<!-- outcome-block -->
+**See exactly where an LLM's answer is fragile: change tokens mid-generation and watch the model's confidence shift position by position, OpenAI and Anthropic side by side.**
+
+**Why this over the alternatives:** Benchmarks only score the final answer. This measures what happens during generation, ships as a single binary and has 1,165 tests.
+
+**Guarantee:** if it doesn't do what this README says, [open an issue](https://github.com/Mattbusel/Every-Other-Token/issues) and I'll fix it.
+<!-- outcome-block -->
+
 <p align="center">
   <a href="https://every-other-token.vercel.app/"><img src="assets/hero.svg" width="100%" alt="every-other-token streaming a reply token by token: every other token is reversed and highlighted, with a confidence bar under each token"></a>
 </p>
