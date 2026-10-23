@@ -36,6 +36,12 @@
 
 **Who it's for:** anyone curious how language models pick their words, plus people doing LLM interpretability research, red-teaming and prompt engineering.
 
+## Free browser tools for the same problem
+
+- [Token counter for GPT, Claude and Gemini](https://tensorust.com/tools/token-counter/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): see how many tokens a prompt really costs before you stream it.
+- [LLM API cost calculator](https://tensorust.com/tools/llm-api-cost/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): turn those tokens into dollars per month for each provider.
+- [LLM JSON output: one setting dropped valid JSON from 75% to 4%](https://tensorust.com/articles/llm-json-output-repetition-penalty/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): a measured example of a sampling setting breaking output token by token, the kind of failure this tool makes visible.
+
 ## How it works
 
 <img src="docs/img/how-it-works.svg" width="100%" alt="Diagram of the four stages on a real run: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON">
