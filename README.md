@@ -1,9 +1,9 @@
 <!-- outcome-block -->
-**See exactly where an LLM's answer is fragile: change tokens mid-generation and watch the model's confidence shift position by position, OpenAI and Anthropic side by side.**
+**Change an LLM's tokens while it writes. Watch its confidence move, token by token.**
 
-**Why this over the alternatives:** Benchmarks only score the final answer. This measures what happens during generation, ships as a single binary and has 1,165 tests.
+Benchmarks score the final answer. This shows what happens during generation. One binary, 1,165 tests.
 
-**Guarantee:** if it doesn't do what this README says, [open an issue](https://github.com/Mattbusel/Every-Other-Token/issues) and I'll fix it.
+If it doesn't do what this README says, [open an issue](https://github.com/Mattbusel/Every-Other-Token/issues) and I'll fix it.
 <!-- outcome-block -->
 
 <p align="center">
@@ -12,7 +12,7 @@
 
 <h1 align="center">every-other-token</h1>
 
-<p align="center"><b>See how sure an AI model is about every single word it writes, and change its words while it is still writing.</b></p>
+<p align="center"><b>See how sure a model is about each word. Change the words while it writes.</b></p>
 
 <p align="center">English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a></p>
 
@@ -30,30 +30,30 @@
   <img src="https://img.shields.io/badge/MSRV-1.89-blue.svg?labelColor=0c0d0b" alt="MSRV 1.89">
 </p>
 
-**Try it in your browser, no install and no API key:** [every-other-token.vercel.app/play](https://every-other-token.vercel.app/play/). Type a prompt and watch every other token come out reversed.
+**Try it in your browser, no install, no key:** [every-other-token.vercel.app/play](https://every-other-token.vercel.app/play/).
 
-`every-other-token` is a free LLM token stream viewer and interceptor for the command line and the browser. It sits on the live stream from OpenAI, Anthropic, Gemini, OpenRouter or a model on your own machine (Ollama, llama.cpp, vLLM, LM Studio), shows the confidence and perplexity of each token from the logprobs, and can rewrite every other token (or any fraction) as it arrives. A built-in mock provider lets you try all of it with no API key.
+A CLI and web UI that reads the live stream from OpenAI, Anthropic, Gemini, OpenRouter or a local model (Ollama, llama.cpp, vLLM, LM Studio). It shows each token's confidence and perplexity from the logprobs. It can rewrite every other token, or any fraction, as it arrives. A mock provider runs it all with no key.
 
-**Who it's for:** anyone curious how language models pick their words, plus people doing LLM interpretability research, red-teaming and prompt engineering.
+For interpretability research, red-teaming, prompt engineering, or just seeing how models pick words.
 
-## Free browser tools for the same problem
+## Free browser tools
 
-- [Token counter for GPT, Claude and Gemini](https://tensorust.com/tools/token-counter/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): see how many tokens a prompt really costs before you stream it.
-- [LLM API cost calculator](https://tensorust.com/tools/llm-api-cost/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): turn those tokens into dollars per month for each provider.
-- [LLM JSON output: one setting dropped valid JSON from 75% to 4%](https://tensorust.com/articles/llm-json-output-repetition-penalty/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): a measured example of a sampling setting breaking output token by token, the kind of failure this tool makes visible.
+- [Token counter for GPT, Claude and Gemini](https://tensorust.com/tools/token-counter/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): what a prompt costs in tokens.
+- [LLM API cost calculator](https://tensorust.com/tools/llm-api-cost/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): tokens to dollars per month, per provider.
+- [LLM JSON output: one setting dropped valid JSON from 75% to 4%](https://tensorust.com/articles/llm-json-output-repetition-penalty/?utm_source=github&utm_medium=readme&utm_campaign=every-other-token): one sampling setting breaking output token by token.
 
 ## How it works
 
 <img src="docs/img/how-it-works.svg" width="100%" alt="Diagram of the four stages on a real run: 1 Intercept reads the live stream, 2 Score gives each token confidence exp(logprob) and perplexity exp(-logprob), 3 Mutate reverses the odd-numbered tokens, 4 Output shows 'The kciuq brown xof jumps revo the yzal dog' in the terminal, web UI or JSON">
 
-1. **Intercept.** It opens the model's streaming connection (SSE) itself, so it sees each chunk the moment it arrives.
-2. **Score.** Each token gets `confidence = exp(logprob)` and `perplexity = exp(-logprob)`, plus the top alternatives the model considered.
-3. **Mutate.** The chosen tokens (every other one by default, or only the ones the model was unsure about) go through a transform: reverse, uppercase, noise, delete, synonym and more.
-4. **Output.** You watch it in the terminal (plain, or a full-screen view with `--tui`) or the web UI, or save it as JSON lines, CSV or an HTML heatmap.
+1. **Intercept.** Opens the model's SSE stream itself and sees each chunk as it arrives.
+2. **Score.** Each token gets `confidence = exp(logprob)`, `perplexity = exp(-logprob)` and the top alternatives.
+3. **Mutate.** Picked tokens (every other one, or only unsure ones) get a transform: reverse, uppercase, noise, delete, synonym and more.
+4. **Output.** Terminal (`--tui` for full screen), web UI, or JSON lines, CSV or an HTML heatmap.
 
 ## Install
 
-**Linux** (x86_64, Ubuntu 20.04+ / Debian 11+). One line, no dependencies, installs to `~/.local/bin`:
+**Linux** (x86_64, Ubuntu 20.04+ / Debian 11+). One line. Installs to `~/.local/bin`:
 
 ```sh
 mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-linux-x86_64.tar.gz | tar xz --strip-components=1 -C ~/.local/bin --wildcards '*/every-other-token'
@@ -64,11 +64,11 @@ mkdir -p ~/.local/bin && curl -fsSL https://gitlab.com/mattbusel/Every-Other-Tok
 | **Windows** | [Download every-other-token-windows-x86_64.exe](https://gitlab.com/mattbusel/Every-Other-Token/-/releases/permalink/latest/downloads/every-other-token-windows-x86_64.exe) and run it. (Unsigned, so SmartScreen may ask: *More info*, then *Run anyway*.) |
 | **macOS, or from source** | `cargo install --locked every-other-token` |
 
-Double-click the Windows .exe and the web UI opens in your browser. Every release, with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/Every-Other-Token/-/releases).
+The Windows .exe opens the web UI. Releases with SHA-256 checksums: [Releases](https://gitlab.com/mattbusel/Every-Other-Token/-/releases).
 
 ## Examples
 
-All of these are real output from the mock provider (a fixed reply with fixed logprobs, run through the real pipeline), so you can reproduce them exactly without an API key.
+Real output from the mock provider (fixed reply, fixed logprobs, real pipeline). Reproducible with no key.
 
 **1. Reverse every other token** (the default)
 
@@ -86,7 +86,7 @@ The quick BROWN fox JUMPS over the LAZY dog. THIS is a mock response for PROMPT:
 24 tokens streamed, 11 transformed
 ```
 
-"brown" (0.46), "jumps" (0.57), "lazy" (0.41), "This" (0.54) and "prompt" (0.59) were below the line. The echoed prompt at the end carries no logprobs in the mock, so it falls back to the plain rate.
+"brown" (0.46), "jumps" (0.57), "lazy" (0.41), "This" (0.54) and "prompt" (0.59) were below the line. The echoed prompt has no logprobs in the mock, so it uses the plain rate.
 
 **3. Get the numbers as JSON, one line per token**
 
@@ -97,17 +97,17 @@ $ every-other-token "Why is the sky blue?" uppercase --provider mock --json-stre
 ...
 ```
 
-**4. Watch it full-screen in the terminal** with `every-other-token "Why is the sky blue?" --provider mock --tui`. The reply streams in colored by confidence (green sure, yellow unsure, red guessing), rewritten tokens are underlined, and side panels show running stats, a confidence sparkline and the other words the model considered for the latest token. Press `q` to quit; the reply stays in your terminal.
+**4. Watch it full-screen in the terminal** with `every-other-token "Why is the sky blue?" --provider mock --tui`. Tokens are colored by confidence (green sure, yellow unsure, red guessing). Rewritten ones are underlined. Side panels show stats, a confidence sparkline and the alternatives for the latest token. `q` quits.
 
-**5. Run it on a model on your own machine.** With [Ollama](https://ollama.com) running, `every-other-token "Why is the sky blue?" --provider ollama` streams from `llama3.2` with no API key. Any other server that speaks the OpenAI API works too: `every-other-token "Why is the sky blue?" reverse my-model --base-url http://localhost:8080/v1`.
+**5. Local model.** With [Ollama](https://ollama.com) running, `every-other-token "Why is the sky blue?" --provider ollama` streams from `llama3.2`. Any OpenAI-compatible server works: `every-other-token "Why is the sky blue?" reverse my-model --base-url http://localhost:8080/v1`.
 
-**6. Watch it in the browser** with `every-other-token --web --provider mock` (or just double-click the .exe). Split view: the original stream on the left, the rewritten one on the right, each token underlined by its confidence.
+**6. Watch it in the browser** with `every-other-token --web --provider mock` (or double-click the .exe). Original on the left, rewritten on the right, each token underlined by confidence.
 
 <img src="assets/web-ui.png" width="100%" alt="every-other-token web UI in split view: original token stream on the left, transformed stream on the right, each token underlined by its confidence">
 
 ## Exact probabilities with no API key: `--provider local`
 
-Hosted APIs either send no token probabilities (Anthropic, Gemini) or cannot tell you which words of your prompt mattered. A model running inside the tool can do both. Build with the `local` feature and it downloads SmolLM2-135M-Instruct once (269 MB, to your cache folder) and runs it on the CPU with [candle](https://github.com/huggingface/candle):
+Some hosted APIs send no probabilities (Anthropic, Gemini). None tell you which prompt words mattered. A model inside the tool does both. The `local` feature downloads SmolLM2-135M-Instruct once (269 MB) and runs it on CPU with [candle](https://github.com/huggingface/candle):
 
 ```sh
 cargo install every-other-token --features local
@@ -130,17 +130,17 @@ How much the reply depended on each prompt word (drop in total log-probability w
   France?   +4.689  ##############################
 ```
 
-Every token carries its exact log-probability and the model's real top-5 alternatives, in the terminal, `--tui`, the web UI and every export. `--attribute` removes each prompt word, re-scores the same reply, and reports how much its probability fell (occlusion attribution). `--model` takes another Llama-architecture model from the Hugging Face Hub, `--seed N` samples instead of greedy decoding.
+Every token gets its exact log-probability and real top-5 alternatives, everywhere. `--attribute` removes each prompt word, re-scores the reply, and reports the drop (occlusion attribution). `--model` takes another Llama-architecture model from the Hugging Face Hub. `--seed N` samples instead of greedy decoding.
 
-Providers that return no probabilities (Anthropic, Gemini, many local servers) show no confidence rather than a made-up one.
+Providers with no probabilities (Anthropic, Gemini, many local servers) show no confidence, not a fake one.
 
 ## Use it in 3 steps
 
-1. **Get it.** Use the Linux one-liner or the Windows .exe above (or `cargo install`).
-2. **Try it offline.** Run `every-other-token "Why is the sky blue?" --provider mock`, or double-click the .exe and pick **Mock (no API key)** in the provider menu.
-3. **Point it at a real model.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY`, `GEMINI_API_KEY`), then run `every-other-token "Why is the sky blue?" --visual` (terminal, colored by confidence), add `--tui` for the full-screen view, or run `every-other-token --web` (browser). Pick the provider with `--provider openai|anthropic|ollama|openrouter|gemini`. Real confidence numbers come from logprobs (OpenAI, OpenRouter, recent Ollama); providers that send none, like Anthropic and Gemini, get an estimate from how quickly each token arrived.
+1. **Get it.** Linux one-liner, Windows .exe, or `cargo install`.
+2. **Try it offline.** `every-other-token "Why is the sky blue?" --provider mock`, or open the .exe and pick **Mock (no API key)**.
+3. **Use a real model.** Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` (or `OPENROUTER_API_KEY`, `GEMINI_API_KEY`). Run `every-other-token "Why is the sky blue?" --visual`, add `--tui` for full screen, or `every-other-token --web` for the browser. Pick with `--provider openai|anthropic|ollama|openrouter|gemini`. Confidence comes from logprobs (OpenAI, OpenRouter, recent Ollama). Anthropic and Gemini get an estimate from token timing.
 
-Run `every-other-token --help` for every flag, with examples at the bottom.
+`every-other-token --help` lists every flag, with examples.
 
 ## Documentation
 
@@ -158,8 +158,8 @@ Run `every-other-token --help` for every flag, with examples at the bottom.
 
 MIT, see [LICENSE](LICENSE).
 
-Source, issues and stars: [GitHub](https://github.com/Mattbusel/Every-Other-Token). Mirror and release downloads: [GitLab](https://gitlab.com/mattbusel/Every-Other-Token). More open-source Rust from the same author: [tensorust.com/open-source](https://tensorust.com/open-source/).
+Source, issues and stars: [GitHub](https://github.com/Mattbusel/Every-Other-Token). Mirror and release downloads: [GitLab](https://gitlab.com/mattbusel/Every-Other-Token). More of my Rust: [tensorust.com/open-source](https://tensorust.com/open-source/).
 
 ## Hire the author
 
-**Need this kind of engineering on your product?** I take on a small number of client builds: LLM features, iOS apps and performance work, fixed price. [Services and pricing](https://tensorust.com/) · [Email](mailto:mattbusel@gmail.com) · [LinkedIn](https://www.linkedin.com/in/matthewbusel/)
+I build LLM features, iOS apps and performance fixes for clients. Fixed price. [Services and pricing](https://tensorust.com/) · [Email](mailto:mattbusel@gmail.com) · [LinkedIn](https://www.linkedin.com/in/matthewbusel/)
