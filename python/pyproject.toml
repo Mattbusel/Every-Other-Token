@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "every-other-token"
+version = "0.1.0"
+description = "Render per-token LLM confidence from logprobs as an HTML heatmap (Jupyter, CLI). OpenAI, vLLM and OpenAI-compatible servers."
+readme = "PYPI.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthew Busel" }]
+keywords = ["llm", "logprobs", "openai", "vllm", "jupyter", "interpretability", "confidence", "heatmap"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Jupyter",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://every-other-token.vercel.app/"
+Documentation = "https://github.com/Mattbusel/Every-Other-Token/blob/main/docs/python.md"
+Source = "https://github.com/Mattbusel/Every-Other-Token/tree/main/python"
+Changelog = "https://github.com/Mattbusel/Every-Other-Token/blob/main/CHANGELOG.md"
+
+[project.scripts]
+eot-py = "every_other_token.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/every_other_token"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "PYPI.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

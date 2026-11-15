@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.0.2] - 2026-11-14
+
+### Added
+- **Python package `every-other-token` (PyPI, version 0.1.0, in `python/`).** `render(resp)` takes an OpenAI Chat Completion or Completion made with logprobs (SDK object or dict), a list of streamed chunks, a response from vLLM or another OpenAI-compatible server, or a vLLM offline `RequestOutput`, and returns an HTML confidence heatmap that Jupyter displays directly: tokens tinted green, amber or red with the same thresholds and arithmetic as the CLI, and a hover card with probability, logprob, perplexity and the top alternatives. `parse()` and `summarize()` give the numbers without the HTML. Characters split across byte-fragment tokens are joined back together, including when the fragments arrive in different stream chunks. Legacy Completion alternatives are listed most likely first (a logprob of exactly 0.0 counts as the top choice). An empty chat logprobs list gives an empty heatmap, a refusal shows the refusal's tokens, and a list of several vLLM `RequestOutput`s raises an error that says to pass one of them. Pure Python, no dependencies. Command line: `eot-py response.json -o heatmap.html` (also `--format text` and `--format json`). Guide: [docs/python.md](docs/python.md).
+- `.github/workflows/python.yml`: tests the package on Linux, macOS and Windows, builds the wheel and sdist, and publishes to PyPI with trusted publishing when a `py-v*` tag is pushed.
+
+### Changed
+- The crate tarball excludes `python/`. No Rust code changes.
+
 ## [5.0.1] - 2026-10-17
 
 ### Changed

@@ -1,0 +1,20 @@
+{
+  "id": "cmpl-fixture-1",
+  "object": "text_completion",
+  "created": 1731542400,
+  "model": "gpt-3.5-turbo-instruct",
+  "choices": [
+    {
+      "index": 0,
+      "text": "Hello world!",
+      "logprobs": {
+        "tokens": ["Say", "Hello", " world", "!"],
+        "token_logprobs": [null, -0.25, -1.2, -2.5],
+        "top_logprobs": [null, {"Hello": -0.25, "Hi": -1.7}, {" there": -0.6, " world": -1.2}, {".": -0.3, "!": -2.5}],
+        "text_offset": [0, 3, 8, 14]
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {"prompt_tokens": 1, "completion_tokens": 3, "total_tokens": 4}
+}

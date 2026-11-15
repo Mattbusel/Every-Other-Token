@@ -1,0 +1,6 @@
+[
+  {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "logprobs": null, "finish_reason": null}]},
+  {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"content": "Yes"}, "logprobs": {"content": [{"token": "Yes", "logprob": -0.02, "bytes": [89, 101, 115], "top_logprobs": []}]}, "finish_reason": null}]},
+  {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {"content": ", maybe"}, "logprobs": {"content": [{"token": ",", "logprob": -0.7, "bytes": [44], "top_logprobs": []}, {"token": " maybe", "logprob": -2.3, "bytes": [32, 109, 97, 121, 98, 101], "top_logprobs": []}]}, "finish_reason": null}]},
+  {"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": [{"index": 0, "delta": {}, "logprobs": null, "finish_reason": "stop"}]}
+]

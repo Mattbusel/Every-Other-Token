@@ -1,0 +1,41 @@
+{
+  "id": "chatcmpl-fixture-1",
+  "object": "chat.completion",
+  "created": 1731542400,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "The capital is Paris \u2764", "refusal": null},
+      "logprobs": {
+        "content": [
+          {"token": "The", "logprob": -0.0012, "bytes": [84, 104, 101],
+           "top_logprobs": [{"token": "The", "logprob": -0.0012, "bytes": [84, 104, 101]},
+                            {"token": "Paris", "logprob": -6.9, "bytes": [80, 97, 114, 105, 115]}]},
+          {"token": " capital", "logprob": -0.05, "bytes": [32, 99, 97, 112, 105, 116, 97, 108],
+           "top_logprobs": [{"token": " capital", "logprob": -0.05, "bytes": null}]},
+          {"token": " is", "logprob": -0.6, "bytes": [32, 105, 115],
+           "top_logprobs": [{"token": " is", "logprob": -0.6, "bytes": null},
+                            {"token": " of", "logprob": -0.9, "bytes": null}]},
+          {"token": " Paris", "logprob": -1.6, "bytes": [32, 80, 97, 114, 105, 115],
+           "top_logprobs": [{"token": " Lyon", "logprob": -0.5, "bytes": null},
+                            {"token": " Paris", "logprob": -1.6, "bytes": null},
+                            {"token": " <b>Nice</b>", "logprob": -3.0, "bytes": null}]},
+          {"token": " ", "logprob": -0.2, "bytes": [32], "top_logprobs": []},
+          {"token": "bytes:\\xe2\\x9d", "logprob": -0.3, "bytes": [226, 157], "top_logprobs": []},
+          {"token": "bytes:\\xa4", "logprob": -0.1, "bytes": [164], "top_logprobs": []}
+        ],
+        "refusal": null
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "index": 1,
+      "message": {"role": "assistant", "content": "Paris", "refusal": null},
+      "logprobs": {"content": [{"token": "Paris", "logprob": -0.01, "bytes": [80, 97, 114, 105, 115], "top_logprobs": []}], "refusal": null},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+  "system_fingerprint": "fp_fixture"
+}

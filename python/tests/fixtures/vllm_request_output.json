@@ -1,0 +1,20 @@
+{
+  "request_id": "0",
+  "prompt": "The sky is",
+  "outputs": [
+    {
+      "index": 0,
+      "text": " blue today",
+      "token_ids": [6437, 3432],
+      "cumulative_logprob": -1.3,
+      "logprobs": [
+        {"6437": {"logprob": -0.1, "rank": 1, "decoded_token": " blue"},
+         "18004": {"logprob": -2.6, "rank": 2, "decoded_token": " clear"}},
+        {"1938": {"logprob": -0.4, "rank": 1, "decoded_token": " and"},
+         "3432": {"logprob": -1.2, "rank": 2, "decoded_token": " today"}}
+      ],
+      "finish_reason": "length"
+    }
+  ],
+  "finished": true
+}

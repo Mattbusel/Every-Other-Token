@@ -1,6 +1,6 @@
 [package]
 name = "every-other-token"
-version = "5.0.1"
+version = "5.0.2"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Matthew Busel"]
@@ -12,6 +12,8 @@ homepage = "https://every-other-token.vercel.app/"
 documentation = "https://docs.rs/every-other-token"
 keywords = ["llm", "openai", "logprobs", "tui", "interpretability"]
 categories = ["command-line-utilities", "science", "development-tools"]
+# The Python package (python/) ships to PyPI on its own.
+exclude = ["/python"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
